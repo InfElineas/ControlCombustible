@@ -1,20 +1,32 @@
-import base44 from "@base44/vite-plugin"
+import path from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-// https://vite.dev/config/
-export default defineConfig({
-  logLevel: 'error', // Suppress warnings, only show errors
-  plugins: [
-    base44({
-      // Support for legacy code that imports the base44 SDK with @/integrations, @/entities, etc.
-      // can be removed if the code has been updated to use the new SDK imports from @base44/sdk
+async function loadBase44Plugin() {
+  try {
+    const mod = await import('@base44/vite-plugin')
+    return mod.default({
       legacySDKImports: process.env.BASE44_LEGACY_SDK_IMPORTS === 'true',
       hmrNotifier: true,
       navigationNotifier: true,
       analyticsTracker: true,
-      visualEditAgent: true
-    }),
-    react(),
-  ]
-});
+      visualEditAgent: true,
+    })
+  } catch {
+    return null
+  }
+}
+
+export default defineConfig(async () => {
+  const base44Plugin = await loadBase44Plugin()
+
+  return {
+    logLevel: 'error',
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, 'src'),
+      },
+    },
+    plugins: [react(), ...(base44Plugin ? [base44Plugin] : [])],
+  }
+})

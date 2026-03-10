@@ -1,67 +1,67 @@
+import { appEnv, isSupabaseConfigured } from '@/config/env';
+import { createLocalRepository } from '@/api/repositories/localRepository';
+import { createSupabaseRepository } from '@/api/repositories/supabaseRepository';
+
 const ENTITY_MAP = {
   Tarjeta: 'tarjetas',
   Vehiculo: 'vehiculos',
   TipoCombustible: 'combustibles',
-  PrecioCombustible: 'precios',
+  PrecioCombustible: 'precios_combustible',
   Movimiento: 'movimientos',
 };
 
-function readRows(key) {
-  try {
-    return JSON.parse(localStorage.getItem(`cc_${key}`) || '[]');
-  } catch {
-    return [];
-  }
-}
+const useSupabase = appEnv.dataMode === 'supabase' && isSupabaseConfigured;
 
-function writeRows(key, rows) {
-  localStorage.setItem(`cc_${key}`, JSON.stringify(rows));
-}
-
-function sortRows(rows, orderBy) {
-  if (!orderBy) return rows;
-  const descending = orderBy.startsWith('-');
-  const field = descending ? orderBy.slice(1) : orderBy;
-  return [...rows].sort((a, b) => {
-    const av = a?.[field] ?? '';
-    const bv = b?.[field] ?? '';
-    return descending ? String(bv).localeCompare(String(av)) : String(av).localeCompare(String(bv));
-  });
-}
-
-function createEntity(key) {
-  return {
-    async list(orderBy) {
-      return sortRows(readRows(key), orderBy);
-    },
-    async create(data) {
-      const rows = readRows(key);
-      const row = { ...data, id: data.id || crypto.randomUUID(), created_date: new Date().toISOString() };
-      rows.push(row);
-      writeRows(key, rows);
-      return row;
-    },
-    async update(id, data) {
-      const rows = readRows(key);
-      const updated = rows.map((row) => (row.id === id ? { ...row, ...data } : row));
-      writeRows(key, updated);
-      return updated.find((row) => row.id === id) || null;
-    },
-    async delete(id) {
-      const rows = readRows(key).filter((row) => row.id !== id);
-      writeRows(key, rows);
-      return true;
-    },
-  };
+function createEntity(tableName) {
+  return useSupabase ? createSupabaseRepository(tableName) : createLocalRepository(tableName);
 }
 
 export const base44 = {
-  entities: Object.fromEntries(Object.entries(ENTITY_MAP).map(([name, key]) => [name, createEntity(key)])),
+  entities: Object.fromEntries(Object.entries(ENTITY_MAP).map(([name, table]) => [name, createEntity(table)])),
   auth: {
     async me() {
-      return { id: 'local-user', role: 'admin', full_name: 'Administrador' };
+      if (!useSupabase) {
+        return { id: 'local-user', role: 'admin', full_name: 'Administrador' };
+      }
+
+      const response = await fetch(`${appEnv.supabaseUrl}/auth/v1/user`, {
+        headers: {
+          apikey: appEnv.supabaseAnonKey,
+          Authorization: `Bearer ${appEnv.supabaseAnonKey}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('No se pudo recuperar el usuario autenticado en Supabase.');
+      }
+
+      const user = await response.json();
+      return {
+        id: user.id,
+        email: user.email,
+        full_name: user.user_metadata?.full_name || user.email,
+        role: user.user_metadata?.role || 'operador',
+      };
     },
-    logout() {},
-    redirectToLogin() {},
+    async logout() {
+      if (!useSupabase) return;
+      await fetch(`${appEnv.supabaseUrl}/auth/v1/logout`, {
+        method: 'POST',
+        headers: {
+          apikey: appEnv.supabaseAnonKey,
+          Authorization: `Bearer ${appEnv.supabaseAnonKey}`,
+        },
+      });
+    },
+    redirectToLogin(redirectTo = window.location.href) {
+      if (!useSupabase) return;
+      const params = new URLSearchParams({
+        provider: 'google',
+        redirect_to: redirectTo,
+      });
+      window.location.href = `${appEnv.supabaseUrl}/auth/v1/authorize?${params.toString()}`;
+    },
   },
 };
+
+export const dataBackend = useSupabase ? 'supabase' : 'local';
