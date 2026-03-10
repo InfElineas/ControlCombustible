@@ -21,7 +21,7 @@ export const AuthProvider = ({ children }) => {
       const currentUser = await base44.auth.me();
       setUser(currentUser);
       setIsAuthenticated(true);
-      setAppPublicSettings({ id: 'local', public_settings: {} });
+      setAppPublicSettings({ id: 'local-app', public_settings: {} });
     } catch (error) {
       setAuthError({ type: 'unknown', message: error?.message || 'Error de autenticación' });
       setIsAuthenticated(false);
