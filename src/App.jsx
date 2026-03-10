@@ -1,57 +1,80 @@
-import React from 'react';
-import { Link, NavLink, Route, Routes } from 'react-router-dom';
-import Dashboard from '@/pages/DashBoard';
-import Movimientos from '@/pages/Movimientos';
-import Tarjetas from '@/pages/Tarjetas';
-import Vehiculos from '@/pages/Vehiculos';
-import Combustibles from '@/pages/Combustibles';
-import Precios from '@/pages/Precios';
-import Reportes from '@/pages/Reportes';
-import PageNotFound from '@/lib/PageNotFound';
-import { createPageUrl } from '@/utils';
+import { Toaster } from "@/components/ui/toaster"
+import { QueryClientProvider } from '@tanstack/react-query'
+import { queryClientInstance } from '@/lib/query-client'
+import { pagesConfig } from './pages.config'
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import PageNotFound from './lib/PageNotFound';
+import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 
-const sections = [
-  { label: 'Dashboard', path: createPageUrl('Dashboard') },
-  { label: 'Movimientos', path: createPageUrl('Movimientos') },
-  { label: 'Tarjetas', path: createPageUrl('Tarjetas') },
-  { label: 'Vehiculos', path: createPageUrl('Vehiculos') },
-  { label: 'Combustibles', path: createPageUrl('Combustibles') },
-  { label: 'Precios', path: createPageUrl('Precios') },
-  { label: 'Reportes', path: createPageUrl('Reportes') },
-];
+const { Pages, Layout, mainPage } = pagesConfig;
+const mainPageKey = mainPage ?? Object.keys(Pages)[0];
+const MainPage = mainPageKey ? Pages[mainPageKey] : <></>;
 
-export default function App() {
+const LayoutWrapper = ({ children, currentPageName }) => Layout ?
+  <Layout currentPageName={currentPageName}>{children}</Layout>
+  : <>{children}</>;
+
+const AuthenticatedApp = () => {
+  const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
+
+  // Show loading spinner while checking app public settings or auth
+  if (isLoadingPublicSettings || isLoadingAuth) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  // Handle authentication errors
+  if (authError) {
+    if (authError.type === 'user_not_registered') {
+      return <UserNotRegisteredError />;
+    } else if (authError.type === 'auth_required') {
+      // Redirect to login automatically
+      navigateToLogin();
+      return null;
+    }
+  }
+
+  // Render the main app
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <Link to={createPageUrl('Dashboard')} className="font-bold text-slate-800">Control Combustible</Link>
-          <nav className="mt-3 flex flex-wrap gap-2">
-            {sections.map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={({ isActive }) => `px-3 py-1.5 rounded-lg text-sm ${isActive ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-600'}`}
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-        </div>
-      </header>
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path={createPageUrl('Dashboard')} element={<Dashboard />} />
-          <Route path={createPageUrl('Movimientos')} element={<Movimientos />} />
-          <Route path={createPageUrl('Tarjetas')} element={<Tarjetas />} />
-          <Route path={createPageUrl('Vehiculos')} element={<Vehiculos />} />
-          <Route path={createPageUrl('Combustibles')} element={<Combustibles />} />
-          <Route path={createPageUrl('Precios')} element={<Precios />} />
-          <Route path={createPageUrl('Reportes')} element={<Reportes />} />
-          <Route path="*" element={<PageNotFound />} />
-        </Routes>
-      </main>
-    </div>
+    <Routes>
+      <Route path="/" element={
+        <LayoutWrapper currentPageName={mainPageKey}>
+          <MainPage />
+        </LayoutWrapper>
+      } />
+      {Object.entries(Pages).map(([path, Page]) => (
+        <Route
+          key={path}
+          path={`/${path}`}
+          element={
+            <LayoutWrapper currentPageName={path}>
+              <Page />
+            </LayoutWrapper>
+          }
+        />
+      ))}
+      <Route path="*" element={<PageNotFound />} />
+    </Routes>
   );
+};
+
+
+function App() {
+
+  return (
+    <AuthProvider>
+      <QueryClientProvider client={queryClientInstance}>
+        <Router>
+          <AuthenticatedApp />
+        </Router>
+        <Toaster />
+      </QueryClientProvider>
+    </AuthProvider>
+  )
 }
+
+export default App

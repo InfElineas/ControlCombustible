@@ -17,7 +17,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   const { data: vehiculos = [] } = useQuery({ queryKey: ['vehiculos'], queryFn: () => base44.entities.Vehiculo.list() });
   const { data: combustibles = [] } = useQuery({ queryKey: ['combustibles'], queryFn: () => base44.entities.TipoCombustible.list() });
   const { data: precios = [] } = useQuery({ queryKey: ['precios'], queryFn: () => base44.entities.PrecioCombustible.list() });
-  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-created_date') });
+  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-created_date', 500) });
 
   const [tipo, setTipo] = useState('COMPRA');
   const [form, setForm] = useState({
@@ -98,9 +98,6 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       if (!form.vehiculo_chapa) e.vehiculo_chapa = 'Seleccione vehículo destino';
       if (!form.combustible_id) e.combustible_id = 'Seleccione combustible';
       if (!form.litros || parseFloat(form.litros) <= 0) e.litros = 'Litros > 0';
-      if (stockOrigenDespacho != null && parseFloat(form.litros || 0) > stockOrigenDespacho) {
-        e.litros = `Stock insuficiente. Disponible: ${stockOrigenDespacho.toFixed(2)} L`;
-      }
     }
     setErrors(e);
     return Object.keys(e).length === 0;

@@ -1,91 +1,161 @@
-import React from 'react';
-import { Link, NavLink, Outlet } from 'react-router-dom';
-import {
-  BarChart3,
-  Car,
-  ChevronRight,
-  CreditCard,
-  Fuel,
-  Gauge,
-  LayoutGrid,
-  List,
-  LogOut,
-  Plus,
-  ReceiptText,
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { useUserRole } from '@/components/ui-helpers/useUserRole';
+import {
+  LayoutDashboard, List, CreditCard, Truck, Fuel,
+  DollarSign, BarChart3, Menu, ChevronRight, LogOut
+} from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { base44 } from '@/api/base44Client';
 
 const navItems = [
-  { label: 'Dashboard', to: createPageUrl('Dashboard'), icon: LayoutGrid },
-  { label: 'Nuevo Movimiento', to: createPageUrl('NuevoMovimiento'), icon: Plus },
-  { label: 'Movimientos', to: createPageUrl('Movimientos'), icon: List },
-  { label: 'Tarjetas', to: createPageUrl('Tarjetas'), icon: CreditCard },
-  { label: 'Vehículos', to: createPageUrl('Vehiculos'), icon: Car },
-  { label: 'Combustibles', to: createPageUrl('Combustibles'), icon: Fuel },
-  { label: 'Precios', to: createPageUrl('Precios'), icon: Gauge },
-  { label: 'Reportes', to: createPageUrl('Reportes'), icon: BarChart3 },
+  { name: 'Dashboard', page: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'operador'] },
+  { name: 'Movimientos', page: 'Movimientos', icon: List, roles: ['admin', 'operador'] },
+  { name: 'Tarjetas', page: 'Tarjetas', icon: CreditCard, roles: ['admin'] },
+  { name: 'Vehículos', page: 'Vehiculos', icon: Truck, roles: ['admin'] },
+  { name: 'Combustibles', page: 'Combustibles', icon: Fuel, roles: ['admin'] },
+  { name: 'Precios', page: 'Precios', icon: DollarSign, roles: ['admin'] },
+  { name: 'Reportes', page: 'Reportes', icon: BarChart3, roles: ['admin', 'operador'] },
 ];
 
-export default function Layout() {
+function NavContent({ currentPageName, isAdmin, onNavigate }) {
+  const role = isAdmin ? 'admin' : 'operador';
+  const filtered = navItems.filter(item => item.roles.includes(role));
+
   return (
-    <div className="min-h-screen bg-slate-100/95 flex">
-      <aside className="w-[270px] bg-slate-50 border-r border-slate-200/90 flex flex-col shrink-0">
-        <div className="px-6 pt-6 pb-7">
-          <Link to={createPageUrl('Dashboard')} className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-sky-600 flex items-center justify-center shadow-sm">
-              <ReceiptText className="w-5 h-5 text-white" />
+    <nav className="flex flex-col gap-1 p-3">
+      {filtered.map(item => {
+        const active = currentPageName === item.page;
+        return (
+          <Link
+            key={item.page}
+            to={createPageUrl(item.page)}
+            onClick={onNavigate}
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              active
+                ? 'bg-sky-50 text-sky-700 shadow-sm'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+            }`}
+          >
+            <item.icon className={`w-4.5 h-4.5 ${active ? 'text-sky-600' : 'text-slate-400'}`} />
+            {item.name}
+            {active && <ChevronRight className="w-3.5 h-3.5 ml-auto text-sky-400" />}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+// Pages that require admin role
+const adminOnlyPages = ['Tarjetas', 'Vehiculos', 'Combustibles', 'Precios'];
+
+export default function Layout({ children, currentPageName }) {
+  const { user, isAdmin, loading } = useUserRole();
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      base44.auth.redirectToLogin(window.location.href);
+    }
+  }, [loading, user]);
+
+  // Redirect operadores trying to access admin-only pages
+  useEffect(() => {
+    if (!loading && user && !isAdmin && adminOnlyPages.includes(currentPageName)) {
+      window.location.href = createPageUrl('Dashboard');
+    }
+  }, [loading, user, isAdmin, currentPageName]);
+
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="animate-pulse flex flex-col items-center gap-3">
+          <Fuel className="w-8 h-8 text-sky-500" />
+          <span className="text-sm text-slate-400">Cargando...</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-50/80">
+      <style>{`
+        :root {
+          --primary: 200 90% 48%;
+          --primary-foreground: 0 0% 100%;
+        }
+      `}</style>
+
+      {/* Top bar mobile */}
+      <header className="lg:hidden sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center">
+            <Fuel className="w-4 h-4 text-white" />
+          </div>
+          <span className="font-semibold text-slate-800 text-sm">Control Combustible</span>
+        </div>
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-9 w-9">
+              <Menu className="w-5 h-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-64 p-0 pt-10">
+            <NavContent currentPageName={currentPageName} isAdmin={isAdmin} onNavigate={() => setOpen(false)} />
+            <div className="absolute bottom-4 left-4 right-4">
+              <div className="text-xs text-slate-400 mb-2">{user?.full_name || user?.email} · {isAdmin ? 'Admin' : 'Operador'}</div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start text-xs text-slate-400 hover:text-red-500 px-0 h-7"
+                onClick={() => base44.auth.logout()}
+              >
+                <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
+      </header>
+
+      <div className="flex">
+        {/* Sidebar desktop */}
+        <aside className="hidden lg:flex lg:flex-col lg:w-56 lg:fixed lg:inset-y-0 bg-white border-r border-slate-100">
+          <div className="px-5 py-5 flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-sm">
+              <Fuel className="w-5 h-5 text-white" />
             </div>
             <div>
-              <p className="font-semibold text-slate-900 leading-none text-2xl">Control</p>
-              <p className="text-slate-400 text-sm leading-none mt-1">Combustible</p>
+              <div className="font-bold text-slate-800 text-sm leading-tight">Control</div>
+              <div className="text-[11px] text-slate-400 leading-tight">Combustible</div>
             </div>
-          </Link>
-        </div>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            <NavContent currentPageName={currentPageName} isAdmin={isAdmin} onNavigate={() => {}} />
+          </div>
+          <div className="p-4 border-t border-slate-50">
+            <div className="text-xs text-slate-500 truncate">{user?.full_name || user?.email}</div>
+            <div className="text-[11px] text-slate-400 mb-2">{isAdmin ? 'Administrador' : 'Operador'}</div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start text-xs text-slate-400 hover:text-red-500 px-0 h-7"
+              onClick={() => base44.auth.logout()}
+            >
+              <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
+            </Button>
+          </div>
+        </aside>
 
-        <nav className="px-3 space-y-1.5">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  `h-14 rounded-2xl px-4 flex items-center justify-between text-base transition-colors ${
-                    isActive
-                      ? 'bg-sky-100/90 text-sky-700'
-                      : 'text-slate-700 hover:bg-slate-200/70'
-                  }`
-                }
-              >
-                {({ isActive }) => (
-                  <>
-                    <span className="flex items-center gap-3">
-                      <Icon className="w-5 h-5" />
-                      <span className="font-medium">{item.label}</span>
-                    </span>
-                    {isActive ? <ChevronRight className="w-4 h-4 text-sky-500" /> : null}
-                  </>
-                )}
-              </NavLink>
-            );
-          })}
-        </nav>
-
-        <div className="mt-auto px-5 pb-8 text-slate-400">
-          <p className="text-sm leading-tight">Informático Lineas</p>
-          <p className="text-sm leading-tight">Administrador</p>
-          <button className="mt-6 inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700">
-            <LogOut className="w-5 h-5" />
-            Cerrar sesión
-          </button>
-        </div>
-      </aside>
-
-      <main className="flex-1 px-10 py-8">
-        <div className="max-w-[1320px]">
-          <Outlet />
-        </div>
-      </main>
+        {/* Content */}
+        <main className="flex-1 lg:ml-56 min-h-screen">
+          <div className="max-w-6xl mx-auto px-4 py-5 lg:px-8 lg:py-6">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
