@@ -79,12 +79,26 @@ export default function Reportes() {
 
   const reporteConsumo = useMemo(() => {
     return vehiculos.map(v => {
-      const comprasConOdometro = movsFiltered.filter(
-        m => m.tipo === 'COMPRA' && m.vehiculo_chapa === v.chapa && m.odometro != null,
-      );
+      const comprasConOdometro = movsFiltered
+        .filter(m => m.tipo === 'COMPRA' && m.vehiculo_chapa === v.chapa && m.odometro != null && m.litros != null)
+        .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
 
-      const litros = comprasConOdometro.reduce((sum, m) => sum + (m.litros || 0), 0);
-      const kmRecorridos = comprasConOdometro.reduce((sum, m) => sum + (m.km_recorridos || 0), 0);
+      let kmRecorridos = 0;
+      let litros = 0;
+      let paresValidos = 0;
+
+      for (let i = 1; i < comprasConOdometro.length; i += 1) {
+        const anterior = comprasConOdometro[i - 1];
+        const actual = comprasConOdometro[i];
+
+        const deltaKm = (actual.odometro || 0) - (anterior.odometro || 0);
+        if (deltaKm <= 0) continue;
+
+        kmRecorridos += deltaKm;
+        litros += actual.litros || 0;
+        paresValidos += 1;
+      }
+
       const rendimientoKml = litros > 0 ? kmRecorridos / litros : null;
       const consumoL100km = kmRecorridos > 0 ? (litros / kmRecorridos) * 100 : null;
 
@@ -92,13 +106,14 @@ export default function Reportes() {
         id: v.id,
         chapa: v.chapa,
         alias: v.alias || '',
-        registros: comprasConOdometro.length,
+        lecturas: comprasConOdometro.length,
+        pares_validos: paresValidos,
         litros,
         km_recorridos: kmRecorridos,
         rendimiento_km_l: rendimientoKml,
         consumo_l_100km: consumoL100km,
       };
-    }).filter(v => v.registros > 0);
+    }).filter(v => v.pares_validos > 0);
   }, [vehiculos, movsFiltered]);
 
   const csvTarjetas = [
@@ -124,7 +139,8 @@ export default function Reportes() {
   const csvConsumo = [
     { label: 'Chapa', accessor: 'chapa' },
     { label: 'Alias', accessor: 'alias' },
-    { label: 'Registros con podómetro', accessor: 'registros' },
+    { label: 'Lecturas de odómetro', accessor: 'lecturas' },
+    { label: 'Comparaciones válidas', accessor: 'pares_validos' },
     { label: 'Km recorridos', accessor: 'km_recorridos' },
     { label: 'Litros', accessor: 'litros' },
     { label: 'Rendimiento (km/L)', accessor: r => (r.rendimiento_km_l != null ? r.rendimiento_km_l.toFixed(2) : '') },
@@ -200,7 +216,7 @@ export default function Reportes() {
                       </TableRow>
                     ))}
                     {reporteTarjetas.length === 0 && (
-                      <TableRow><TableCell colSpan={7} className="text-center text-slate-400 py-8">Sin datos</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={8} className="text-center text-slate-400 py-8">Sin datos</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
@@ -270,7 +286,8 @@ export default function Reportes() {
                     <TableRow className="bg-slate-50/50">
                       <TableHead className="text-xs">Chapa</TableHead>
                       <TableHead className="text-xs">Alias</TableHead>
-                      <TableHead className="text-xs text-right">Registros</TableHead>
+                      <TableHead className="text-xs text-right">Lecturas</TableHead>
+                      <TableHead className="text-xs text-right">Comparaciones</TableHead>
                       <TableHead className="text-xs text-right">Km</TableHead>
                       <TableHead className="text-xs text-right">Litros</TableHead>
                       <TableHead className="text-xs text-right">km/L</TableHead>
@@ -282,7 +299,8 @@ export default function Reportes() {
                       <TableRow key={r.id}>
                         <TableCell className="text-sm font-medium">{r.chapa}</TableCell>
                         <TableCell className="text-sm text-slate-500">{r.alias || '—'}</TableCell>
-                        <TableCell className="text-right text-sm text-slate-500">{r.registros}</TableCell>
+                        <TableCell className="text-right text-sm text-slate-500">{r.lecturas}</TableCell>
+                        <TableCell className="text-right text-sm text-slate-500">{r.pares_validos}</TableCell>
                         <TableCell className="text-right text-sm">{r.km_recorridos.toFixed(1)}</TableCell>
                         <TableCell className="text-right text-sm">{r.litros.toFixed(1)}</TableCell>
                         <TableCell className="text-right text-sm font-medium">{r.rendimiento_km_l != null ? r.rendimiento_km_l.toFixed(2) : '—'}</TableCell>
@@ -290,7 +308,7 @@ export default function Reportes() {
                       </TableRow>
                     ))}
                     {reporteConsumo.length === 0 && (
-                      <TableRow><TableCell colSpan={7} className="text-center text-slate-400 py-8">Sin lecturas de podómetro</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={8} className="text-center text-slate-400 py-8">Sin lecturas de podómetro</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>

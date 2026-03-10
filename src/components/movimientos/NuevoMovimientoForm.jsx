@@ -143,15 +143,6 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       data.precio = precioVigente;
       data.litros = litrosCalculados;
       data.odometro = parseFloat(form.odometro);
-
-      if (ultimaLecturaOdometro != null && litrosCalculados > 0) {
-        const kmRecorridos = data.odometro - ultimaLecturaOdometro;
-        if (kmRecorridos > 0) {
-          data.km_recorridos = kmRecorridos;
-          data.rendimiento_km_l = kmRecorridos / litrosCalculados;
-          data.consumo_l_100km = (litrosCalculados / kmRecorridos) * 100;
-        }
-      }
     } else if (tipo === 'RECARGA') {
       data.tarjeta_id = tarjeta.id;
       data.tarjeta_alias = tarjeta.alias || tarjeta.id_tarjeta;
