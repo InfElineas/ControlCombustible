@@ -1,39 +1,64 @@
-**Welcome to your Base44 project** 
+# Control Combustible
 
-**About**
+Aplicación React para control de tarjetas, combustible, movimientos y reportes.
 
-View and Edit  your app on [Base44.com](http://Base44.com) 
+## Mejoras de composición aplicadas
 
-This project contains everything you need to run your app locally.
+- Se separó la capa de datos en repositorios (`local` y `supabase`) para desacoplar UI de infraestructura.
+- Se agregó configuración centralizada de entorno en `src/config/env.js`.
+- Se mantuvo compatibilidad con el contrato existente (`base44.entities.*`) para no romper páginas ni hooks.
+- Se adaptó `vite.config.js` para funcionar aun cuando el plugin de Base44 no esté instalado en local.
 
-**Edit the code in your local development environment**
+## Modos de datos
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
+### 1) Local (por defecto)
+Usa `localStorage` y no requiere backend.
 
-**Prerequisites:** 
-
-1. Clone the repository using the project's Git URL 
-2. Navigate to the project directory
-3. Install dependencies: `npm install`
-4. Create an `.env.local` file and set the right environment variables
-
-```
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=your_backend_url
-
-e.g.
-VITE_BASE44_APP_ID=cbef744a8545c389ef439ea6
-VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
+```bash
+VITE_DATA_MODE=local
 ```
 
-Run the app: `npm run dev`
+### 2) Supabase (preparado)
+Usa REST API de Supabase.
 
-**Publish your changes**
+```bash
+VITE_DATA_MODE=supabase
+VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+```
 
-Open [Base44.com](http://Base44.com) and click on Publish.
+> Copia `.env.example` a `.env.local` y ajusta valores.
 
-**Docs & Support**
+## Preparación de base de datos real en Supabase
 
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
+1. Crear proyecto en Supabase.
+2. Ejecutar `supabase/schema.sql` en SQL Editor.
+3. Revisar y endurecer políticas RLS por organización/rol antes de producción.
+4. Configurar providers de Auth (ej. Google) y URL de redirección.
+5. Pasar a `VITE_DATA_MODE=supabase`.
 
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+## Desarrollo
+
+```bash
+npm install
+npm run dev
+```
+
+## Verificación
+
+```bash
+npm run lint
+npm run typecheck
+npm run build
+```
+
+## Troubleshooting Supabase
+
+Si el navegador muestra `DNS_PROBE_FINISHED_NXDOMAIN` al iniciar sesión, revisa:
+
+1. Que `VITE_SUPABASE_URL` sea el dominio real de tu proyecto (`https://<project-ref>.supabase.co`).
+2. Que estés editando `.env.local` o `.env` (no solo `.env.example`).
+3. Reiniciar `npm run dev` después de cambiar variables de entorno.
+4. En Supabase Auth > URL Configuration, agregar `http://localhost:5173` como redirect permitido.
+
+La app guarda automáticamente el `access_token` devuelto por Supabase en el hash de la URL al volver del login social.
