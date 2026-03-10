@@ -1,9 +1,9 @@
 import React from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CreditCard, Fuel, AlertTriangle, ArrowLeftRight, Truck, Clock, TrendingDown } from 'lucide-react';
+import { CreditCard, AlertTriangle, ArrowLeftRight, Truck, Clock, TrendingDown } from 'lucide-react';
 import { calcularSaldo, formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
