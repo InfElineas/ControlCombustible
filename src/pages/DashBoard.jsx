@@ -1,9 +1,9 @@
 import React from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CreditCard, Fuel, AlertTriangle, ArrowLeftRight, Truck, Clock, TrendingDown } from 'lucide-react';
+import { CreditCard, AlertTriangle, ArrowLeftRight, Truck, Clock, TrendingDown } from 'lucide-react';
 import { calcularSaldo, formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
@@ -20,7 +20,7 @@ function SectionTitle({ icon: Icon, title, color = 'text-slate-600', iconColor =
 export default function Dashboard() {
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
   const { data: vehiculos = [] } = useQuery({ queryKey: ['vehiculos'], queryFn: () => base44.entities.Vehiculo.list() });
-  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 1000) });
+  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha') });
 
   const tarjetasActivas = tarjetas.filter(t => t.activa);
   const saldos = tarjetasActivas.map(t => ({ ...t, saldo: calcularSaldo(t, movimientos) }));
