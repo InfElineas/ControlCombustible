@@ -26,6 +26,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     vehiculo_chapa: '',
     vehiculo_origen_chapa: '',
     combustible_id: '',
+    odometro: '',
     litros: '',
     monto: '',
     referencia: '',
@@ -48,6 +49,22 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     if (tipo !== 'COMPRA' || !precioVigente || !form.monto) return null;
     return parseFloat(form.monto) / precioVigente;
   }, [tipo, precioVigente, form.monto]);
+
+  const ultimaLecturaOdometro = useMemo(() => {
+    if (!form.vehiculo_chapa) return null;
+    const vehiculo = vehiculos.find(v => v.id === form.vehiculo_chapa);
+    if (!vehiculo) return null;
+
+    const comprasVehiculo = movimientos
+      .filter(m => m.tipo === 'COMPRA' && m.vehiculo_chapa === vehiculo.chapa && m.odometro != null)
+      .sort((a, b) => {
+        const fechaA = a.fecha || '';
+        const fechaB = b.fecha || '';
+        return fechaB.localeCompare(fechaA);
+      });
+
+    return comprasVehiculo[0]?.odometro ?? null;
+  }, [form.vehiculo_chapa, vehiculos, movimientos]);
 
   const calcularStockLitros = (vehiculoId, combustibleId) => {
     if (!vehiculoId || !combustibleId) return null;
@@ -89,6 +106,10 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       if (!form.vehiculo_chapa) e.vehiculo_chapa = 'Seleccione vehículo';
       if (!form.combustible_id) e.combustible_id = 'Seleccione combustible';
       if (!form.monto || parseFloat(form.monto) <= 0) e.monto = 'Monto > 0';
+      if (!form.odometro || parseFloat(form.odometro) < 0) e.odometro = 'Podómetro >= 0';
+      if (ultimaLecturaOdometro != null && parseFloat(form.odometro) < ultimaLecturaOdometro) {
+        e.odometro = `No puede ser menor a la última lectura (${ultimaLecturaOdometro} km)`;
+      }
       if (!precioVigente) e.combustible_id = 'Sin precio vigente para esta fecha';
     } else if (tipo === 'RECARGA') {
       if (!form.tarjeta_id) e.tarjeta_id = 'Seleccione tarjeta';
@@ -121,6 +142,16 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       data.combustible_nombre = combustible.nombre;
       data.precio = precioVigente;
       data.litros = litrosCalculados;
+      data.odometro = parseFloat(form.odometro);
+
+      if (ultimaLecturaOdometro != null && litrosCalculados > 0) {
+        const kmRecorridos = data.odometro - ultimaLecturaOdometro;
+        if (kmRecorridos > 0) {
+          data.km_recorridos = kmRecorridos;
+          data.rendimiento_km_l = kmRecorridos / litrosCalculados;
+          data.consumo_l_100km = (litrosCalculados / kmRecorridos) * 100;
+        }
+      }
     } else if (tipo === 'RECARGA') {
       data.tarjeta_id = tarjeta.id;
       data.tarjeta_alias = tarjeta.alias || tarjeta.id_tarjeta;
@@ -214,6 +245,14 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               <Label className="text-xs text-slate-500">Monto</Label>
               <Input type="number" step="0.01" min="0.01" value={form.monto} onChange={e => set('monto', e.target.value)} placeholder="0.00" className="mt-1" />
               {errors.monto && <p className="text-xs text-red-500 mt-1">{errors.monto}</p>}
+            </div>
+            <div>
+              <Label className="text-xs text-slate-500">Lectura podómetro (km)</Label>
+              <Input type="number" step="1" min="0" value={form.odometro} onChange={e => set('odometro', e.target.value)} placeholder="0" className="mt-1" />
+              {errors.odometro && <p className="text-xs text-red-500 mt-1">{errors.odometro}</p>}
+              <p className="text-xs text-slate-400 mt-1">
+                Última lectura: {ultimaLecturaOdometro != null ? `${ultimaLecturaOdometro} km` : 'sin registros'}
+              </p>
             </div>
             <div className="bg-slate-50 rounded-xl p-3 flex justify-between items-center">
               <span className="text-sm text-slate-500">Litros equivalentes</span>

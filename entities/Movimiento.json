@@ -60,6 +60,22 @@
       "type": "number",
       "description": "Litros (COMPRA y DESPACHO)"
     },
+    "odometro": {
+      "type": "number",
+      "description": "Lectura de podómetro/odómetro en km (MVP en COMPRA)"
+    },
+    "km_recorridos": {
+      "type": "number",
+      "description": "Kilómetros recorridos desde la lectura anterior"
+    },
+    "rendimiento_km_l": {
+      "type": "number",
+      "description": "Rendimiento estimado en km/L"
+    },
+    "consumo_l_100km": {
+      "type": "number",
+      "description": "Consumo estimado en L/100km"
+    },
     "referencia": {
       "type": "string",
       "description": "Nota/factura de referencia"

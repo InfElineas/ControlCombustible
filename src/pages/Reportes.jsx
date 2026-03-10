@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { CreditCard, Truck } from 'lucide-react';
+import { CreditCard, Gauge, Truck } from 'lucide-react';
 import { calcularSaldo, formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import CSVExport from '@/components/ui-helpers/CSVExport';
 
@@ -77,6 +77,30 @@ export default function Reportes() {
     }).filter(v => v.compras > 0 || v.activa);
   }, [vehiculos, movsFiltered]);
 
+  const reporteConsumo = useMemo(() => {
+    return vehiculos.map(v => {
+      const comprasConOdometro = movsFiltered.filter(
+        m => m.tipo === 'COMPRA' && m.vehiculo_chapa === v.chapa && m.odometro != null,
+      );
+
+      const litros = comprasConOdometro.reduce((sum, m) => sum + (m.litros || 0), 0);
+      const kmRecorridos = comprasConOdometro.reduce((sum, m) => sum + (m.km_recorridos || 0), 0);
+      const rendimientoKml = litros > 0 ? kmRecorridos / litros : null;
+      const consumoL100km = kmRecorridos > 0 ? (litros / kmRecorridos) * 100 : null;
+
+      return {
+        id: v.id,
+        chapa: v.chapa,
+        alias: v.alias || '',
+        registros: comprasConOdometro.length,
+        litros,
+        km_recorridos: kmRecorridos,
+        rendimiento_km_l: rendimientoKml,
+        consumo_l_100km: consumoL100km,
+      };
+    }).filter(v => v.registros > 0);
+  }, [vehiculos, movsFiltered]);
+
   const csvTarjetas = [
     { label: 'Tarjeta', accessor: 'tarjeta' },
     { label: 'Número', accessor: 'id_tarjeta' },
@@ -95,6 +119,16 @@ export default function Reportes() {
     { label: 'Monto', accessor: 'monto' },
     { label: 'Compras', accessor: 'compras' },
     { label: 'Desglose', accessor: r => Object.entries(r.desglose).map(([k, v]) => `${k}: ${v.litros.toFixed(1)}L`).join('; ') },
+  ];
+
+  const csvConsumo = [
+    { label: 'Chapa', accessor: 'chapa' },
+    { label: 'Alias', accessor: 'alias' },
+    { label: 'Registros con podómetro', accessor: 'registros' },
+    { label: 'Km recorridos', accessor: 'km_recorridos' },
+    { label: 'Litros', accessor: 'litros' },
+    { label: 'Rendimiento (km/L)', accessor: r => (r.rendimiento_km_l != null ? r.rendimiento_km_l.toFixed(2) : '') },
+    { label: 'Consumo (L/100km)', accessor: r => (r.consumo_l_100km != null ? r.consumo_l_100km.toFixed(2) : '') },
   ];
 
   return (
@@ -121,12 +155,15 @@ export default function Reportes() {
       </Card>
 
       <Tabs defaultValue="tarjetas">
-        <TabsList className="w-full grid grid-cols-2">
+        <TabsList className="w-full grid grid-cols-3">
           <TabsTrigger value="tarjetas" className="gap-1.5">
             <CreditCard className="w-3.5 h-3.5" /> Tarjetas
           </TabsTrigger>
           <TabsTrigger value="vehiculos" className="gap-1.5">
             <Truck className="w-3.5 h-3.5" /> Vehículos
+          </TabsTrigger>
+          <TabsTrigger value="consumo" className="gap-1.5">
+            <Gauge className="w-3.5 h-3.5" /> Consumo
           </TabsTrigger>
         </TabsList>
 
@@ -212,6 +249,48 @@ export default function Reportes() {
                     ))}
                     {reporteVehiculos.length === 0 && (
                       <TableRow><TableCell colSpan={6} className="text-center text-slate-400 py-8">Sin datos</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="consumo" className="mt-4">
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between">
+              <CardTitle className="text-sm font-semibold text-slate-700">Consumo por Podómetro (MVP)</CardTitle>
+              <CSVExport data={reporteConsumo} columns={csvConsumo} filename="reporte_consumo_podometro" />
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-50/50">
+                      <TableHead className="text-xs">Chapa</TableHead>
+                      <TableHead className="text-xs">Alias</TableHead>
+                      <TableHead className="text-xs text-right">Registros</TableHead>
+                      <TableHead className="text-xs text-right">Km</TableHead>
+                      <TableHead className="text-xs text-right">Litros</TableHead>
+                      <TableHead className="text-xs text-right">km/L</TableHead>
+                      <TableHead className="text-xs text-right">L/100km</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {reporteConsumo.map(r => (
+                      <TableRow key={r.id}>
+                        <TableCell className="text-sm font-medium">{r.chapa}</TableCell>
+                        <TableCell className="text-sm text-slate-500">{r.alias || '—'}</TableCell>
+                        <TableCell className="text-right text-sm text-slate-500">{r.registros}</TableCell>
+                        <TableCell className="text-right text-sm">{r.km_recorridos.toFixed(1)}</TableCell>
+                        <TableCell className="text-right text-sm">{r.litros.toFixed(1)}</TableCell>
+                        <TableCell className="text-right text-sm font-medium">{r.rendimiento_km_l != null ? r.rendimiento_km_l.toFixed(2) : '—'}</TableCell>
+                        <TableCell className="text-right text-sm font-medium">{r.consumo_l_100km != null ? r.consumo_l_100km.toFixed(2) : '—'}</TableCell>
+                      </TableRow>
+                    ))}
+                    {reporteConsumo.length === 0 && (
+                      <TableRow><TableCell colSpan={7} className="text-center text-slate-400 py-8">Sin lecturas de podómetro</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
