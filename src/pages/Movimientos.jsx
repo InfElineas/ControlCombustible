@@ -20,7 +20,7 @@ export default function Movimientos() {
   const queryClient = useQueryClient();
   const { data: movimientos = [], isLoading } = useQuery({
     queryKey: ['movimientos'],
-    queryFn: () => base44.entities.Movimiento.list('-fecha', 1000),
+    queryFn: () => base44.entities.Movimiento.list('-fecha'),
   });
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
   const { data: vehiculos = [] } = useQuery({ queryKey: ['vehiculos'], queryFn: () => base44.entities.Vehiculo.list() });
@@ -106,6 +106,7 @@ export default function Movimientos() {
                   <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="RECARGA">Recarga</SelectItem>
                   <SelectItem value="COMPRA">Compra</SelectItem>
+                  <SelectItem value="DESPACHO">Despacho</SelectItem>
                 </SelectContent>
               </Select>
             </div>

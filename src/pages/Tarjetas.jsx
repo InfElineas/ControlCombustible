@@ -18,7 +18,7 @@ const emptyForm = { id_tarjeta: '', alias: '', moneda: 'CUP', saldo_inicial: 0, 
 export default function Tarjetas() {
   const queryClient = useQueryClient();
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
-  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-created_date', 500) });
+  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-created_date') });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
