@@ -51,3 +51,14 @@ npm run lint
 npm run typecheck
 npm run build
 ```
+
+## Troubleshooting Supabase
+
+Si el navegador muestra `DNS_PROBE_FINISHED_NXDOMAIN` al iniciar sesión, revisa:
+
+1. Que `VITE_SUPABASE_URL` sea el dominio real de tu proyecto (`https://<project-ref>.supabase.co`).
+2. Que estés editando `.env.local` o `.env` (no solo `.env.example`).
+3. Reiniciar `npm run dev` después de cambiar variables de entorno.
+4. En Supabase Auth > URL Configuration, agregar `http://localhost:5173` como redirect permitido.
+
+La app guarda automáticamente el `access_token` devuelto por Supabase en el hash de la URL al volver del login social.

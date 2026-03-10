@@ -1,5 +1,7 @@
 import { appEnv } from '@/config/env';
 
+const supabaseUrl = String(appEnv.supabaseUrl || '').trim().replace(/\/+$/, '');
+
 function buildHeaders() {
   return {
     apikey: appEnv.supabaseAnonKey,
@@ -18,7 +20,7 @@ function parseOrder(orderBy) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${appEnv.supabaseUrl}${path}`, {
+  const response = await fetch(`${supabaseUrl}${path}`, {
     ...options,
     headers: {
       ...buildHeaders(),
