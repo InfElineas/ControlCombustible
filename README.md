@@ -62,3 +62,22 @@ Si el navegador muestra `DNS_PROBE_FINISHED_NXDOMAIN` al iniciar sesión, revisa
 4. En Supabase Auth > URL Configuration, agregar `http://localhost:5173` como redirect permitido.
 
 La app guarda automáticamente el `access_token` devuelto por Supabase en el hash de la URL al volver del login social.
+
+
+## Nota plugin Base44
+
+Por defecto el plugin de Base44 queda desactivado en local para evitar warnings/bloqueos.
+
+```bash
+VITE_ENABLE_BASE44_PLUGIN=false
+```
+
+Si necesitas activarlo explícitamente:
+
+```bash
+VITE_ENABLE_BASE44_PLUGIN=true
+```
+
+## Fallback local automático
+
+Si `VITE_DATA_MODE=supabase` pero no hay sesión activa en localhost, la app entra en fallback local para que puedas abrirla y seguir trabajando sin bloqueo de login.

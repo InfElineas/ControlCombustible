@@ -3,6 +3,9 @@ import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
 async function loadBase44Plugin() {
+  const shouldEnable = process.env.VITE_ENABLE_BASE44_PLUGIN === 'true'
+  if (!shouldEnable) return null
+
   try {
     const mod = await import('@base44/vite-plugin')
     return mod.default({

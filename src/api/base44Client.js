@@ -20,11 +20,9 @@ function isValidSupabaseUrl(url) {
   return /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url);
 }
 
-const normalizedSupabaseUrl = normalizeUrl(appEnv.supabaseUrl);
-const useSupabase = appEnv.dataMode === 'supabase' && isSupabaseConfigured && isValidSupabaseUrl(normalizedSupabaseUrl);
-
-function createEntity(tableName) {
-  return useSupabase ? createSupabaseRepository(tableName) : createLocalRepository(tableName);
+function isLocalhost() {
+  if (typeof window === 'undefined') return false;
+  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 }
 
 function readAccessTokenFromHash() {
@@ -44,6 +42,15 @@ function readAccessTokenFromHash() {
 function getAccessToken() {
   if (typeof window === 'undefined') return null;
   return readAccessTokenFromHash() || localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+const normalizedSupabaseUrl = normalizeUrl(appEnv.supabaseUrl);
+const supabaseEnabled = appEnv.dataMode === 'supabase' && isSupabaseConfigured && isValidSupabaseUrl(normalizedSupabaseUrl);
+const devLocalFallback = supabaseEnabled && isLocalhost() && !getAccessToken();
+const useSupabase = supabaseEnabled && !devLocalFallback;
+
+function createEntity(tableName) {
+  return useSupabase ? createSupabaseRepository(tableName, getAccessToken, AUTH_TOKEN_KEY) : createLocalRepository(tableName);
 }
 
 export const base44 = {
