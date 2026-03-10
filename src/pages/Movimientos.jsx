@@ -58,6 +58,7 @@ export default function Movimientos() {
     { label: 'Tarjeta', accessor: r => r.tarjeta_alias || r.tarjeta_id },
     { label: 'Vehículo', accessor: r => r.vehiculo_chapa || '' },
     { label: 'Combustible', accessor: r => r.combustible_nombre || '' },
+    { label: 'Podómetro (km)', accessor: r => r.odometro ?? '' },
     { label: 'Litros', accessor: r => r.litros || '' },
     { label: 'Precio', accessor: r => r.precio || '' },
     { label: 'Monto', accessor: 'monto' },
@@ -185,6 +186,7 @@ export default function Movimientos() {
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     {m.fecha}
                     {m.tipo === 'COMPRA' && m.litros ? ` · ${m.litros}L` : ''}
+                    {m.tipo === 'COMPRA' && m.odometro != null ? ` · ${m.odometro} km` : ''}
                     {m.referencia ? ` · ${m.referencia}` : ''}
                   </p>
                 </div>
