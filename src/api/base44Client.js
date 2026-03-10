@@ -20,9 +20,11 @@ function isValidSupabaseUrl(url) {
   return /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url);
 }
 
-function isLocalhost() {
-  if (typeof window === 'undefined') return false;
-  return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const normalizedSupabaseUrl = normalizeUrl(appEnv.supabaseUrl);
+const useSupabase = appEnv.dataMode === 'supabase' && isSupabaseConfigured && isValidSupabaseUrl(normalizedSupabaseUrl);
+
+function createEntity(tableName) {
+  return useSupabase ? createSupabaseRepository(tableName, getAccessToken, AUTH_TOKEN_KEY) : createLocalRepository(tableName);
 }
 
 function readAccessTokenFromHash() {
@@ -44,18 +46,27 @@ function getAccessToken() {
   return readAccessTokenFromHash() || localStorage.getItem(AUTH_TOKEN_KEY);
 }
 
-const normalizedSupabaseUrl = normalizeUrl(appEnv.supabaseUrl);
-const supabaseEnabled = appEnv.dataMode === 'supabase' && isSupabaseConfigured && isValidSupabaseUrl(normalizedSupabaseUrl);
-const devLocalFallback = supabaseEnabled && isLocalhost() && !getAccessToken();
-const useSupabase = supabaseEnabled && !devLocalFallback;
+async function requestAuth(path, options = {}) {
+  const response = await fetch(`${normalizedSupabaseUrl}${path}`, {
+    ...options,
+    headers: {
+      apikey: appEnv.supabaseAnonKey,
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  });
 
-function createEntity(tableName) {
-  return useSupabase ? createSupabaseRepository(tableName, getAccessToken, AUTH_TOKEN_KEY) : createLocalRepository(tableName);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.msg || payload?.error_description || payload?.error || `Error auth (${response.status})`);
+  }
+  return payload;
 }
 
 export const base44 = {
   entities: Object.fromEntries(Object.entries(ENTITY_MAP).map(([name, table]) => [name, createEntity(table)])),
   auth: {
+    isSupabaseEnabled: useSupabase,
     async me() {
       if (!useSupabase) {
         return { id: 'local-user', role: 'admin', full_name: 'Administrador' };
@@ -88,6 +99,38 @@ export const base44 = {
         full_name: user.user_metadata?.full_name || user.email,
         role: user.user_metadata?.role || 'operador',
       };
+    },
+    async signInWithPassword({ email, password }) {
+      if (!useSupabase) {
+        return { id: 'local-user', email: 'local@fuel.flow', role: 'admin', full_name: 'Administrador' };
+      }
+
+      const data = await requestAuth('/auth/v1/token?grant_type=password', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (data?.access_token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, data.access_token);
+      }
+      return data;
+    },
+    async signUpWithPassword({ email, password, fullName }) {
+      if (!useSupabase) {
+        return { user: { id: 'local-user', email } };
+      }
+
+      return requestAuth('/auth/v1/signup', {
+        method: 'POST',
+        body: JSON.stringify({
+          email,
+          password,
+          data: {
+            full_name: fullName || email,
+            role: 'operador',
+          },
+        }),
+      });
     },
     async logout() {
       if (!useSupabase) return;

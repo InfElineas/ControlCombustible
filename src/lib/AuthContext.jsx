@@ -34,6 +34,15 @@ export const AuthProvider = ({ children }) => {
     checkAppState();
   }, [checkAppState]);
 
+  const signInWithPassword = async (credentials) => {
+    await base44.auth.signInWithPassword(credentials);
+    await checkAppState();
+  };
+
+  const signUpWithPassword = async (payload) => {
+    return base44.auth.signUpWithPassword(payload);
+  };
+
   const logout = async () => {
     setUser(null);
     setIsAuthenticated(false);
@@ -53,6 +62,9 @@ export const AuthProvider = ({ children }) => {
         isLoadingPublicSettings,
         authError,
         appPublicSettings,
+        isSupabaseEnabled: base44.auth.isSupabaseEnabled,
+        signInWithPassword,
+        signUpWithPassword,
         logout,
         navigateToLogin,
         checkAppState,
