@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -20,7 +20,7 @@ export default function Movimientos() {
   const queryClient = useQueryClient();
   const { data: movimientos = [], isLoading } = useQuery({
     queryKey: ['movimientos'],
-    queryFn: () => base44.entities.Movimiento.list('-fecha', 1000),
+    queryFn: () => base44.entities.Movimiento.list('-fecha'),
   });
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
   const { data: vehiculos = [] } = useQuery({ queryKey: ['vehiculos'], queryFn: () => base44.entities.Vehiculo.list() });
@@ -106,6 +106,7 @@ export default function Movimientos() {
                   <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="RECARGA">Recarga</SelectItem>
                   <SelectItem value="COMPRA">Compra</SelectItem>
+                  <SelectItem value="DESPACHO">Despacho</SelectItem>
                 </SelectContent>
               </Select>
             </div>
