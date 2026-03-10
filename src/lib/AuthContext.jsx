@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
 
 const AuthContext = createContext();
@@ -11,11 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [authError, setAuthError] = useState(null);
   const [appPublicSettings, setAppPublicSettings] = useState(null);
 
-  useEffect(() => {
-    checkAppState();
-  }, []);
-
-  const checkAppState = async () => {
+  const checkAppState = useCallback(async () => {
     try {
       setAuthError(null);
       const currentUser = await base44.auth.me();
@@ -23,22 +19,29 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(true);
       setAppPublicSettings({ id: 'local-app', public_settings: {} });
     } catch (error) {
-      setAuthError({ type: 'unknown', message: error?.message || 'Error de autenticación' });
+      const message = error?.message || 'Error de autenticación';
+      const isAuthRequired = message.includes('No hay sesión activa') || message.includes('expiró');
+      setAuthError({ type: isAuthRequired ? 'auth_required' : 'unknown', message });
+      setUser(null);
       setIsAuthenticated(false);
     } finally {
       setIsLoadingAuth(false);
       setIsLoadingPublicSettings(false);
     }
-  };
+  }, []);
 
-  const logout = () => {
+  useEffect(() => {
+    checkAppState();
+  }, [checkAppState]);
+
+  const logout = async () => {
     setUser(null);
     setIsAuthenticated(false);
-    base44.auth.logout();
+    await base44.auth.logout();
   };
 
-  const navigateToLogin = () => {
-    base44.auth.redirectToLogin();
+  const navigateToLogin = (redirectTo) => {
+    base44.auth.redirectToLogin(redirectTo);
   };
 
   return (

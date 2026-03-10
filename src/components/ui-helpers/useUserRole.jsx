@@ -1,17 +1,7 @@
-import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { useAuth } from '@/lib/AuthContext';
 
 export function useUserRole() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    base44.auth.me().then(u => {
-      setUser(u);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, []);
-
+  const { user, isLoadingAuth } = useAuth();
   const isAdmin = user?.role === 'admin';
-  return { user, isAdmin, loading };
+  return { user, isAdmin, loading: isLoadingAuth };
 }
