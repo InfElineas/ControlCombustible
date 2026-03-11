@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { base44 } from '@/api/base44Client';
+import { useAuth } from '@/lib/AuthContext';
 
 const navItems = [
   { name: 'Dashboard', page: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'operador'] },
@@ -54,11 +54,12 @@ const adminOnlyPages = ['Tarjetas', 'Vehiculos', 'Combustibles', 'Precios'];
 
 export default function Layout({ children, currentPageName }) {
   const { user, isAdmin, loading } = useUserRole();
+  const { logout, navigateToLogin } = useAuth();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
-      base44.auth.redirectToLogin(window.location.href);
+      navigateToLogin(window.location.href);
     }
   }, [loading, user]);
 
@@ -111,7 +112,7 @@ export default function Layout({ children, currentPageName }) {
                 variant="ghost"
                 size="sm"
                 className="w-full justify-start text-xs text-slate-400 hover:text-red-500 px-0 h-7"
-                onClick={() => base44.auth.logout()}
+                onClick={logout}
               >
                 <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
               </Button>
@@ -142,7 +143,7 @@ export default function Layout({ children, currentPageName }) {
               variant="ghost"
               size="sm"
               className="w-full justify-start text-xs text-slate-400 hover:text-red-500 px-0 h-7"
-              onClick={() => base44.auth.logout()}
+              onClick={logout}
             >
               <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
             </Button>
