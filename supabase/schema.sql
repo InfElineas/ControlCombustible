@@ -104,3 +104,56 @@ create policy "allow authenticated write" on public.precios_combustible for all 
 
 create policy "allow authenticated read" on public.movimientos for select to authenticated using (true);
 create policy "allow authenticated write" on public.movimientos for all to authenticated using (true) with check (true);
+
+-- Roles de usuario (RBAC)
+create table if not exists public.perfiles (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null unique references auth.users(id) on delete cascade,
+  full_name text,
+  role text not null default 'operador' check (role in ('operador', 'admin', 'superadmin')),
+  created_date timestamptz not null default now()
+);
+
+alter table public.perfiles enable row level security;
+
+create policy "perfil own read" on public.perfiles
+for select to authenticated
+using (auth.uid() = user_id);
+
+-- Solo superadmin puede gestionar roles (ejecución vía SQL editor como postgres también aplica)
+create policy "perfil superadmin manage" on public.perfiles
+for all to authenticated
+using (
+  exists (
+    select 1 from public.perfiles p
+    where p.user_id = auth.uid() and p.role = 'superadmin'
+  )
+)
+with check (
+  exists (
+    select 1 from public.perfiles p
+    where p.user_id = auth.uid() and p.role = 'superadmin'
+  )
+);
+
+create or replace function public.handle_new_user_profile()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.perfiles (user_id, full_name, role)
+  values (new.id, coalesce(new.raw_user_meta_data->>'full_name', new.email), 'operador')
+  on conflict (user_id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute procedure public.handle_new_user_profile();
+
+-- Promover un usuario a superadmin (ejecutar en SQL Editor):
+-- update public.perfiles set role = 'superadmin' where user_id = '<UUID_DEL_USUARIO>';

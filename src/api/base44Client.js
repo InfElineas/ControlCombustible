@@ -46,6 +46,26 @@ function getAccessToken() {
   return readAccessTokenFromHash() || localStorage.getItem(AUTH_TOKEN_KEY);
 }
 
+
+async function fetchUserProfile(userId, token) {
+  const params = new URLSearchParams({
+    select: 'role,full_name',
+    user_id: `eq.${userId}`,
+    limit: '1',
+  });
+
+  const response = await fetch(`${normalizedSupabaseUrl}/rest/v1/perfiles?${params.toString()}`, {
+    headers: {
+      apikey: appEnv.supabaseAnonKey,
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) return null;
+  const rows = await response.json().catch(() => []);
+  return rows?.[0] || null;
+}
+
 async function requestAuth(path, options = {}) {
   const response = await fetch(`${normalizedSupabaseUrl}${path}`, {
     ...options,
@@ -93,11 +113,13 @@ export const base44 = {
       }
 
       const user = await response.json();
+      const profile = await fetchUserProfile(user.id, token);
+
       return {
         id: user.id,
         email: user.email,
-        full_name: user.user_metadata?.full_name || user.email,
-        role: user.user_metadata?.role || 'operador',
+        full_name: profile?.full_name || user.user_metadata?.full_name || user.email,
+        role: profile?.role || user.user_metadata?.role || 'operador',
       };
     },
     async signInWithPassword({ email, password }) {
@@ -127,7 +149,6 @@ export const base44 = {
           password,
           data: {
             full_name: fullName || email,
-            role: 'operador',
           },
         }),
       });

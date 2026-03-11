@@ -82,3 +82,35 @@ VITE_ENABLE_BASE44_PLUGIN=true
 ## Fallback local automático
 
 Si `VITE_DATA_MODE=supabase` pero no hay sesión activa en localhost, la app entra en fallback local para que puedas abrirla y seguir trabajando sin bloqueo de login.
+
+
+## Roles de usuarios en Supabase
+
+El sistema ahora usa la tabla `public.perfiles` para roles (`operador`, `admin`, `superadmin`).
+
+1. Ejecuta de nuevo `supabase/schema.sql` para crear `public.perfiles` y el trigger de alta automática.
+2. Registra/inicia sesión con el usuario que quieras promover.
+3. En Supabase SQL Editor, busca su UUID:
+
+```sql
+select id, email from auth.users order by created_at desc;
+```
+
+4. Promuévelo a superadmin:
+
+```sql
+update public.perfiles
+set role = 'superadmin'
+where user_id = '<UUID_DEL_USUARIO>';
+```
+
+5. Verifica roles:
+
+```sql
+select p.role, u.email
+from public.perfiles p
+join auth.users u on u.id = p.user_id
+order by p.created_date desc;
+```
+
+> Nota: `base44.auth.me()` prioriza el rol en `public.perfiles`; si no existe perfil, usa `user_metadata` como fallback.
