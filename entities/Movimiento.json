@@ -60,6 +60,10 @@
       "type": "number",
       "description": "Litros (COMPRA y DESPACHO)"
     },
+    "odometro": {
+      "type": "number",
+      "description": "Lectura de podómetro/odómetro en km (MVP en COMPRA)"
+    },
     "referencia": {
       "type": "string",
       "description": "Nota/factura de referencia"
