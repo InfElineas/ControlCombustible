@@ -40,7 +40,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   const signUpWithPassword = async (payload) => {
-    return base44.auth.signUpWithPassword(payload);
+    const result = await base44.auth.signUpWithPassword(payload);
+    if (result?.access_token || result?.session?.access_token) {
+      await checkAppState();
+    }
+    return result;
   };
 
   const logout = async () => {

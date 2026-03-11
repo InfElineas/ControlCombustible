@@ -1,0 +1,16 @@
+{
+  "name": "FuelFlow",
+  "short_name": "FuelFlow",
+  "description": "Gestión de combustible y tarjetas",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0ea5e9",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

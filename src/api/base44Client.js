@@ -78,7 +78,8 @@ async function requestAuth(path, options = {}) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload?.msg || payload?.error_description || payload?.error || `Error auth (${response.status})`);
+    const details = payload?.msg || payload?.error_description || payload?.error || payload?.message;
+    throw new Error(details ? `${details} (status ${response.status})` : `Error auth (${response.status})`);
   }
   return payload;
 }
@@ -139,10 +140,10 @@ export const base44 = {
     },
     async signUpWithPassword({ email, password, fullName }) {
       if (!useSupabase) {
-        return { user: { id: 'local-user', email } };
+        return { user: { id: 'local-user', email }, session: { access_token: 'local-token' } };
       }
 
-      return requestAuth('/auth/v1/signup', {
+      const data = await requestAuth('/auth/v1/signup', {
         method: 'POST',
         body: JSON.stringify({
           email,
@@ -152,6 +153,14 @@ export const base44 = {
           },
         }),
       });
+
+      if (data?.access_token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, data.access_token);
+      } else if (data?.session?.access_token) {
+        localStorage.setItem(AUTH_TOKEN_KEY, data.session.access_token);
+      }
+
+      return data;
     },
     async logout() {
       if (!useSupabase) return;

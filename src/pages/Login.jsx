@@ -29,10 +29,18 @@ export default function Login() {
   const submitRegister = async () => {
     setIsSubmitting(true);
     try {
-      await signUpWithPassword(register);
-      toast.success('Cuenta creada. Revisa tu correo para confirmar el acceso si aplica.');
+      const response = await signUpWithPassword(register);
+      if (response?.access_token || response?.session?.access_token) {
+        toast.success('Cuenta creada e inicio de sesión realizado.');
+      } else {
+        toast.success('Cuenta creada. Revisa tu correo para confirmar el acceso si aplica.');
+      }
     } catch (error) {
-      toast.error(error?.message || 'No se pudo crear la cuenta');
+      const message = error?.message || 'No se pudo crear la cuenta';
+      const signupHint = message.includes('status 422')
+        ? 'Verifica si Signups está habilitado en Supabase Auth y que el correo no exista ya.'
+        : message;
+      toast.error(signupHint);
     } finally {
       setIsSubmitting(false);
     }

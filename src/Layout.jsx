@@ -107,7 +107,7 @@ export default function Layout({ children, currentPageName }) {
           <SheetContent side="left" className="w-64 p-0 pt-10">
             <NavContent currentPageName={currentPageName} isAdmin={isAdmin} onNavigate={() => setOpen(false)} />
             <div className="absolute bottom-4 left-4 right-4">
-              <div className="text-xs text-slate-400 mb-2">{user?.full_name || user?.email} · {isAdmin ? 'Admin' : 'Operador'}</div>
+              <div className="text-xs text-slate-400 mb-2">{user?.full_name || user?.email} · {user?.role || (isAdmin ? 'admin' : 'operador')}</div>
               <Button
                 variant="ghost"
                 size="sm"
@@ -138,7 +138,7 @@ export default function Layout({ children, currentPageName }) {
           </div>
           <div className="p-4 border-t border-slate-50">
             <div className="text-xs text-slate-500 truncate">{user?.full_name || user?.email}</div>
-            <div className="text-[11px] text-slate-400 mb-2">{isAdmin ? 'Administrador' : 'Operador'}</div>
+            <div className="text-[11px] text-slate-400 mb-2">{user?.role === 'superadmin' ? 'Superadmin' : isAdmin ? 'Administrador' : 'Operador'}</div>
             <Button
               variant="ghost"
               size="sm"
