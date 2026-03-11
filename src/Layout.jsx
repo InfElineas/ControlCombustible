@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { base44 } from '@/api/base44Client';
+import { useAuth } from '@/lib/AuthContext';
 
 const navItems = [
   { name: 'Dashboard', page: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'operador'] },
@@ -54,11 +54,12 @@ const adminOnlyPages = ['Tarjetas', 'Vehiculos', 'Combustibles', 'Precios'];
 
 export default function Layout({ children, currentPageName }) {
   const { user, isAdmin, loading } = useUserRole();
+  const { logout, navigateToLogin } = useAuth();
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) {
-      base44.auth.redirectToLogin(window.location.href);
+      navigateToLogin(window.location.href);
     }
   }, [loading, user]);
 
@@ -92,10 +93,10 @@ export default function Layout({ children, currentPageName }) {
       {/* Top bar mobile */}
       <header className="lg:hidden sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-100 px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center">
-            <Fuel className="w-4 h-4 text-white" />
+          <div className="w-8 h-8 rounded-lg overflow-hidden shadow-sm">
+            <img src="/fuelflow-logo.svg" alt="FuelFlow" className="w-full h-full object-cover" />
           </div>
-          <span className="font-semibold text-slate-800 text-sm">Control Combustible</span>
+          <span className="font-semibold text-slate-800 text-sm">FuelFlow</span>
         </div>
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetTrigger asChild>
@@ -111,7 +112,7 @@ export default function Layout({ children, currentPageName }) {
                 variant="ghost"
                 size="sm"
                 className="w-full justify-start text-xs text-slate-400 hover:text-red-500 px-0 h-7"
-                onClick={() => base44.auth.logout()}
+                onClick={logout}
               >
                 <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
               </Button>
@@ -124,12 +125,12 @@ export default function Layout({ children, currentPageName }) {
         {/* Sidebar desktop */}
         <aside className="hidden lg:flex lg:flex-col lg:w-56 lg:fixed lg:inset-y-0 bg-white border-r border-slate-100">
           <div className="px-5 py-5 flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-sm">
-              <Fuel className="w-5 h-5 text-white" />
+            <div className="w-9 h-9 rounded-xl overflow-hidden shadow-sm">
+              <img src="/fuelflow-logo.svg" alt="FuelFlow" className="w-full h-full object-cover" />
             </div>
             <div>
-              <div className="font-bold text-slate-800 text-sm leading-tight">Control</div>
-              <div className="text-[11px] text-slate-400 leading-tight">Combustible</div>
+              <div className="font-bold text-slate-800 text-sm leading-tight">FuelFlow</div>
+              <div className="text-[11px] text-slate-400 leading-tight">Gestión de combustible</div>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
@@ -142,7 +143,7 @@ export default function Layout({ children, currentPageName }) {
               variant="ghost"
               size="sm"
               className="w-full justify-start text-xs text-slate-400 hover:text-red-500 px-0 h-7"
-              onClick={() => base44.auth.logout()}
+              onClick={logout}
             >
               <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
             </Button>
