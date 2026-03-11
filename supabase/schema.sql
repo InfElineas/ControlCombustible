@@ -224,7 +224,7 @@ from auth.users u
 left join public.perfiles p on p.user_id = u.id
 where p.user_id is null;
 
--- Bootstrap: crea primer superadmin por email (solo si no existe ninguno)
+-- Bootstrap/promoción: asegura perfil y promueve a superadmin por email
 create or replace function public.promote_superadmin_by_email(target_email text)
 returns void
 language plpgsql
@@ -233,25 +233,26 @@ set search_path = public
 as $$
 declare
   target_user_id uuid;
-  superadmins_count int;
 begin
-  select count(*) into superadmins_count from public.perfiles where role = 'superadmin';
-
-  if superadmins_count > 0 then
-    raise exception 'Ya existe al menos un superadmin.';
-  end if;
-
-  select id into target_user_id from auth.users where lower(email) = lower(target_email) limit 1;
+  select id into target_user_id
+  from auth.users
+  where lower(email) = lower(trim(target_email))
+  limit 1;
 
   if target_user_id is null then
     raise exception 'No existe usuario con email %', target_email;
   end if;
 
-  update public.perfiles
-  set role = 'superadmin'
-  where user_id = target_user_id;
+  insert into public.perfiles (user_id, full_name, role)
+  select u.id, coalesce(u.raw_user_meta_data->>'full_name', u.email), 'superadmin'
+  from auth.users u
+  where u.id = target_user_id
+  on conflict (user_id) do update
+    set role = 'superadmin';
 end;
 $$;
 
--- Uso inicial:
--- select public.promote_superadmin_by_email('tu_email@dominio.com');
+-- Uso:
+-- select public.promote_superadmin_by_email('informaticoelineas3@gmail.com');
+-- Verificación:
+-- select p.role, u.email from public.perfiles p join auth.users u on u.id = p.user_id where lower(u.email)=lower('informaticoelineas3@gmail.com');

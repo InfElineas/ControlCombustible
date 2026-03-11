@@ -89,7 +89,7 @@ Si `VITE_DATA_MODE=supabase` pero no hay sesión activa en localhost, la app ent
 El sistema ahora usa la tabla `public.perfiles` para roles (`operador`, `admin`, `superadmin`).
 
 1. Ejecuta de nuevo `supabase/schema.sql` para crear `public.perfiles`, trigger y backfill.
-2. Si aún no tienes superadmin, promueve el primer usuario por email:
+2. Promueve cualquier usuario por email a `superadmin` (crea perfil si faltaba):
 
 ```sql
 select public.promote_superadmin_by_email('tu_email@dominio.com');
@@ -113,3 +113,6 @@ where user_id = '<UUID_DEL_USUARIO>';
 ```
 
 > Nota: `base44.auth.me()` prioriza el rol en `public.perfiles`; si no existe perfil, usa `user_metadata` como fallback.
+
+
+> Tras cambiar roles, cierra sesión y vuelve a iniciar sesión para refrescar el perfil en la app.
