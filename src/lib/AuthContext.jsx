@@ -34,6 +34,29 @@ export const AuthProvider = ({ children }) => {
     checkAppState();
   }, [checkAppState]);
 
+  useEffect(() => {
+    const syncSession = () => {
+      checkAppState();
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        syncSession();
+      }
+    };
+
+    window.addEventListener('focus', syncSession);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    const intervalId = window.setInterval(syncSession, 60_000);
+
+    return () => {
+      window.removeEventListener('focus', syncSession);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.clearInterval(intervalId);
+    };
+  }, [checkAppState]);
+
   const signInWithPassword = async (credentials) => {
     await base44.auth.signInWithPassword(credentials);
     await checkAppState();
