@@ -95,7 +95,7 @@ create table if not exists public.perfiles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null unique references auth.users(id) on delete cascade,
   full_name text,
-  role text not null default 'operador' check (role in ('operador', 'admin', 'superadmin')),
+  role text not null default 'auditor' check (role in ('auditor', 'gestor', 'superadmin')),
   created_date timestamptz not null default now()
 );
 
@@ -114,17 +114,17 @@ stable
 security definer
 set search_path = public
 as $$
-  select coalesce((select p.role from public.perfiles p where p.user_id = auth.uid()), 'operador');
+  select coalesce((select p.role from public.perfiles p where p.user_id = auth.uid()), 'auditor');
 $$;
 
-create or replace function public.is_admin_user()
+create or replace function public.is_manager_user()
 returns boolean
 language sql
 stable
 security definer
 set search_path = public
 as $$
-  select public.current_user_role() in ('admin', 'superadmin');
+  select public.current_user_role() in ('gestor', 'superadmin');
 $$;
 
 create or replace function public.is_superadmin_user()
@@ -141,57 +141,64 @@ $$;
 -- combustibles
 drop policy if exists "combustibles read authenticated" on public.combustibles;
 drop policy if exists "combustibles write admin" on public.combustibles;
+drop policy if exists "combustibles write manager" on public.combustibles;
 create policy "combustibles read authenticated" on public.combustibles
 for select to authenticated using (true);
-create policy "combustibles write admin" on public.combustibles
-for all to authenticated using (public.is_admin_user()) with check (public.is_admin_user());
+create policy "combustibles write manager" on public.combustibles
+for all to authenticated using (public.is_manager_user()) with check (public.is_manager_user());
 
 -- tarjetas
 drop policy if exists "tarjetas read authenticated" on public.tarjetas;
 drop policy if exists "tarjetas write admin" on public.tarjetas;
+drop policy if exists "tarjetas write manager" on public.tarjetas;
 create policy "tarjetas read authenticated" on public.tarjetas
 for select to authenticated using (true);
-create policy "tarjetas write admin" on public.tarjetas
-for all to authenticated using (public.is_admin_user()) with check (public.is_admin_user());
+create policy "tarjetas write manager" on public.tarjetas
+for all to authenticated using (public.is_manager_user()) with check (public.is_manager_user());
 
 -- vehiculos
 drop policy if exists "vehiculos read authenticated" on public.vehiculos;
 drop policy if exists "vehiculos write admin" on public.vehiculos;
+drop policy if exists "vehiculos write manager" on public.vehiculos;
 create policy "vehiculos read authenticated" on public.vehiculos
 for select to authenticated using (true);
-create policy "vehiculos write admin" on public.vehiculos
-for all to authenticated using (public.is_admin_user()) with check (public.is_admin_user());
+create policy "vehiculos write manager" on public.vehiculos
+for all to authenticated using (public.is_manager_user()) with check (public.is_manager_user());
 
 -- precios
 drop policy if exists "precios read authenticated" on public.precios_combustible;
 drop policy if exists "precios write admin" on public.precios_combustible;
+drop policy if exists "precios write manager" on public.precios_combustible;
 create policy "precios read authenticated" on public.precios_combustible
 for select to authenticated using (true);
-create policy "precios write admin" on public.precios_combustible
-for all to authenticated using (public.is_admin_user()) with check (public.is_admin_user());
+create policy "precios write manager" on public.precios_combustible
+for all to authenticated using (public.is_manager_user()) with check (public.is_manager_user());
 
 -- movimientos
 drop policy if exists "movimientos read authenticated" on public.movimientos;
 drop policy if exists "movimientos insert authenticated" on public.movimientos;
 drop policy if exists "movimientos update admin" on public.movimientos;
 drop policy if exists "movimientos delete admin" on public.movimientos;
+drop policy if exists "movimientos update manager" on public.movimientos;
+drop policy if exists "movimientos delete manager" on public.movimientos;
 create policy "movimientos read authenticated" on public.movimientos
 for select to authenticated using (true);
 create policy "movimientos insert authenticated" on public.movimientos
-for insert to authenticated with check (auth.uid() is not null);
-create policy "movimientos update admin" on public.movimientos
-for update to authenticated using (public.is_admin_user()) with check (public.is_admin_user());
-create policy "movimientos delete admin" on public.movimientos
-for delete to authenticated using (public.is_admin_user());
+for insert to authenticated with check (public.is_manager_user());
+create policy "movimientos update manager" on public.movimientos
+for update to authenticated using (public.is_manager_user()) with check (public.is_manager_user());
+create policy "movimientos delete manager" on public.movimientos
+for delete to authenticated using (public.is_manager_user());
 
 -- perfiles
 drop policy if exists "perfiles own read" on public.perfiles;
 drop policy if exists "perfiles admin read" on public.perfiles;
+drop policy if exists "perfiles manager read" on public.perfiles;
 drop policy if exists "perfiles superadmin manage" on public.perfiles;
 create policy "perfiles own read" on public.perfiles
 for select to authenticated using (auth.uid() = user_id);
-create policy "perfiles admin read" on public.perfiles
-for select to authenticated using (public.is_admin_user());
+create policy "perfiles manager read" on public.perfiles
+for select to authenticated using (public.is_manager_user());
 create policy "perfiles superadmin manage" on public.perfiles
 for all to authenticated
 using (public.is_superadmin_user())
@@ -206,7 +213,7 @@ set search_path = public
 as $$
 begin
   insert into public.perfiles (user_id, full_name, role)
-  values (new.id, coalesce(new.raw_user_meta_data->>'full_name', new.email), 'operador')
+  values (new.id, coalesce(new.raw_user_meta_data->>'full_name', new.email), 'auditor')
   on conflict (user_id) do nothing;
   return new;
 end;
@@ -219,7 +226,7 @@ for each row execute procedure public.handle_new_user_profile();
 
 -- Backfill para usuarios creados antes del trigger
 insert into public.perfiles (user_id, full_name, role)
-select u.id, coalesce(u.raw_user_meta_data->>'full_name', u.email), 'operador'
+select u.id, coalesce(u.raw_user_meta_data->>'full_name', u.email), 'auditor'
 from auth.users u
 left join public.perfiles p on p.user_id = u.id
 where p.user_id is null;
@@ -249,6 +256,37 @@ begin
   where u.id = target_user_id
   on conflict (user_id) do update
     set role = 'superadmin';
+end;
+$$;
+
+create or replace function public.set_user_role_by_email(target_email text, new_role text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_user_id uuid;
+begin
+  if new_role not in ('auditor', 'gestor', 'superadmin') then
+    raise exception 'Rol inválido: %. Usa auditor, gestor o superadmin.', new_role;
+  end if;
+
+  select id into target_user_id
+  from auth.users
+  where lower(email) = lower(trim(target_email))
+  limit 1;
+
+  if target_user_id is null then
+    raise exception 'No existe usuario con email %', target_email;
+  end if;
+
+  insert into public.perfiles (user_id, full_name, role)
+  select u.id, coalesce(u.raw_user_meta_data->>'full_name', u.email), new_role
+  from auth.users u
+  where u.id = target_user_id
+  on conflict (user_id) do update
+    set role = excluded.role;
 end;
 $$;
 

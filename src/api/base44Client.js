@@ -145,7 +145,7 @@ export const base44 = {
     async me() {
       if (!useSupabase) {
         ensureSupabaseReady();
-        return { id: 'local-user', role: 'admin', full_name: 'Administrador' };
+        return { id: 'local-user', role: 'superadmin', full_name: 'Administrador local' };
       }
 
       const token = getAccessToken();
@@ -170,7 +170,7 @@ export const base44 = {
 
       const user = await response.json();
       const profile = await fetchUserProfile(user.id, token);
-      const resolvedRole = profile?.role || await fetchCurrentUserRole(token) || user.user_metadata?.role || 'operador';
+      const resolvedRole = profile?.role || await fetchCurrentUserRole(token) || user.user_metadata?.role || 'auditor';
 
       return {
         id: user.id,
@@ -182,7 +182,7 @@ export const base44 = {
     async signInWithPassword({ email, password }) {
       if (!useSupabase) {
         ensureSupabaseReady();
-        return { id: 'local-user', email: 'local@fuel.flow', role: 'admin', full_name: 'Administrador' };
+        return { id: 'local-user', email: 'local@fuel.flow', role: 'superadmin', full_name: 'Administrador local' };
       }
 
       const data = await requestAuth('/auth/v1/token?grant_type=password', {
