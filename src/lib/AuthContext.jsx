@@ -20,7 +20,10 @@ export const AuthProvider = ({ children }) => {
       setAppPublicSettings({ id: 'local-app', public_settings: {} });
     } catch (error) {
       const message = error?.message || 'Error de autenticación';
-      const isAuthRequired = message.includes('No hay sesión activa') || message.includes('expiró');
+      const isAuthRequired =
+        message.includes('No hay sesión activa')
+        || message.includes('expiró')
+        || message.includes('sesión local no es válida');
       setAuthError({ type: isAuthRequired ? 'auth_required' : 'unknown', message });
       setUser(null);
       setIsAuthenticated(false);

@@ -1,13 +1,45 @@
-function readRows(key) {
+const memoryStore = new Map();
+
+function getStorage() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return {
+      getItem: (key) => memoryStore.get(key) || null,
+      setItem: (key, value) => memoryStore.set(key, value),
+    };
+  }
+
   try {
-    return JSON.parse(localStorage.getItem(`cc_${key}`) || '[]');
+    const testKey = '__cc_storage_test__';
+    window.localStorage.setItem(testKey, '1');
+    window.localStorage.removeItem(testKey);
+    return window.localStorage;
+  } catch {
+    return {
+      getItem: (key) => memoryStore.get(key) || null,
+      setItem: (key, value) => memoryStore.set(key, value),
+    };
+  }
+}
+
+function readRows(key) {
+  const storage = getStorage();
+  try {
+    return JSON.parse(storage.getItem(`cc_${key}`) || '[]');
   } catch {
     return [];
   }
 }
 
 function writeRows(key, rows) {
-  localStorage.setItem(`cc_${key}`, JSON.stringify(rows));
+  const storage = getStorage();
+  storage.setItem(`cc_${key}`, JSON.stringify(rows));
+}
+
+function createId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `local-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
 function sortRows(rows, orderBy) {
@@ -31,7 +63,7 @@ export function createLocalRepository(tableName) {
       const rows = readRows(tableName);
       const row = {
         ...data,
-        id: data.id || crypto.randomUUID(),
+        id: data.id || createId(),
         created_date: data.created_date || new Date().toISOString(),
       };
       rows.push(row);
