@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
+import { canAccessPage } from '@/lib/roles';
 import {
   LayoutDashboard, List, CreditCard, Truck, Fuel,
   DollarSign, BarChart3, Menu, ChevronRight, LogOut
@@ -11,18 +12,17 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useAuth } from '@/lib/AuthContext';
 
 const navItems = [
-  { name: 'Dashboard', page: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'operador'] },
-  { name: 'Movimientos', page: 'Movimientos', icon: List, roles: ['admin', 'operador'] },
-  { name: 'Tarjetas', page: 'Tarjetas', icon: CreditCard, roles: ['admin'] },
-  { name: 'Vehículos', page: 'Vehiculos', icon: Truck, roles: ['admin'] },
-  { name: 'Combustibles', page: 'Combustibles', icon: Fuel, roles: ['admin'] },
-  { name: 'Precios', page: 'Precios', icon: DollarSign, roles: ['admin'] },
-  { name: 'Reportes', page: 'Reportes', icon: BarChart3, roles: ['admin', 'operador'] },
+  { name: 'Dashboard', page: 'Dashboard', icon: LayoutDashboard },
+  { name: 'Movimientos', page: 'Movimientos', icon: List },
+  { name: 'Tarjetas', page: 'Tarjetas', icon: CreditCard },
+  { name: 'Vehículos', page: 'Vehiculos', icon: Truck },
+  { name: 'Combustibles', page: 'Combustibles', icon: Fuel },
+  { name: 'Precios', page: 'Precios', icon: DollarSign },
+  { name: 'Reportes', page: 'Reportes', icon: BarChart3 },
 ];
 
-function NavContent({ currentPageName, isAdmin, onNavigate }) {
-  const role = isAdmin ? 'admin' : 'operador';
-  const filtered = navItems.filter(item => item.roles.includes(role));
+function NavContent({ currentPageName, role, onNavigate }) {
+  const filtered = navItems.filter((item) => canAccessPage(role, item.page));
 
   return (
     <nav className="flex flex-col gap-1 p-3">
@@ -49,11 +49,8 @@ function NavContent({ currentPageName, isAdmin, onNavigate }) {
   );
 }
 
-// Pages that require admin role
-const adminOnlyPages = ['Tarjetas', 'Vehiculos', 'Combustibles', 'Precios'];
-
 export default function Layout({ children, currentPageName }) {
-  const { user, isAdmin, loading } = useUserRole();
+  const { user, role, canEdit, loading } = useUserRole();
   const { logout, navigateToLogin } = useAuth();
   const [open, setOpen] = useState(false);
 
@@ -63,12 +60,11 @@ export default function Layout({ children, currentPageName }) {
     }
   }, [loading, user]);
 
-  // Redirect operadores trying to access admin-only pages
   useEffect(() => {
-    if (!loading && user && !isAdmin && adminOnlyPages.includes(currentPageName)) {
+    if (!loading && user && !canAccessPage(role, currentPageName)) {
       window.location.href = createPageUrl('Dashboard');
     }
-  }, [loading, user, isAdmin, currentPageName]);
+  }, [loading, user, role, currentPageName]);
 
   if (loading || !user) {
     return (
@@ -105,9 +101,9 @@ export default function Layout({ children, currentPageName }) {
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="w-64 p-0 pt-10">
-            <NavContent currentPageName={currentPageName} isAdmin={isAdmin} onNavigate={() => setOpen(false)} />
+            <NavContent currentPageName={currentPageName} role={role} onNavigate={() => setOpen(false)} />
             <div className="absolute bottom-4 left-4 right-4">
-              <div className="text-xs text-slate-400 mb-2">{user?.full_name || user?.email} · {user?.role || (isAdmin ? 'admin' : 'operador')}</div>
+              <div className="text-xs text-slate-400 mb-2">{user?.full_name || user?.email} · {role}</div>
               <Button
                 variant="ghost"
                 size="sm"
@@ -134,11 +130,13 @@ export default function Layout({ children, currentPageName }) {
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
-            <NavContent currentPageName={currentPageName} isAdmin={isAdmin} onNavigate={() => {}} />
+            <NavContent currentPageName={currentPageName} role={role} onNavigate={() => {}} />
           </div>
           <div className="p-4 border-t border-slate-50">
             <div className="text-xs text-slate-500 truncate">{user?.full_name || user?.email}</div>
-            <div className="text-[11px] text-slate-400 mb-2">{user?.role === 'superadmin' ? 'Superadmin' : isAdmin ? 'Administrador' : 'Operador'}</div>
+            <div className="text-[11px] text-slate-400 mb-2">
+              {role === 'superadmin' ? 'Superadmin' : canEdit ? 'Gestor' : 'Auditor'}
+            </div>
             <Button
               variant="ghost"
               size="sm"

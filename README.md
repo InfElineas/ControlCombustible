@@ -11,20 +11,20 @@ Aplicación React para control de tarjetas, combustible, movimientos y reportes.
 
 ## Modos de datos
 
-### 1) Local (por defecto)
-Usa `localStorage` y no requiere backend.
-
-```bash
-VITE_DATA_MODE=local
-```
-
-### 2) Supabase (preparado)
-Usa REST API de Supabase.
+### 1) Supabase (por defecto)
+Usa REST API de Supabase para guardar datos de la app y usuarios registrados.
 
 ```bash
 VITE_DATA_MODE=supabase
 VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+```
+
+### 2) Local (solo desarrollo)
+Usa `localStorage` y no requiere backend.
+
+```bash
+VITE_DATA_MODE=local
 ```
 
 > Copia `.env.example` a `.env.local` y ajusta valores.
@@ -35,7 +35,7 @@ VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 2. Ejecutar `supabase/schema.sql` en SQL Editor.
 3. Revisar y endurecer políticas RLS por organización/rol antes de producción.
 4. Configurar providers de Auth (ej. Google) y URL de redirección.
-5. Pasar a `VITE_DATA_MODE=supabase`.
+5. Confirmar `VITE_DATA_MODE=supabase`.
 
 ## Desarrollo
 
@@ -79,9 +79,13 @@ Si necesitas activarlo explícitamente:
 VITE_ENABLE_BASE44_PLUGIN=true
 ```
 
-## Fallback local automático
+## Dónde se guardan los datos
 
-Si `VITE_DATA_MODE=supabase` pero no hay sesión activa en localhost, la app entra en fallback local para que puedas abrirla y seguir trabajando sin bloqueo de login.
+- Con `VITE_DATA_MODE=supabase` (recomendado), **todo se guarda en Supabase**:
+  - Usuarios: `auth.users`.
+  - Roles: `public.perfiles`.
+  - Datos operativos: tablas `public.tarjetas`, `public.vehiculos`, `public.combustibles`, `public.precios_combustible`, `public.movimientos`.
+- Con `VITE_DATA_MODE=local`, los datos y usuarios se guardan solo en `localStorage` del navegador (modo de desarrollo local).
 
 
 
@@ -130,17 +134,24 @@ Este repo ya incluye una primera migración base en `supabase/migrations/2026031
 ## Tablas de usuarios y roles en Supabase
 
 - **Usuarios**: Supabase Auth guarda usuarios en `auth.users` (schema `auth`).
-- **Roles de la app**: se guardan en `public.perfiles` con `role in ('operador','admin','superadmin')`.
+- **Roles de la app**: se guardan en `public.perfiles` con `role in ('auditor','gestor','superadmin')`.
 
 ## Roles de usuarios en Supabase
 
-El sistema ahora usa la tabla `public.perfiles` para roles (`operador`, `admin`, `superadmin`).
+El sistema usa la tabla `public.perfiles` para roles (`auditor`, `gestor`, `superadmin`).
 
 1. Ejecuta de nuevo `supabase/schema.sql` para crear `public.perfiles`, trigger y backfill.
 2. Promueve cualquier usuario por email a `superadmin` (crea perfil si faltaba):
 
 ```sql
 select public.promote_superadmin_by_email('tu_email@dominio.com');
+```
+
+3. Asigna roles de operación:
+
+```sql
+select public.set_user_role_by_email('gestor@dominio.com', 'gestor');
+select public.set_user_role_by_email('auditor@dominio.com', 'auditor');
 ```
 
 3. Verifica roles:
@@ -160,15 +171,17 @@ from auth.users
 where lower(email) like '%informatico%';
 ```
 
-5. Cambia roles manualmente cuando ya exista superadmin:
+5. Si vienes de una base anterior con roles legacy (`admin`, `operador`), aplica migraciones con:
 
-```sql
-update public.perfiles
-set role = 'admin'
-where user_id = '<UUID_DEL_USUARIO>';
+```bash
+supabase db push
 ```
 
-> Nota: `base44.auth.me()` prioriza el rol en `public.perfiles`; si no existe perfil, usa `user_metadata` como fallback.
+Esto mapea automáticamente: `admin -> gestor`, `operador -> auditor`.
+
+> Nota: `base44.auth.me()` prioriza el rol en `public.perfiles`; si no existe perfil, usa `user_metadata` como fallback y por defecto la app trata el rol como `auditor`.
+
+Guía completa de reconexión a una nueva base y setup de roles: `docs/guia-nueva-base-supabase-y-roles.md`.
 
 
 > Tras cambiar roles, cierra sesión y vuelve a iniciar sesión para refrescar el perfil en la app.

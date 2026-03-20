@@ -11,6 +11,8 @@ const ENTITY_MAP = {
 };
 
 const AUTH_TOKEN_KEY = 'ff_supabase_access_token';
+const LOCAL_USERS_KEY = 'ff_local_users';
+const LOCAL_SESSION_KEY = 'ff_local_session_user_id';
 
 function normalizeUrl(url) {
   return String(url || '').trim().replace(/\/+$/, '');
@@ -20,11 +22,103 @@ function isValidSupabaseUrl(url) {
   return /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url);
 }
 
+function safeLocalStorageGet(key) {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeLocalStorageSet(key, value) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignorar errores de almacenamiento para evitar romper auth por restricciones del navegador.
+  }
+}
+
+function safeLocalStorageRemove(key) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignorar errores de almacenamiento para evitar romper auth por restricciones del navegador.
+  }
+}
+
+function readLocalUsers() {
+  const raw = safeLocalStorageGet(LOCAL_USERS_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalUsers(users) {
+  safeLocalStorageSet(LOCAL_USERS_KEY, JSON.stringify(users));
+}
+
+function createLocalUser({ email, password, fullName, role }) {
+  const now = new Date().toISOString();
+  const localRole = role || 'auditor';
+  return {
+    id: `local-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    email: String(email || '').trim().toLowerCase(),
+    password: String(password || ''),
+    full_name: fullName || email,
+    role: localRole,
+    created_date: now,
+  };
+}
+
+function saveLocalSession(userId) {
+  safeLocalStorageSet(LOCAL_SESSION_KEY, userId);
+  safeLocalStorageSet(AUTH_TOKEN_KEY, `local-token-${userId}`);
+}
+
+function clearLocalSession() {
+  safeLocalStorageRemove(LOCAL_SESSION_KEY);
+  safeLocalStorageRemove(AUTH_TOKEN_KEY);
+}
+
 const normalizedSupabaseUrl = normalizeUrl(appEnv.supabaseUrl);
 const useSupabase = isSupabaseMode && isSupabaseConfigured && isValidSupabaseUrl(normalizedSupabaseUrl);
 
+function createConfigErrorRepository(tableName) {
+  const configMessage = supabaseConfigIssue || 'Configuración de Supabase incompleta en .env.local';
+  const buildError = () => new Error(`[${tableName}] ${configMessage}`);
+  return {
+    async list() {
+      throw buildError();
+    },
+    async create() {
+      throw buildError();
+    },
+    async update() {
+      throw buildError();
+    },
+    async delete() {
+      throw buildError();
+    },
+  };
+}
+
 function createEntity(tableName) {
-  return useSupabase ? createSupabaseRepository(tableName, getAccessToken, AUTH_TOKEN_KEY) : createLocalRepository(tableName);
+  if (useSupabase) {
+    return createSupabaseRepository(tableName, getAccessToken, AUTH_TOKEN_KEY);
+  }
+
+  if (isSupabaseMode) {
+    return createConfigErrorRepository(tableName);
+  }
+
+  return createLocalRepository(tableName);
 }
 
 function readAccessTokenFromHash() {
@@ -36,14 +130,14 @@ function readAccessTokenFromHash() {
   const token = params.get('access_token');
   if (!token) return null;
 
-  localStorage.setItem(AUTH_TOKEN_KEY, token);
+  safeLocalStorageSet(AUTH_TOKEN_KEY, token);
   window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
   return token;
 }
 
 function getAccessToken() {
   if (typeof window === 'undefined') return null;
-  return readAccessTokenFromHash() || localStorage.getItem(AUTH_TOKEN_KEY);
+  return readAccessTokenFromHash() || safeLocalStorageGet(AUTH_TOKEN_KEY);
 }
 
 
@@ -118,7 +212,23 @@ export const base44 = {
     async me() {
       if (!useSupabase) {
         ensureSupabaseReady();
-        return { id: 'local-user', role: 'admin', full_name: 'Administrador' };
+        const userId = safeLocalStorageGet(LOCAL_SESSION_KEY);
+        if (!userId) {
+          throw new Error('No hay sesión activa en modo local. Inicia sesión para continuar.');
+        }
+
+        const user = readLocalUsers().find((candidate) => candidate.id === userId);
+        if (!user) {
+          clearLocalSession();
+          throw new Error('La sesión local no es válida. Inicia sesión nuevamente.');
+        }
+
+        return {
+          id: user.id,
+          email: user.email,
+          full_name: user.full_name,
+          role: user.role || 'auditor',
+        };
       }
 
       const token = getAccessToken();
@@ -135,7 +245,7 @@ export const base44 = {
 
       if (!response.ok) {
         if (response.status === 401) {
-          localStorage.removeItem(AUTH_TOKEN_KEY);
+          safeLocalStorageRemove(AUTH_TOKEN_KEY);
           throw new Error('La sesión expiró o es inválida. Vuelve a iniciar sesión.');
         }
         throw new Error(`No se pudo recuperar el usuario en Supabase (${response.status}).`);
@@ -143,7 +253,7 @@ export const base44 = {
 
       const user = await response.json();
       const profile = await fetchUserProfile(user.id, token);
-      const resolvedRole = profile?.role || await fetchCurrentUserRole(token) || user.user_metadata?.role || 'operador';
+      const resolvedRole = profile?.role || await fetchCurrentUserRole(token) || user.user_metadata?.role || 'auditor';
 
       return {
         id: user.id,
@@ -155,7 +265,14 @@ export const base44 = {
     async signInWithPassword({ email, password }) {
       if (!useSupabase) {
         ensureSupabaseReady();
-        return { id: 'local-user', email: 'local@fuel.flow', role: 'admin', full_name: 'Administrador' };
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const users = readLocalUsers();
+        const user = users.find((candidate) => candidate.email === normalizedEmail);
+        if (!user || user.password !== String(password || '')) {
+          throw new Error('Correo o contraseña inválidos en modo local.');
+        }
+        saveLocalSession(user.id);
+        return { access_token: `local-token-${user.id}`, user };
       }
 
       const data = await requestAuth('/auth/v1/token?grant_type=password', {
@@ -164,14 +281,34 @@ export const base44 = {
       });
 
       if (data?.access_token) {
-        localStorage.setItem(AUTH_TOKEN_KEY, data.access_token);
+        safeLocalStorageSet(AUTH_TOKEN_KEY, data.access_token);
       }
       return data;
     },
     async signUpWithPassword({ email, password, fullName }) {
       if (!useSupabase) {
         ensureSupabaseReady();
-        return { user: { id: 'local-user', email }, session: { access_token: 'local-token' } };
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        const normalizedPassword = String(password || '').trim();
+        if (!normalizedEmail || !normalizedPassword) {
+          throw new Error('Correo y contraseña son obligatorios.');
+        }
+
+        const users = readLocalUsers();
+        if (users.some((candidate) => candidate.email === normalizedEmail)) {
+          throw new Error('Ese correo ya está registrado en modo local.');
+        }
+
+        const role = users.length === 0 ? 'superadmin' : 'auditor';
+        const createdUser = createLocalUser({
+          email: normalizedEmail,
+          password: normalizedPassword,
+          fullName,
+          role,
+        });
+        writeLocalUsers([...users, createdUser]);
+        saveLocalSession(createdUser.id);
+        return { user: createdUser, session: { access_token: `local-token-${createdUser.id}` } };
       }
 
       const data = await requestAuth('/auth/v1/signup', {
@@ -186,9 +323,9 @@ export const base44 = {
       });
 
       if (data?.access_token) {
-        localStorage.setItem(AUTH_TOKEN_KEY, data.access_token);
+        safeLocalStorageSet(AUTH_TOKEN_KEY, data.access_token);
       } else if (data?.session?.access_token) {
-        localStorage.setItem(AUTH_TOKEN_KEY, data.session.access_token);
+        safeLocalStorageSet(AUTH_TOKEN_KEY, data.session.access_token);
       }
 
       return data;
@@ -196,6 +333,7 @@ export const base44 = {
     async logout() {
       if (!useSupabase) {
         ensureSupabaseReady();
+        clearLocalSession();
         return;
       }
       const token = getAccessToken();
@@ -208,11 +346,14 @@ export const base44 = {
           },
         });
       }
-      localStorage.removeItem(AUTH_TOKEN_KEY);
+      safeLocalStorageRemove(AUTH_TOKEN_KEY);
     },
     redirectToLogin(redirectTo = window.location.href) {
       if (!useSupabase) {
         ensureSupabaseReady();
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
         return;
       }
 
