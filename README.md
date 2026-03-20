@@ -11,20 +11,20 @@ Aplicación React para control de tarjetas, combustible, movimientos y reportes.
 
 ## Modos de datos
 
-### 1) Local (por defecto)
-Usa `localStorage` y no requiere backend.
-
-```bash
-VITE_DATA_MODE=local
-```
-
-### 2) Supabase (preparado)
-Usa REST API de Supabase.
+### 1) Supabase (por defecto)
+Usa REST API de Supabase para guardar datos de la app y usuarios registrados.
 
 ```bash
 VITE_DATA_MODE=supabase
 VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+```
+
+### 2) Local (solo desarrollo)
+Usa `localStorage` y no requiere backend.
+
+```bash
+VITE_DATA_MODE=local
 ```
 
 > Copia `.env.example` a `.env.local` y ajusta valores.
@@ -35,7 +35,7 @@ VITE_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
 2. Ejecutar `supabase/schema.sql` en SQL Editor.
 3. Revisar y endurecer políticas RLS por organización/rol antes de producción.
 4. Configurar providers de Auth (ej. Google) y URL de redirección.
-5. Pasar a `VITE_DATA_MODE=supabase`.
+5. Confirmar `VITE_DATA_MODE=supabase`.
 
 ## Desarrollo
 
@@ -79,9 +79,13 @@ Si necesitas activarlo explícitamente:
 VITE_ENABLE_BASE44_PLUGIN=true
 ```
 
-## Fallback local automático
+## Dónde se guardan los datos
 
-Si `VITE_DATA_MODE=supabase` pero no hay sesión activa en localhost, la app entra en fallback local para que puedas abrirla y seguir trabajando sin bloqueo de login.
+- Con `VITE_DATA_MODE=supabase` (recomendado), **todo se guarda en Supabase**:
+  - Usuarios: `auth.users`.
+  - Roles: `public.perfiles`.
+  - Datos operativos: tablas `public.tarjetas`, `public.vehiculos`, `public.combustibles`, `public.precios_combustible`, `public.movimientos`.
+- Con `VITE_DATA_MODE=local`, los datos y usuarios se guardan solo en `localStorage` del navegador (modo de desarrollo local).
 
 
 

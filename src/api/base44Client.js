@@ -90,8 +90,35 @@ function clearLocalSession() {
 const normalizedSupabaseUrl = normalizeUrl(appEnv.supabaseUrl);
 const useSupabase = isSupabaseMode && isSupabaseConfigured && isValidSupabaseUrl(normalizedSupabaseUrl);
 
+function createConfigErrorRepository(tableName) {
+  const configMessage = supabaseConfigIssue || 'Configuración de Supabase incompleta en .env.local';
+  const buildError = () => new Error(`[${tableName}] ${configMessage}`);
+  return {
+    async list() {
+      throw buildError();
+    },
+    async create() {
+      throw buildError();
+    },
+    async update() {
+      throw buildError();
+    },
+    async delete() {
+      throw buildError();
+    },
+  };
+}
+
 function createEntity(tableName) {
-  return useSupabase ? createSupabaseRepository(tableName, getAccessToken, AUTH_TOKEN_KEY) : createLocalRepository(tableName);
+  if (useSupabase) {
+    return createSupabaseRepository(tableName, getAccessToken, AUTH_TOKEN_KEY);
+  }
+
+  if (isSupabaseMode) {
+    return createConfigErrorRepository(tableName);
+  }
+
+  return createLocalRepository(tableName);
 }
 
 function readAccessTokenFromHash() {
