@@ -20,6 +20,33 @@ function isValidSupabaseUrl(url) {
   return /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(url);
 }
 
+function safeLocalStorageGet(key) {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeLocalStorageSet(key, value) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Ignorar errores de almacenamiento para evitar romper auth por restricciones del navegador.
+  }
+}
+
+function safeLocalStorageRemove(key) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignorar errores de almacenamiento para evitar romper auth por restricciones del navegador.
+  }
+}
+
 const normalizedSupabaseUrl = normalizeUrl(appEnv.supabaseUrl);
 const useSupabase = isSupabaseMode && isSupabaseConfigured && isValidSupabaseUrl(normalizedSupabaseUrl);
 
@@ -36,14 +63,14 @@ function readAccessTokenFromHash() {
   const token = params.get('access_token');
   if (!token) return null;
 
-  localStorage.setItem(AUTH_TOKEN_KEY, token);
+  safeLocalStorageSet(AUTH_TOKEN_KEY, token);
   window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
   return token;
 }
 
 function getAccessToken() {
   if (typeof window === 'undefined') return null;
-  return readAccessTokenFromHash() || localStorage.getItem(AUTH_TOKEN_KEY);
+  return readAccessTokenFromHash() || safeLocalStorageGet(AUTH_TOKEN_KEY);
 }
 
 
@@ -135,7 +162,7 @@ export const base44 = {
 
       if (!response.ok) {
         if (response.status === 401) {
-          localStorage.removeItem(AUTH_TOKEN_KEY);
+          safeLocalStorageRemove(AUTH_TOKEN_KEY);
           throw new Error('La sesión expiró o es inválida. Vuelve a iniciar sesión.');
         }
         throw new Error(`No se pudo recuperar el usuario en Supabase (${response.status}).`);
@@ -164,7 +191,7 @@ export const base44 = {
       });
 
       if (data?.access_token) {
-        localStorage.setItem(AUTH_TOKEN_KEY, data.access_token);
+        safeLocalStorageSet(AUTH_TOKEN_KEY, data.access_token);
       }
       return data;
     },
@@ -186,9 +213,9 @@ export const base44 = {
       });
 
       if (data?.access_token) {
-        localStorage.setItem(AUTH_TOKEN_KEY, data.access_token);
+        safeLocalStorageSet(AUTH_TOKEN_KEY, data.access_token);
       } else if (data?.session?.access_token) {
-        localStorage.setItem(AUTH_TOKEN_KEY, data.session.access_token);
+        safeLocalStorageSet(AUTH_TOKEN_KEY, data.session.access_token);
       }
 
       return data;
@@ -208,7 +235,7 @@ export const base44 = {
           },
         });
       }
-      localStorage.removeItem(AUTH_TOKEN_KEY);
+      safeLocalStorageRemove(AUTH_TOKEN_KEY);
     },
     redirectToLogin(redirectTo = window.location.href) {
       if (!useSupabase) {
