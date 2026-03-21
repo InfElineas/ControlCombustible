@@ -5,7 +5,7 @@ import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import { canAccessPage } from '@/lib/roles';
 import {
   LayoutDashboard, List, CreditCard, Truck, Fuel,
-  DollarSign, BarChart3, Menu, ChevronRight, LogOut
+  DollarSign, BarChart3, Menu, ChevronRight, LogOut, ClipboardList
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -18,6 +18,7 @@ const navItems = [
   { name: 'Vehículos', page: 'Vehiculos', icon: Truck },
   { name: 'Combustibles', page: 'Combustibles', icon: Fuel },
   { name: 'Precios', page: 'Precios', icon: DollarSign },
+  { name: 'Bitácora', page: 'BitacoraConsumo', icon: ClipboardList },
   { name: 'Reportes', page: 'Reportes', icon: BarChart3 },
 ];
 

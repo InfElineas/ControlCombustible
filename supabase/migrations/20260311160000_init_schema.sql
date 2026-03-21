@@ -70,6 +70,27 @@ create table if not exists public.movimientos (
   constraint chk_movimiento_precio check (precio is null or precio >= 0)
 );
 
+create table if not exists public.bitacora_consumo (
+  id uuid primary key default gen_random_uuid(),
+  chapa text not null,
+  fecha date not null,
+  combustible_litros_inicio numeric(12,3),
+  indice_consumo_fabricante_km numeric(12,4),
+  origen_entrada text,
+  combustible_litros_entrada numeric(12,3),
+  combustible_litros_consumo numeric(12,3),
+  final_en_tanque numeric(12,3),
+  odometro_inicio numeric(14,1),
+  odometro_final numeric(14,1),
+  km_recorrido numeric(14,1),
+  indice_consumo_momento_km numeric(12,4),
+  indice_consumo_acumulado numeric(12,4),
+  tipo_combustible text,
+  indice_consumo_real numeric(12,4),
+  created_by uuid references auth.users(id),
+  created_date timestamptz not null default now()
+);
+
 -- Compatibilidad con instalaciones existentes
 alter table public.movimientos add column if not exists created_by uuid references auth.users(id);
 alter table public.movimientos alter column created_by set default auth.uid();
@@ -107,6 +128,7 @@ alter table public.tarjetas enable row level security;
 alter table public.vehiculos enable row level security;
 alter table public.precios_combustible enable row level security;
 alter table public.movimientos enable row level security;
+alter table public.bitacora_consumo enable row level security;
 alter table public.perfiles enable row level security;
 
 -- Helpers RBAC
@@ -206,6 +228,14 @@ create policy "perfiles superadmin manage" on public.perfiles
 for all to authenticated
 using (public.is_superadmin_user())
 with check (public.is_superadmin_user());
+
+-- bitácora consumo
+drop policy if exists "bitacora read authenticated" on public.bitacora_consumo;
+drop policy if exists "bitacora write manager" on public.bitacora_consumo;
+create policy "bitacora read authenticated" on public.bitacora_consumo
+for select to authenticated using (true);
+create policy "bitacora write manager" on public.bitacora_consumo
+for all to authenticated using (public.is_manager_user()) with check (public.is_manager_user());
 
 -- Alta automática de perfil al crear usuario auth
 create or replace function public.handle_new_user_profile()

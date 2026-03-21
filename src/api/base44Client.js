@@ -8,6 +8,7 @@ const ENTITY_MAP = {
   TipoCombustible: 'combustibles',
   PrecioCombustible: 'precios_combustible',
   Movimiento: 'movimientos',
+  BitacoraConsumo: 'bitacora_consumo',
 };
 
 const AUTH_TOKEN_KEY = 'ff_supabase_access_token';

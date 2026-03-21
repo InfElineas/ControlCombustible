@@ -19,6 +19,7 @@ const PAGE_ROLE_ACCESS = {
   Vehiculos: ['superadmin', 'gestor'],
   Combustibles: ['superadmin', 'gestor'],
   Precios: ['superadmin', 'gestor'],
+  BitacoraConsumo: USER_ROLES,
   Reportes: USER_ROLES,
 };
 

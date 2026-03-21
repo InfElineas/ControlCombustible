@@ -97,6 +97,10 @@ VITE_ENABLE_BASE44_PLUGIN=true
   - Datos operativos: tablas `public.tarjetas`, `public.vehiculos`, `public.combustibles`, `public.precios_combustible`, `public.movimientos`.
 - Con `VITE_DATA_MODE=local`, los datos y usuarios se guardan solo en `localStorage` del navegador (modo de desarrollo local).
 
+### Bitácora de consumo (nuevo)
+
+Se agregó la página **Bitácora** para carga masiva CSV y consulta de registros con estos campos: chapa, fecha, litros de tanque/entrada/consumo, odómetros, km recorridos e índices de consumo.
+
 
 
 ## Conectar Supabase desde VS Code (CLI + migrations)
