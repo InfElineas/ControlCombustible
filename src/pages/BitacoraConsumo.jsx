@@ -31,8 +31,32 @@ function loadSheetJs() {
 
 function parseNumber(value) {
   if (value == null) return null;
-  const normalized = String(value).trim().replace(',', '.');
-  if (!normalized || normalized === '#REF!' || normalized === '#N/A') return null;
+  const raw = String(value).trim();
+  if (!raw || raw === '#REF!' || raw === '#N/A') return null;
+
+  const compact = raw.replace(/\s+/g, '');
+  const hasComma = compact.includes(',');
+  const hasDot = compact.includes('.');
+  let normalized = compact;
+
+  if (hasComma && hasDot) {
+    const lastComma = compact.lastIndexOf(',');
+    const lastDot = compact.lastIndexOf('.');
+    if (lastComma > lastDot) {
+      normalized = compact.replace(/\./g, '').replace(',', '.');
+    } else {
+      normalized = compact.replace(/,/g, '');
+    }
+  } else if (hasComma) {
+    const commaGroups = compact.match(/,/g)?.length || 0;
+    if (commaGroups > 1) {
+      normalized = compact.replace(/,/g, '');
+    } else {
+      const [left = '', right = ''] = compact.split(',');
+      normalized = right.length === 3 ? `${left}${right}` : `${left}.${right}`;
+    }
+  }
+
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
 }
@@ -51,7 +75,72 @@ function parseDate(value) {
   return `20${yy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
 
-function mapColumnsToRecord(cols = []) {
+function normalizeHeaderToken(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function buildHeaderLookup(headers = []) {
+  const tokenToIndex = {};
+  headers.forEach((header, index) => {
+    const token = normalizeHeaderToken(header);
+    if (token) tokenToIndex[token] = index;
+  });
+
+  const findIndex = (candidates) => {
+    for (const candidate of candidates) {
+      const exact = tokenToIndex[candidate];
+      if (Number.isInteger(exact)) return exact;
+    }
+    const entries = Object.entries(tokenToIndex);
+    for (const candidate of candidates) {
+      const partial = entries.find(([token]) => token.includes(candidate));
+      if (partial) return partial[1];
+    }
+    return -1;
+  };
+
+  return {
+    fecha: findIndex(['fecha']),
+    chapa: findIndex(['chapa', 'vehiculo', 'vehculo']),
+    tipo_combustible: findIndex(['tipodecombustible', 'combustible']),
+    combustible_litros_inicio: findIndex(['inicio']),
+    origen_entrada: findIndex(['tarjetas', 'origen']),
+    combustible_litros_entrada: findIndex(['entradacantidad']),
+    combustible_litros_consumo: findIndex(['salidacantidad', 'salidacantida']),
+    final_en_tanque: findIndex(['existenciacant', 'exitenciacant']),
+  };
+}
+
+function mapColumnsToRecord(cols = [], headerLookup = null) {
+  if (headerLookup) {
+    const pick = (index) => (index >= 0 ? cols[index] : null);
+
+    const record = {
+      chapa: String(pick(headerLookup.chapa) || '').trim(),
+      fecha: parseDate(pick(headerLookup.fecha)),
+      combustible_litros_inicio: parseNumber(pick(headerLookup.combustible_litros_inicio)),
+      indice_consumo_fabricante_km: null,
+      origen_entrada: String(pick(headerLookup.origen_entrada) || '').trim() || null,
+      combustible_litros_entrada: parseNumber(pick(headerLookup.combustible_litros_entrada)),
+      combustible_litros_consumo: parseNumber(pick(headerLookup.combustible_litros_consumo)),
+      final_en_tanque: parseNumber(pick(headerLookup.final_en_tanque)),
+      odometro_inicio: null,
+      odometro_final: null,
+      km_recorrido: null,
+      indice_consumo_momento_km: null,
+      indice_consumo_acumulado: null,
+      tipo_combustible: String(pick(headerLookup.tipo_combustible) || '').trim() || null,
+      indice_consumo_real: null,
+    };
+
+    if (!record.chapa || !record.fecha) return null;
+    return record;
+  }
+
   if (cols.length < 15) return null;
 
   const record = {
@@ -74,10 +163,6 @@ function mapColumnsToRecord(cols = []) {
 
   if (!record.chapa || !record.fecha) return null;
   return record;
-}
-
-function mapCsvLineToRecord(line) {
-  return mapColumnsToRecord(line.split(','));
 }
 
 export default function BitacoraConsumo() {
@@ -138,9 +223,12 @@ export default function BitacoraConsumo() {
 
       if (lines.length <= 1) throw new Error('No hay filas para importar');
       const delimiter = detectDelimiter(lines[0]);
+      const headerLookup = buildHeaderLookup(splitCsvLine(lines[0], delimiter));
 
       const dataLines = lines.slice(1);
-      const mapped = dataLines.map((line) => mapColumnsToRecord(splitCsvLine(line, delimiter))).filter(Boolean);
+      const mapped = dataLines
+        .map((line) => mapColumnsToRecord(splitCsvLine(line, delimiter), headerLookup))
+        .filter(Boolean);
       if (mapped.length === 0) throw new Error('No se encontraron registros válidos');
 
       for (const item of mapped) {
@@ -171,7 +259,11 @@ export default function BitacoraConsumo() {
         const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
         if (lines.length <= 1) throw new Error('No hay filas para importar');
         const delimiter = detectDelimiter(lines[0]);
-        mapped = lines.slice(1).map((line) => mapColumnsToRecord(splitCsvLine(line, delimiter))).filter(Boolean);
+        const headerLookup = buildHeaderLookup(splitCsvLine(lines[0], delimiter));
+        mapped = lines
+          .slice(1)
+          .map((line) => mapColumnsToRecord(splitCsvLine(line, delimiter), headerLookup))
+          .filter(Boolean);
       } else if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.ods')) {
         const XLSX = await loadSheetJs();
         const buffer = await file.arrayBuffer();
@@ -180,7 +272,8 @@ export default function BitacoraConsumo() {
         if (!firstSheet) throw new Error('El archivo no tiene hojas');
         const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { header: 1, raw: true });
         if (!Array.isArray(rows) || rows.length <= 1) throw new Error('No hay filas para importar');
-        mapped = rows.slice(1).map(mapColumnsToRecord).filter(Boolean);
+        const headerLookup = buildHeaderLookup(rows[0]);
+        mapped = rows.slice(1).map((row) => mapColumnsToRecord(row, headerLookup)).filter(Boolean);
       } else {
         throw new Error('Formato no soportado. Usa CSV, TXT, TSV, XLS, XLSX u ODS.');
       }
