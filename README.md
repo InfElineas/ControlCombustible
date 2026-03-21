@@ -159,6 +159,12 @@ El sistema usa la tabla `public.perfiles` para roles (`auditor`, `gestor`, `supe
 select public.promote_superadmin_by_email('tu_email@dominio.com');
 ```
 
+Para el caso específico solicitado:
+
+```sql
+select public.promote_superadmin_by_email('informaticoelineas3@gmail.com');
+```
+
 3. Asigna roles de operación:
 
 ```sql

@@ -63,7 +63,11 @@ export default function NuevoMovimientoForm({ onSuccess }) {
         return fechaB.localeCompare(fechaA);
       });
 
-    return comprasVehiculo[0]?.odometro ?? null;
+    if (comprasVehiculo.length > 0) {
+      return comprasVehiculo[0]?.odometro ?? null;
+    }
+
+    return vehiculo.odometro_inicial ?? null;
   }, [form.vehiculo_chapa, vehiculos, movimientos]);
 
   const kilometrosRecorridosCalculados = useMemo(() => {

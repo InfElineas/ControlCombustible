@@ -27,9 +27,12 @@ create table if not exists public.vehiculos (
   chapa text not null unique,
   alias text,
   area_centro text,
+  odometro_inicial numeric(14,1) not null default 0,
   activa boolean not null default true,
   created_date timestamptz not null default now()
 );
+
+alter table public.vehiculos add column if not exists odometro_inicial numeric(14,1) not null default 0;
 
 -- Historial de precios por combustible
 create table if not exists public.precios_combustible (
