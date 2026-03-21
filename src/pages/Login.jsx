@@ -25,6 +25,7 @@ export default function Login() {
   const [login, setLogin] = useState({ email: '', password: '' });
   const [register, setRegister] = useState({ fullName: '', email: '', password: '' });
   const [registerRole, setRegisterRole] = useState('auditor');
+  const selectedRole = registerRole; // Compatibilidad con llamadas antiguas.
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const isGoogleOAuthAvailable =
