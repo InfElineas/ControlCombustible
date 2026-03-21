@@ -7,6 +7,28 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 
+let sheetJsPromise = null;
+
+function loadSheetJs() {
+  if (typeof window === 'undefined') return Promise.reject(new Error('Navegador no disponible'));
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (sheetJsPromise) return sheetJsPromise;
+
+  sheetJsPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.XLSX) resolve(window.XLSX);
+      else reject(new Error('No se pudo cargar el parser XLSX'));
+    };
+    script.onerror = () => reject(new Error('Error cargando librería XLSX desde CDN'));
+    document.body.appendChild(script);
+  });
+
+  return sheetJsPromise;
+}
+
 function parseNumber(value) {
   if (value == null) return null;
   const normalized = String(value).trim().replace(',', '.');
@@ -16,6 +38,12 @@ function parseNumber(value) {
 }
 
 function parseDate(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    const parsedDate = new Date(excelEpoch.getTime() + value * 24 * 60 * 60 * 1000);
+    return parsedDate.toISOString().slice(0, 10);
+  }
+
   const raw = String(value || '').trim();
   if (!raw) return null;
   const [yy, mm, dd] = raw.split('/');
@@ -23,8 +51,7 @@ function parseDate(value) {
   return `20${yy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
 
-function mapCsvLineToRecord(line) {
-  const cols = line.split(',');
+function mapColumnsToRecord(cols = []) {
   if (cols.length < 15) return null;
 
   const record = {
@@ -47,6 +74,10 @@ function mapCsvLineToRecord(line) {
 
   if (!record.chapa || !record.fecha) return null;
   return record;
+}
+
+function mapCsvLineToRecord(line) {
+  return mapColumnsToRecord(line.split(','));
 }
 
 export default function BitacoraConsumo() {
@@ -88,6 +119,47 @@ export default function BitacoraConsumo() {
     },
   });
 
+  const importFileMutation = useMutation({
+    mutationFn: async (file) => {
+      if (!file) throw new Error('Selecciona un archivo primero');
+      const name = file.name.toLowerCase();
+
+      let mapped = [];
+
+      if (name.endsWith('.csv') || name.endsWith('.txt') || name.endsWith('.tsv')) {
+        const text = await file.text();
+        const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+        if (lines.length <= 1) throw new Error('No hay filas para importar');
+        mapped = lines.slice(1).map(mapCsvLineToRecord).filter(Boolean);
+      } else if (name.endsWith('.xlsx') || name.endsWith('.xls') || name.endsWith('.ods')) {
+        const XLSX = await loadSheetJs();
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const firstSheet = workbook.SheetNames[0];
+        if (!firstSheet) throw new Error('El archivo no tiene hojas');
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { header: 1, raw: true });
+        if (!Array.isArray(rows) || rows.length <= 1) throw new Error('No hay filas para importar');
+        mapped = rows.slice(1).map(mapColumnsToRecord).filter(Boolean);
+      } else {
+        throw new Error('Formato no soportado. Usa CSV, TXT, TSV, XLS, XLSX u ODS.');
+      }
+
+      if (mapped.length === 0) throw new Error('No se encontraron registros válidos');
+
+      for (const item of mapped) {
+        await base44.entities.BitacoraConsumo.create(item);
+      }
+      return mapped.length;
+    },
+    onSuccess: (count) => {
+      toast.success(`Archivo importado: ${count} registros`);
+      queryClient.invalidateQueries({ queryKey: ['bitacora_consumo'] });
+    },
+    onError: (error) => {
+      toast.error(error?.message || 'No se pudo importar el archivo');
+    },
+  });
+
   const preview = useMemo(() => rows.slice(0, 20), [rows]);
 
   return (
@@ -115,6 +187,16 @@ export default function BitacoraConsumo() {
             <Button onClick={() => importMutation.mutate(csvText)} disabled={importMutation.isPending || !csvText.trim()}>
               Importar contenido
             </Button>
+            <div className="border-t pt-3">
+              <p className="text-xs text-slate-500 mb-2">O importa un archivo (CSV, TXT, TSV, XLS, XLSX, ODS).</p>
+              <input
+                type="file"
+                accept=".csv,.txt,.tsv,.xls,.xlsx,.ods"
+                onChange={(e) => importFileMutation.mutate(e.target.files?.[0])}
+                disabled={importFileMutation.isPending}
+                className="text-xs"
+              />
+            </div>
           </CardContent>
         </Card>
       )}

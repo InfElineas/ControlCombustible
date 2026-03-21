@@ -99,7 +99,7 @@ VITE_ENABLE_BASE44_PLUGIN=true
 
 ### Bitácora de consumo (nuevo)
 
-Se agregó la página **Bitácora** para carga masiva CSV y consulta de registros con estos campos: chapa, fecha, litros de tanque/entrada/consumo, odómetros, km recorridos e índices de consumo.
+Se agregó la página **Bitácora** para carga masiva por texto pegado y archivos **CSV, TXT, TSV, XLS, XLSX y ODS**, más consulta de registros con campos de tanque, odómetros, km recorridos e índices de consumo.
 
 
 
