@@ -34,7 +34,7 @@ export default function Login() {
   const submitLogin = async () => {
     setIsSubmitting(true);
     try {
-      await signInWithPassword(login);
+      await signInWithPassword(login, selectedRole);
       toast.success('Sesión iniciada correctamente');
     } catch (error) {
       const message = error?.message || 'No se pudo iniciar sesión';
