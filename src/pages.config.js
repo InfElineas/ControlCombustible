@@ -59,6 +59,7 @@ import __Layout from './Layout.jsx';
 
 
 export const PAGES = {
+    "BitacoraConsumo": BitacoraConsumo,
     "Combustibles": Combustibles,
     "Configuracion": Configuracion,
     "Dashboard": Dashboard,
