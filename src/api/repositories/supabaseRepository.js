@@ -31,7 +31,11 @@ async function request(path, getAccessToken, authTokenKey, options = {}) {
 
   if (!response.ok) {
     if (response.status === 401 && authTokenKey && typeof window !== 'undefined') {
-      localStorage.removeItem(authTokenKey);
+      try {
+        localStorage.removeItem(authTokenKey);
+      } catch {
+        // Ignorar errores de almacenamiento; la sesión ya es inválida.
+      }
     }
     const errorBody = await response.text();
     throw new Error(`Supabase error (${response.status}): ${errorBody}`);
