@@ -195,6 +195,39 @@ function mapColumnsToRecord(cols = [], headerLookup = null) {
   return record;
 }
 
+function mapObjectToRecord(raw = {}) {
+  const normalized = {};
+  Object.entries(raw || {}).forEach(([key, value]) => {
+    normalized[normalizeHeaderToken(key)] = value;
+  });
+
+  const action = String(normalized.accion || '').trim().toUpperCase();
+  const isRecharge = action === 'RECARGA' || action === 'CARGA';
+  const origen = normalized.tarjeta ?? normalized.tarjetas ?? normalized.origen;
+  const chapa = normalized.chapa ?? normalized.vehiculo ?? normalized.vehculo ?? origen;
+
+  const record = {
+    chapa: String(chapa || '').trim(),
+    fecha: parseDate(normalized.fecha),
+    combustible_litros_inicio: parseNumber(normalized.inicio),
+    indice_consumo_fabricante_km: null,
+    origen_entrada: String(origen || '').trim() || null,
+    combustible_litros_entrada: isRecharge ? parseNumber(normalized.cargal ?? normalized.recargal) : null,
+    combustible_litros_consumo: isRecharge ? null : parseNumber(normalized.compral ?? normalized.salidacantidad),
+    final_en_tanque: parseNumber(normalized.existenciacant ?? normalized.exitenciacant),
+    odometro_inicio: null,
+    odometro_final: null,
+    km_recorrido: null,
+    indice_consumo_momento_km: null,
+    indice_consumo_acumulado: null,
+    tipo_combustible: String(normalized.tipocombustible || normalized.combustible || '').trim() || null,
+    indice_consumo_real: null,
+  };
+
+  if (!record.fecha || !record.chapa) return null;
+  return record;
+}
+
 export default function BitacoraConsumo() {
   const { canEdit } = useUserRole();
   const queryClient = useQueryClient();
@@ -284,7 +317,12 @@ export default function BitacoraConsumo() {
 
       let mapped = [];
 
-      if (name.endsWith('.csv') || name.endsWith('.txt') || name.endsWith('.tsv')) {
+      if (name.endsWith('.json')) {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        const rows = Array.isArray(parsed) ? parsed : [parsed];
+        mapped = rows.map(mapObjectToRecord).filter(Boolean);
+      } else if (name.endsWith('.csv') || name.endsWith('.txt') || name.endsWith('.tsv')) {
         const text = await file.text();
         const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
         if (lines.length <= 1) throw new Error('No hay filas para importar');
@@ -305,7 +343,7 @@ export default function BitacoraConsumo() {
         const headerLookup = buildHeaderLookup(rows[0]);
         mapped = rows.slice(1).map((row) => mapColumnsToRecord(row, headerLookup)).filter(Boolean);
       } else {
-        throw new Error('Formato no soportado. Usa CSV, TXT, TSV, XLS, XLSX u ODS.');
+        throw new Error('Formato no soportado. Usa JSON, CSV, TXT, TSV, XLS, XLSX u ODS.');
       }
 
       if (mapped.length === 0) throw new Error('No se encontraron registros válidos');
@@ -330,8 +368,8 @@ export default function BitacoraConsumo() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-slate-800">Bitácora de Consumo</h1>
-        <p className="text-xs text-slate-400">{rows.length} registros</p>
+        <h1 className="text-xl font-bold text-slate-800">Configuración</h1>
+        <p className="text-xs text-slate-400">Importación masiva de movimientos</p>
       </div>
 
       {canEdit && (
@@ -342,23 +380,21 @@ export default function BitacoraConsumo() {
               <CardTitle className="text-base">Carga masiva por CSV</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-xs text-slate-500">
-                Pega aquí el contenido CSV con cabecera (Chapa, Fecha, Combustible litros / Inicio en Tanque, ...).
-              </p>
+              <p className="text-xs text-slate-500">Pega aquí contenido CSV o JSON para importar movimientos masivos.</p>
               <Textarea
                 value={csvText}
                 onChange={(e) => setCsvText(e.target.value)}
                 className="min-h-[220px] font-mono text-xs"
-                placeholder="Chapa,Fecha,Combustible litros / Inicio en Tanque,..."
+                placeholder='Tarjeta,Fecha,Tipo Combustible,Precio,Carga L,Carga $,Compra L,Compra $,Chapa,Accion'
               />
               <Button onClick={() => importMutation.mutate(csvText)} disabled={importMutation.isPending || !csvText.trim()}>
                 Importar contenido
               </Button>
               <div className="border-t pt-3">
-                <p className="text-xs text-slate-500 mb-2">O importa un archivo (CSV, TXT, TSV, XLS, XLSX, ODS).</p>
+                <p className="text-xs text-slate-500 mb-2">O importa un archivo (JSON, CSV, TXT, TSV, XLS, XLSX, ODS).</p>
                 <input
                   type="file"
-                  accept=".csv,.txt,.tsv,.xls,.xlsx,.ods"
+                  accept=".json,.csv,.txt,.tsv,.xls,.xlsx,.ods"
                   onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                   disabled={importFileMutation.isPending}
                   className="text-xs"
