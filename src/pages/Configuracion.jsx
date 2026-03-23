@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import ImportGuide from '@/components/configuracion/ImportGuide';
+import ImportResultsTable from '@/components/configuracion/ImportResultsTable';
 import { Upload, FileJson, FileSpreadsheet, FileText } from 'lucide-react';
 
 let sheetJsPromise = null;
@@ -232,6 +233,7 @@ export default function Configuracion() {
   const { canEdit } = useUserRole();
   const queryClient = useQueryClient();
   const [selectedFile, setSelectedFile] = useState(null);
+  const [importResults, setImportResults] = useState([]);
   const fileInputRef = useRef(null);
 
   function splitCsvLine(line, delimiter = ',') {
@@ -313,10 +315,23 @@ export default function Configuracion() {
       for (const item of mapped) {
         await base44.entities.BitacoraConsumo.create(item);
       }
-      return mapped.length;
+      return mapped;
     },
-    onSuccess: (count) => {
-      toast.success(`Archivo importado: ${count} registros`);
+    onSuccess: (mappedRows) => {
+      const results = mappedRows.map((item) => ({
+        fecha: item.fecha,
+        accion: item.combustible_litros_entrada != null ? 'RECARGA' : 'COMPRA',
+        status: 'ok',
+        movimiento: {
+          fecha: item.fecha,
+          tarjeta_alias: item.origen_entrada || 'Reserva',
+          vehiculo_chapa: item.chapa,
+          combustible_nombre: item.tipo_combustible,
+          monto: item.combustible_litros_consumo ?? item.combustible_litros_entrada ?? null,
+        },
+      }));
+      setImportResults(results);
+      toast.success(`Archivo importado: ${mappedRows.length} registros`);
       setSelectedFile(null);
       queryClient.invalidateQueries({ queryKey: ['bitacora_consumo'] });
     },
@@ -329,7 +344,10 @@ export default function Configuracion() {
     event.preventDefault();
     event.stopPropagation();
     const file = event.dataTransfer?.files?.[0];
-    if (file) setSelectedFile(file);
+    if (file) {
+      setSelectedFile(file);
+      importFileMutation.mutate(file);
+    }
   };
 
   return (
@@ -370,7 +388,11 @@ export default function Configuracion() {
                   ref={fileInputRef}
                   type="file"
                   accept=".json,.csv,.txt,.tsv,.xls,.xlsx,.ods"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setSelectedFile(file);
+                    if (file) importFileMutation.mutate(file);
+                  }}
                   disabled={importFileMutation.isPending}
                   className="hidden"
                 />
@@ -378,14 +400,10 @@ export default function Configuracion() {
                   {selectedFile ? `Archivo seleccionado: ${selectedFile.name}` : 'No hay archivo seleccionado.'}
                 </div>
               </div>
-              <div className="flex justify-end">
-                <Button onClick={() => importFileMutation.mutate(selectedFile)} disabled={importFileMutation.isPending || !selectedFile}>
-                  {importFileMutation.isPending ? 'Importando...' : 'Importar'}
-                </Button>
-              </div>
             </CardContent>
           </Card>
           <ImportGuide />
+          <ImportResultsTable rows={importResults} mode="results" />
         </>
       )}
     </div>

@@ -26,24 +26,12 @@ const EXAMPLE_JSON = `[
     "Compra $": null,
     "Chapa": null,
     "Accion": "RECARGA"
-  },
-  {
-    "Origen": "Reserva",
-    "Fecha": "2026-01-04",
-    "Tipo Combustible": "Diesel",
-    "Precio": 1.1,
-    "Recarga L": null,
-    "Recarga $": null,
-    "Compra L": 25.0,
-    "Compra $": 27.5,
-    "Chapa": "W004393",
-    "Accion": "DESPACHO"
   }
 ]`;
 
 const CSV_EXAMPLE = `Tarjeta,Fecha,Tipo Combustible,Precio,Carga L,Carga $,Compra L,Compra $,Chapa,Accion
 9240069992278321,03/01/26,Diesel,1.3,0,,66,85.80,W004399,COMPRA
-9240069992278321,04/01/26,Carga,0,,1500,,,,RECARGA`;
+9240069992278321,04/01/26,Carga,0,,1500,,,, RECARGA`;
 
 export default function ImportGuide() {
   const [open, setOpen] = useState(false);
@@ -56,11 +44,7 @@ export default function ImportGuide() {
             <Info className="w-4 h-4 text-sky-500" />
             Guía de formato para importación
           </div>
-          {open ? (
-            <ChevronUp className="w-4 h-4 text-slate-400" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-slate-400" />
-          )}
+          {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
         </CardTitle>
       </CardHeader>
 
@@ -72,14 +56,14 @@ export default function ImportGuide() {
               <div className="space-y-1.5">
                 {[
                   { col: 'Tarjeta', desc: 'Número de tarjeta (debe estar registrada)' },
-                  { col: 'Fecha', desc: 'Formato DD/MM/YY, DD/MM/YYYY o YYYY-MM-DD' },
+                  { col: 'Fecha', desc: 'Formato DD/MM/YY o DD/MM/YYYY' },
                   { col: 'Tipo Combustible', desc: 'Diesel, Gasolina Especial, Gasolina Regular, Carga' },
-                  { col: 'Accion', desc: 'COMPRA, DESPACHO o RECARGA' },
-                  { col: 'Compra $', desc: 'Monto de la compra (solo COMPRA/DESPACHO)' },
+                  { col: 'Accion', desc: 'COMPRA o RECARGA' },
+                  { col: 'Compra $', desc: 'Monto de la compra (solo COMPRA)' },
                   { col: 'Carga $', desc: 'Monto de la recarga (solo RECARGA)' },
-                  { col: 'Chapa', desc: 'Matrícula del vehículo (si aplica)' },
-                  { col: 'Compra L', desc: 'Litros despachados o comprados (solo COMPRA/DESPACHO)' },
-                  { col: 'Precio', desc: 'Precio por litro' },
+                  { col: 'Chapa', desc: 'Matrícula del vehículo (solo COMPRA)' },
+                  { col: 'Compra L', desc: 'Litros comprados (solo COMPRA)' },
+                  { col: 'Precio', desc: 'Precio por litro (solo COMPRA)' },
                 ].map(({ col, desc }) => (
                   <div key={col} className="flex gap-2 text-xs">
                     <code className="shrink-0 px-1.5 py-0.5 bg-slate-100 rounded text-slate-700 font-mono">{col}</code>
@@ -103,16 +87,6 @@ export default function ImportGuide() {
                 </pre>
               </div>
             </div>
-          </div>
-
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs text-amber-700 space-y-1">
-            <p className="font-semibold">Notas importantes:</p>
-            <ul className="list-disc list-inside space-y-0.5">
-              <li>Las tarjetas deben estar previamente registradas en el sistema.</li>
-              <li>Los tipos de combustible deben coincidir con los tipos usados en la bitácora.</li>
-              <li>Los registros con datos críticos faltantes (como fecha o chapa en despachos) se omiten.</li>
-              <li>Los archivos CSV, TSV, TXT, XLS, XLSX y ODS son compatibles.</li>
-            </ul>
           </div>
         </CardContent>
       )}
