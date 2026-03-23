@@ -14,6 +14,10 @@
       "type": "string",
       "description": "\u00c1rea o centro de costo"
     },
+    "odometro_inicial": {
+      "type": "number",
+      "description": "Lectura inicial de odómetro en km al crear el vehículo"
+    },
     "activa": {
       "type": "boolean",
       "default": true,

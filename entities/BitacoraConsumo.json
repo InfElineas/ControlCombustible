@@ -1,0 +1,22 @@
+{
+  "name": "BitacoraConsumo",
+  "type": "object",
+  "properties": {
+    "chapa": { "type": "string" },
+    "fecha": { "type": "string", "format": "date" },
+    "combustible_litros_inicio": { "type": "number" },
+    "indice_consumo_fabricante_km": { "type": "number" },
+    "origen_entrada": { "type": "string" },
+    "combustible_litros_entrada": { "type": "number" },
+    "combustible_litros_consumo": { "type": "number" },
+    "final_en_tanque": { "type": "number" },
+    "odometro_inicio": { "type": "number" },
+    "odometro_final": { "type": "number" },
+    "km_recorrido": { "type": "number" },
+    "indice_consumo_momento_km": { "type": "number" },
+    "indice_consumo_acumulado": { "type": "number" },
+    "tipo_combustible": { "type": "string" },
+    "indice_consumo_real": { "type": "number" }
+  },
+  "required": ["chapa", "fecha"]
+}
