@@ -31,6 +31,36 @@ export default function Movimientos() {
   const [deleteId, setDeleteId] = useState(null);
   const [showNuevo, setShowNuevo] = useState(false);
 
+  const movimientosConRecorrido = useMemo(() => {
+    const comprasPorVehiculo = new Map();
+    const comprasOrdenadas = [...movimientos]
+      .filter((m) => m.tipo === 'COMPRA' && m.vehiculo_chapa && m.odometro != null)
+      .sort((a, b) => {
+        const fa = `${a.fecha || ''}|${a.created_date || ''}`;
+        const fb = `${b.fecha || ''}|${b.created_date || ''}`;
+        return fa.localeCompare(fb);
+      });
+
+    comprasOrdenadas.forEach((mov) => {
+      const historial = comprasPorVehiculo.get(mov.vehiculo_chapa) || [];
+      historial.push(mov);
+      comprasPorVehiculo.set(mov.vehiculo_chapa, historial);
+    });
+
+    return movimientos.map((mov) => {
+      if (mov.tipo !== 'COMPRA' || mov.odometro == null || !mov.vehiculo_chapa) {
+        return { ...mov, km_recorridos: null };
+      }
+
+      const historial = comprasPorVehiculo.get(mov.vehiculo_chapa) || [];
+      const index = historial.findIndex((item) => item.id === mov.id);
+      if (index <= 0) return { ...mov, km_recorridos: null };
+      const anterior = historial[index - 1];
+      const delta = Number(mov.odometro) - Number(anterior.odometro);
+      return { ...mov, km_recorridos: Number.isFinite(delta) && delta >= 0 ? delta : null };
+    });
+  }, [movimientos]);
+
   const deleteMutation = useMutation({
     mutationFn: (id) => base44.entities.Movimiento.delete(id),
     onSuccess: () => {
@@ -41,7 +71,7 @@ export default function Movimientos() {
   });
 
   const filtered = useMemo(() => {
-    return movimientos.filter(m => {
+    return movimientosConRecorrido.filter(m => {
       if (filters.fechaDesde && m.fecha < filters.fechaDesde) return false;
       if (filters.fechaHasta && m.fecha > filters.fechaHasta) return false;
       if (filters.tarjeta !== 'all' && m.tarjeta_id !== filters.tarjeta) return false;
@@ -50,7 +80,7 @@ export default function Movimientos() {
       if (filters.tipo !== 'all' && m.tipo !== filters.tipo) return false;
       return true;
     });
-  }, [movimientos, filters]);
+  }, [movimientosConRecorrido, filters]);
 
   const csvColumns = [
     { label: 'Fecha', accessor: 'fecha' },
@@ -59,6 +89,7 @@ export default function Movimientos() {
     { label: 'Vehículo', accessor: r => r.vehiculo_chapa || '' },
     { label: 'Combustible', accessor: r => r.combustible_nombre || '' },
     { label: 'Podómetro (km)', accessor: r => r.odometro ?? '' },
+    { label: 'Km recorridos', accessor: r => r.km_recorridos ?? '' },
     { label: 'Litros', accessor: r => r.litros || '' },
     { label: 'Precio', accessor: r => r.precio || '' },
     { label: 'Monto', accessor: 'monto' },
@@ -186,7 +217,8 @@ export default function Movimientos() {
                   <p className="text-[11px] text-slate-400 mt-0.5">
                     {m.fecha}
                     {m.tipo === 'COMPRA' && m.litros ? ` · ${m.litros}L` : ''}
-                    {m.tipo === 'COMPRA' && m.odometro != null ? ` · ${m.odometro} km` : ''}
+                    {m.tipo === 'COMPRA' && m.odometro != null ? ` · Odómetro: ${m.odometro} km` : ''}
+                    {m.tipo === 'COMPRA' && m.km_recorridos != null ? ` · Recorrido: ${m.km_recorridos.toFixed(1)} km` : ''}
                     {m.referencia ? ` · ${m.referencia}` : ''}
                   </p>
                 </div>
