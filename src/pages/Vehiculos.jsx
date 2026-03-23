@@ -11,7 +11,7 @@ import { Plus, Pencil, Power, Trash2, Truck } from 'lucide-react';
 import StatusBadge from '@/components/ui-helpers/StatusBadge';
 import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
 
-const emptyForm = { chapa: '', alias: '', area_centro: '', activa: true };
+const emptyForm = { chapa: '', alias: '', area_centro: '', odometro_inicial: '', activa: true };
 
 export default function Vehiculos() {
   const queryClient = useQueryClient();
@@ -40,19 +40,33 @@ export default function Vehiculos() {
 
   const openEdit = (v) => {
     setEditing(v);
-    setForm({ chapa: v.chapa, alias: v.alias || '', area_centro: v.area_centro || '', activa: v.activa });
+    setForm({
+      chapa: v.chapa,
+      alias: v.alias || '',
+      area_centro: v.area_centro || '',
+      odometro_inicial: v.odometro_inicial ?? '',
+      activa: v.activa,
+    });
     setDialogOpen(true);
   };
 
   const handleSave = () => {
     if (!form.chapa.trim()) { toast.error('Chapa/matrícula requerida'); return; }
+    if (form.odometro_inicial !== '' && (Number.isNaN(Number(form.odometro_inicial)) || Number(form.odometro_inicial) < 0)) {
+      toast.error('La lectura inicial de odómetro debe ser un número mayor o igual a 0');
+      return;
+    }
     if (!editing && vehiculos.some(v => v.chapa === form.chapa.trim())) {
       toast.error('Ya existe un vehículo con esa chapa'); return;
     }
+    const payload = {
+      ...form,
+      odometro_inicial: form.odometro_inicial === '' ? 0 : Number(form.odometro_inicial),
+    };
     if (editing) {
-      updateMut.mutate({ id: editing.id, d: form });
+      updateMut.mutate({ id: editing.id, d: payload });
     } else {
-      createMut.mutate(form);
+      createMut.mutate(payload);
     }
   };
 
@@ -88,7 +102,11 @@ export default function Vehiculos() {
                   <span className="text-sm font-semibold text-slate-700">{v.chapa}</span>
                   <StatusBadge active={v.activa} />
                 </div>
-                <p className="text-xs text-slate-400 truncate">{v.alias || 'Sin alias'}{v.area_centro ? ` · ${v.area_centro}` : ''}</p>
+                <p className="text-xs text-slate-400 truncate">
+                  {v.alias || 'Sin alias'}
+                  {v.area_centro ? ` · ${v.area_centro}` : ''}
+                  {v.odometro_inicial != null ? ` · Odómetro inicial: ${v.odometro_inicial} km` : ''}
+                </p>
               </div>
               <div className="flex gap-1 shrink-0">
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(v)}><Pencil className="w-3.5 h-3.5" /></Button>
@@ -116,6 +134,18 @@ export default function Vehiculos() {
             <div>
               <Label className="text-xs text-slate-500">Área/Centro</Label>
               <Input value={form.area_centro} onChange={e => setForm(f => ({ ...f, area_centro: e.target.value }))} placeholder="Departamento o centro" className="mt-1" />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-500">Lectura inicial de odómetro (km)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={form.odometro_inicial}
+                onChange={e => setForm(f => ({ ...f, odometro_inicial: e.target.value }))}
+                placeholder="0"
+                className="mt-1"
+              />
             </div>
           </div>
           <DialogFooter>
