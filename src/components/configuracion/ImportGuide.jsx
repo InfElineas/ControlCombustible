@@ -26,6 +26,18 @@ const EXAMPLE_JSON = `[
     "Compra $": null,
     "Chapa": null,
     "Accion": "RECARGA"
+  },
+  {
+    "Origen": "Reserva",
+    "Fecha": "2026-01-04",
+    "Tipo Combustible": "Diesel",
+    "Precio": 1.1,
+    "Recarga L": null,
+    "Recarga $": null,
+    "Compra L": 25.0,
+    "Compra $": 27.5,
+    "Chapa": "W004393",
+    "Accion": "DESPACHO"
   }
 ]`;
 
@@ -58,7 +70,7 @@ export default function ImportGuide() {
                   { col: 'Tarjeta', desc: 'Número de tarjeta (debe estar registrada)' },
                   { col: 'Fecha', desc: 'Formato DD/MM/YY o DD/MM/YYYY' },
                   { col: 'Tipo Combustible', desc: 'Diesel, Gasolina Especial, Gasolina Regular, Carga' },
-                  { col: 'Accion', desc: 'COMPRA o RECARGA' },
+                  { col: 'Accion', desc: 'COMPRA, DESPACHO o RECARGA' },
                   { col: 'Compra $', desc: 'Monto de la compra (solo COMPRA)' },
                   { col: 'Carga $', desc: 'Monto de la recarga (solo RECARGA)' },
                   { col: 'Chapa', desc: 'Matrícula del vehículo (solo COMPRA)' },

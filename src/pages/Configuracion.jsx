@@ -164,6 +164,7 @@ function mapColumnsToRecord(cols = [], headerLookup = null) {
       indice_consumo_acumulado: null,
       tipo_combustible: String(pick(headerLookup.tipo_combustible) || '').trim() || null,
       indice_consumo_real: null,
+      _accion: action || (isRecharge ? 'RECARGA' : 'COMPRA'),
     };
 
     if (!record.fecha || (!record.chapa && !record.origen_entrada)) return null;
@@ -223,10 +224,16 @@ function mapObjectToRecord(raw = {}) {
     indice_consumo_acumulado: null,
     tipo_combustible: String(normalized.tipocombustible || normalized.combustible || '').trim() || null,
     indice_consumo_real: null,
+    _accion: action || (isRecharge ? 'RECARGA' : 'COMPRA'),
   };
 
   if (!record.fecha || !record.chapa) return null;
   return record;
+}
+
+function sanitizeRecordForCreate(record) {
+  const { _accion, ...clean } = record || {};
+  return clean;
 }
 
 export default function Configuracion() {
@@ -335,23 +342,24 @@ export default function Configuracion() {
       const errors = [];
       const warnings = [];
       const accion = item.combustible_litros_entrada != null ? 'RECARGA' : 'COMPRA';
+      const displayAction = String(item._accion || accion).toUpperCase();
       const tarjeta = String(item.origen_entrada || '').trim();
       const chapa = String(item.chapa || '').trim().toUpperCase();
       const combustible = String(item.tipo_combustible || '').trim();
 
-      if (accion !== 'RECARGA' && chapa && !vehiculoSet.has(chapa)) errors.push('Vehículo no registrado');
+      if (displayAction !== 'RECARGA' && chapa && !vehiculoSet.has(chapa)) errors.push('Vehículo no registrado');
       if (tarjeta && /^\d+$/.test(tarjeta) && !tarjetaSet.has(tarjeta)) warnings.push('Tarjeta no registrada');
       if (combustible && !combustibleSet.has(combustible.toLowerCase())) errors.push('Combustible no registrado');
 
       return {
         record: item,
         fecha: item.fecha,
-        accion,
+        accion: displayAction,
         row: { Tarjeta: tarjeta, Chapa: item.chapa, 'Tipo Combustible': combustible },
         movimiento: {
           fecha: item.fecha,
           tarjeta_alias: tarjeta ? `Tarjeta #${tarjeta.slice(-5)}` : 'Reserva',
-          vehiculo_chapa: accion === 'RECARGA' ? '—' : item.chapa,
+          vehiculo_chapa: displayAction === 'RECARGA' ? '—' : item.chapa,
           combustible_nombre: combustible || '—',
           monto: item.combustible_litros_consumo ?? item.combustible_litros_entrada ?? null,
         },
@@ -370,7 +378,7 @@ export default function Configuracion() {
           continue;
         }
         try {
-          await base44.entities.BitacoraConsumo.create(row.record);
+          await base44.entities.BitacoraConsumo.create(sanitizeRecordForCreate(row.record));
           results.push({ ...row, status: 'ok' });
         } catch (error) {
           results.push({ ...row, status: 'error', errors: [error?.message || 'Error al crear registro'] });
