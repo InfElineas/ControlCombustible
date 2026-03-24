@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CreditCard, AlertTriangle, ArrowLeftRight, Truck, Clock, TrendingDown } from 'lucide-react';
 import { calcularSaldo, formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import { Link } from 'react-router-dom';
@@ -18,6 +19,7 @@ function SectionTitle({ icon: Icon, title, color = 'text-slate-600', iconColor =
 }
 
 export default function Dashboard() {
+  const [detailVehiculo, setDetailVehiculo] = useState(null);
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
   const { data: vehiculos = [] } = useQuery({ queryKey: ['vehiculos'], queryFn: () => base44.entities.Vehiculo.list() });
   const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha') });
@@ -56,6 +58,28 @@ export default function Dashboard() {
     if (b.diasSinAbast === null) return -1;
     return b.diasSinAbast - a.diasSinAbast;
   });
+
+  const detalleVehiculo = useMemo(() => {
+    if (!detailVehiculo) return null;
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+    const sinceIso = since.toISOString().slice(0, 10);
+    const movs = movimientos
+      .filter((m) => (m.vehiculo_chapa === detailVehiculo.chapa || m.vehiculo_origen_chapa === detailVehiculo.chapa) && (m.fecha || '') >= sinceIso)
+      .sort((a, b) => `${b.fecha || ''}`.localeCompare(`${a.fecha || ''}`));
+    const compras = movs.filter((m) => m.tipo === 'COMPRA' && m.vehiculo_chapa === detailVehiculo.chapa);
+    const litros = compras.reduce((s, m) => s + Number(m.litros || 0), 0);
+    const monto = compras.reduce((s, m) => s + Number(m.monto || 0), 0);
+    const comprasConOdo = compras.filter((m) => Number.isFinite(Number(m.odometro))).sort((a, b) => `${a.fecha || ''}`.localeCompare(`${b.fecha || ''}`));
+    const km = comprasConOdo.length >= 2 ? Number(comprasConOdo[comprasConOdo.length - 1].odometro) - Number(comprasConOdo[0].odometro) : 0;
+    return {
+      movs,
+      kmPorLitro: litros > 0 && km > 0 ? km / litros : null,
+      costoPorKm: km > 0 ? monto / km : null,
+      compras: compras.length,
+      despachos: movs.filter((m) => m.tipo === 'DESPACHO').length,
+    };
+  }, [detailVehiculo, movimientos]);
 
   // Resumen del mes actual
   const mesActual = hoy.toISOString().slice(0, 7);
@@ -191,7 +215,7 @@ export default function Dashboard() {
               const color = dias === null ? 'text-slate-400' : dias > 14 ? 'text-red-500' : dias > 7 ? 'text-amber-500' : 'text-emerald-600';
               const bgColor = dias === null ? '' : dias > 14 ? 'ring-1 ring-red-100' : dias > 7 ? 'ring-1 ring-amber-100' : '';
               return (
-                <Card key={v.id} className={`border-0 shadow-sm ${bgColor}`}>
+                <Card key={v.id} className={`border-0 shadow-sm ${bgColor} cursor-pointer`} onClick={() => setDetailVehiculo(v)}>
                   <CardContent className="p-3 flex items-center gap-3">
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                       dias === null ? 'bg-slate-100' : dias > 14 ? 'bg-red-50' : dias > 7 ? 'bg-amber-50' : 'bg-emerald-50'
@@ -226,6 +250,51 @@ export default function Dashboard() {
           Ver todos los movimientos →
         </Link>
       </div>
+
+      <Dialog open={!!detailVehiculo} onOpenChange={() => setDetailVehiculo(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Detalle de vehículo {detailVehiculo?.chapa}</DialogTitle>
+          </DialogHeader>
+          {detailVehiculo && detalleVehiculo && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                <Card><CardContent className="p-3"><p className="text-slate-400">Compras (30d)</p><p className="font-semibold">{detalleVehiculo.compras}</p></CardContent></Card>
+                <Card><CardContent className="p-3"><p className="text-slate-400">Despachos (30d)</p><p className="font-semibold">{detalleVehiculo.despachos}</p></CardContent></Card>
+                <Card><CardContent className="p-3"><p className="text-slate-400">Km/L estimado</p><p className="font-semibold">{detalleVehiculo.kmPorLitro != null ? detalleVehiculo.kmPorLitro.toFixed(2) : '—'}</p></CardContent></Card>
+                <Card><CardContent className="p-3"><p className="text-slate-400">Costo/Km</p><p className="font-semibold">{detalleVehiculo.costoPorKm != null ? `$${detalleVehiculo.costoPorKm.toFixed(2)}` : '—'}</p></CardContent></Card>
+              </div>
+              <div className="overflow-auto border rounded-xl max-h-72">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 border-b">
+                    <tr>
+                      <th className="text-left px-3 py-2">Fecha</th>
+                      <th className="text-left px-3 py-2">Tipo</th>
+                      <th className="text-left px-3 py-2">Combustible</th>
+                      <th className="text-right px-3 py-2">Litros</th>
+                      <th className="text-right px-3 py-2">Monto</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detalleVehiculo.movs.map((m) => (
+                      <tr key={m.id} className="border-b last:border-b-0">
+                        <td className="px-3 py-2">{m.fecha}</td>
+                        <td className="px-3 py-2">{m.tipo}</td>
+                        <td className="px-3 py-2">{m.combustible_nombre || '—'}</td>
+                        <td className="px-3 py-2 text-right">{m.litros ?? '—'}</td>
+                        <td className="px-3 py-2 text-right">{m.monto ?? '—'}</td>
+                      </tr>
+                    ))}
+                    {detalleVehiculo.movs.length === 0 && (
+                      <tr><td colSpan={5} className="text-center py-6 text-slate-400">Sin movimientos en los últimos 30 días</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
