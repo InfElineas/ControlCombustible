@@ -63,8 +63,20 @@ export default function NuevoMovimientoForm({ onSuccess }) {
         return fechaB.localeCompare(fechaA);
       });
 
-    return comprasVehiculo[0]?.odometro ?? null;
+    if (comprasVehiculo.length > 0) {
+      return comprasVehiculo[0]?.odometro ?? null;
+    }
+
+    return vehiculo.odometro_inicial ?? null;
   }, [form.vehiculo_chapa, vehiculos, movimientos]);
+
+  const kilometrosRecorridosCalculados = useMemo(() => {
+    if (tipo !== 'COMPRA') return null;
+    if (ultimaLecturaOdometro == null || !form.odometro) return null;
+    const lecturaActual = parseFloat(form.odometro);
+    if (!Number.isFinite(lecturaActual)) return null;
+    return lecturaActual - ultimaLecturaOdometro;
+  }, [tipo, ultimaLecturaOdometro, form.odometro]);
 
   const calcularStockLitros = (vehiculoId, combustibleId) => {
     if (!vehiculoId || !combustibleId) return null;
@@ -244,6 +256,12 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               <p className="text-xs text-slate-400 mt-1">
                 Última lectura: {ultimaLecturaOdometro != null ? `${ultimaLecturaOdometro} km` : 'sin registros'}
               </p>
+            </div>
+            <div className="bg-slate-50 rounded-xl p-3 flex justify-between items-center">
+              <span className="text-sm text-slate-500">Km recorridos (calculado)</span>
+              <span className="text-lg font-bold text-slate-800">
+                {kilometrosRecorridosCalculados != null ? `${kilometrosRecorridosCalculados.toFixed(1)} km` : '—'}
+              </span>
             </div>
             <div className="bg-slate-50 rounded-xl p-3 flex justify-between items-center">
               <span className="text-sm text-slate-500">Litros equivalentes</span>

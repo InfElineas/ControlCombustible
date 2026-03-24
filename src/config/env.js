@@ -1,4 +1,4 @@
-const mode = (import.meta.env.VITE_DATA_MODE || 'local').toLowerCase();
+const mode = (import.meta.env.VITE_DATA_MODE || 'supabase').toLowerCase();
 
 const normalize = (value) => String(value || '').trim();
 
