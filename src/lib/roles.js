@@ -20,6 +20,7 @@ const PAGE_ROLE_ACCESS = {
   Combustibles: ['superadmin', 'gestor'],
   Precios: ['superadmin', 'gestor'],
   Configuracion: USER_ROLES,
+  LogsAdmin: ['superadmin'],
   Reportes: USER_ROLES,
 };
 
