@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Trash2, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Filter, X, Plus } from 'lucide-react';
+import { Trash2, ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Filter, X, Plus, Eye, List, Rows3 } from 'lucide-react';
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
@@ -26,10 +26,42 @@ export default function Movimientos() {
   const { data: vehiculos = [] } = useQuery({ queryKey: ['vehiculos'], queryFn: () => base44.entities.Vehiculo.list() });
   const { data: combustibles = [] } = useQuery({ queryKey: ['combustibles'], queryFn: () => base44.entities.TipoCombustible.list() });
 
-  const [filters, setFilters] = useState({ fechaDesde: '', fechaHasta: '', tarjeta: 'all', vehiculo: 'all', combustible: 'all', tipo: 'all' });
+  const [filters, setFilters] = useState({ fechaDesde: '', fechaHasta: '', tarjeta: 'all', vehiculo: 'all', combustible: 'all', tipo: 'all', soloDespachos: false });
   const [showFilters, setShowFilters] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [showNuevo, setShowNuevo] = useState(false);
+  const [viewMode, setViewMode] = useState('table');
+  const [detailMovimiento, setDetailMovimiento] = useState(null);
+
+  const movimientosConRecorrido = useMemo(() => {
+    const comprasPorVehiculo = new Map();
+    const comprasOrdenadas = [...movimientos]
+      .filter((m) => m.tipo === 'COMPRA' && m.vehiculo_chapa && m.odometro != null)
+      .sort((a, b) => {
+        const fa = `${a.fecha || ''}|${a.created_date || ''}`;
+        const fb = `${b.fecha || ''}|${b.created_date || ''}`;
+        return fa.localeCompare(fb);
+      });
+
+    comprasOrdenadas.forEach((mov) => {
+      const historial = comprasPorVehiculo.get(mov.vehiculo_chapa) || [];
+      historial.push(mov);
+      comprasPorVehiculo.set(mov.vehiculo_chapa, historial);
+    });
+
+    return movimientos.map((mov) => {
+      if (mov.tipo !== 'COMPRA' || mov.odometro == null || !mov.vehiculo_chapa) {
+        return { ...mov, km_recorridos: null };
+      }
+
+      const historial = comprasPorVehiculo.get(mov.vehiculo_chapa) || [];
+      const index = historial.findIndex((item) => item.id === mov.id);
+      if (index <= 0) return { ...mov, km_recorridos: null };
+      const anterior = historial[index - 1];
+      const delta = Number(mov.odometro) - Number(anterior.odometro);
+      return { ...mov, km_recorridos: Number.isFinite(delta) && delta >= 0 ? delta : null };
+    });
+  }, [movimientos]);
 
   const movimientosConRecorrido = useMemo(() => {
     const comprasPorVehiculo = new Map();
@@ -78,6 +110,7 @@ export default function Movimientos() {
       if (filters.vehiculo !== 'all' && m.vehiculo_chapa !== filters.vehiculo) return false;
       if (filters.combustible !== 'all' && m.combustible_id !== filters.combustible) return false;
       if (filters.tipo !== 'all' && m.tipo !== filters.tipo) return false;
+      if (filters.soloDespachos && m.tipo !== 'DESPACHO') return false;
       return true;
     });
   }, [movimientosConRecorrido, filters]);
@@ -112,6 +145,10 @@ export default function Movimientos() {
             <span className="hidden sm:inline">Filtros</span>
             {hasActiveFilters && <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />}
           </Button>
+          <Button variant="outline" size="sm" onClick={() => setViewMode((v) => (v === 'table' ? 'cards' : 'table'))} className="gap-1 px-2.5">
+            {viewMode === 'table' ? <Rows3 className="w-3.5 h-3.5" /> : <List className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">{viewMode === 'table' ? 'Tarjetas' : 'Tabla'}</span>
+          </Button>
           <Button size="sm" onClick={() => setShowNuevo(true)} className="gap-1 px-2.5 bg-sky-600 hover:bg-sky-700">
             <Plus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Nuevo</span>
@@ -141,6 +178,16 @@ export default function Movimientos() {
                   <SelectItem value="DESPACHO">Despacho</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex items-end">
+              <Button
+                type="button"
+                variant={filters.soloDespachos ? 'default' : 'outline'}
+                className="w-full mt-1"
+                onClick={() => setFilters((f) => ({ ...f, soloDespachos: !f.soloDespachos }))}
+              >
+                Solo despachos
+              </Button>
             </div>
             <div>
               <label className="text-xs text-slate-500">Tarjeta</label>
@@ -174,7 +221,14 @@ export default function Movimientos() {
             </div>
             {hasActiveFilters && (
               <div className="col-span-full">
-                <Button variant="ghost" size="sm" onClick={() => setFilters({ fechaDesde: '', fechaHasta: '', tarjeta: 'all', vehiculo: 'all', combustible: 'all', tipo: 'all' })} className="text-xs text-slate-500">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    setFilters({ fechaDesde: '', fechaHasta: '', tarjeta: 'all', vehiculo: 'all', combustible: 'all', tipo: 'all', soloDespachos: false })
+                  }
+                  className="text-xs text-slate-500"
+                >
                   <X className="w-3 h-3 mr-1" /> Limpiar filtros
                 </Button>
               </div>
@@ -188,6 +242,45 @@ export default function Movimientos() {
           <div className="py-12 text-center text-sm text-slate-400">Cargando...</div>
         ) : filtered.length === 0 ? (
           <div className="py-12 text-center text-sm text-slate-400">No hay movimientos</div>
+        ) : viewMode === 'table' ? (
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-0 overflow-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 border-b text-slate-500">
+                  <tr>
+                    <th className="text-left px-3 py-2">Fecha</th>
+                    <th className="text-left px-3 py-2">Tipo</th>
+                    <th className="text-left px-3 py-2">Tarjeta</th>
+                    <th className="text-left px-3 py-2">Vehículo</th>
+                    <th className="text-left px-3 py-2">Combustible</th>
+                    <th className="text-right px-3 py-2">Litros</th>
+                    <th className="text-right px-3 py-2">Monto</th>
+                    <th className="text-left px-3 py-2">Detalle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((m) => (
+                    <tr key={m.id} className="border-b last:border-b-0">
+                      <td className="px-3 py-2">{m.fecha}</td>
+                      <td className="px-3 py-2">
+                        <Badge variant="outline" className="text-[10px] py-0 px-1.5">{m.tipo}</Badge>
+                      </td>
+                      <td className="px-3 py-2">{m.tarjeta_alias || m.tarjeta_id || '—'}</td>
+                      <td className="px-3 py-2">{m.vehiculo_chapa || m.vehiculo_origen_chapa || '—'}</td>
+                      <td className="px-3 py-2">{m.combustible_nombre || '—'}</td>
+                      <td className="px-3 py-2 text-right">{m.litros != null ? Number(m.litros).toFixed(2) : '—'}</td>
+                      <td className="px-3 py-2 text-right">{m.monto != null ? formatMonto(m.monto) : '—'}</td>
+                      <td className="px-3 py-2">
+                        <Button variant="ghost" size="sm" onClick={() => setDetailMovimiento(m)} className="h-7 px-2">
+                          <Eye className="w-3.5 h-3.5 mr-1" /> Ver
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent>
+          </Card>
         ) : (
           filtered.map(m => (
             <Card key={m.id} className="border-0 shadow-sm">
@@ -244,6 +337,31 @@ export default function Movimientos() {
             <DialogTitle>Registrar Movimiento</DialogTitle>
           </DialogHeader>
           <NuevoMovimientoForm onSuccess={() => setShowNuevo(false)} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!detailMovimiento} onOpenChange={() => setDetailMovimiento(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Detalle de movimiento</DialogTitle>
+          </DialogHeader>
+          {detailMovimiento && (
+            <div className="space-y-2 text-sm">
+              <div className="grid grid-cols-2 gap-2">
+                <div><b>Fecha:</b> {detailMovimiento.fecha}</div>
+                <div><b>Tipo:</b> {detailMovimiento.tipo}</div>
+                <div><b>Tarjeta:</b> {detailMovimiento.tarjeta_alias || detailMovimiento.tarjeta_id || '—'}</div>
+                <div><b>Vehículo:</b> {detailMovimiento.vehiculo_chapa || '—'}</div>
+                <div><b>Combustible:</b> {detailMovimiento.combustible_nombre || '—'}</div>
+                <div><b>Precio:</b> {detailMovimiento.precio ?? '—'}</div>
+                <div><b>Litros:</b> {detailMovimiento.litros ?? '—'}</div>
+                <div><b>Monto:</b> {detailMovimiento.monto ?? '—'}</div>
+                <div><b>Odómetro:</b> {detailMovimiento.odometro ?? '—'}</div>
+                <div><b>Recorrido:</b> {detailMovimiento.km_recorridos ?? '—'}</div>
+              </div>
+              <div><b>Referencia:</b> {detailMovimiento.referencia || '—'}</div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
