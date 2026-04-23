@@ -45,6 +45,17 @@ export default function Dashboard() {
     return formatMonto(monto, moneda);
   };
 
+  const consumidoresReservaIds = useMemo(() => {
+    return new Set(
+      consumidores
+        .filter((c) => {
+          const tipo = (c.tipo_consumidor_nombre || '').toLowerCase();
+          return tipo.includes('tanque') || tipo.includes('reserva');
+        })
+        .map(c => c.id)
+    );
+  }, [consumidores]);
+
   const resumenPorCombustible = useMemo(() => {
     const keys = new Set([
       ...tipoCombustible.map(c => c.nombre).filter(Boolean),
@@ -56,6 +67,10 @@ export default function Dashboard() {
       const despachosHistoricos = movimientos.filter(m => m.tipo === 'DESPACHO' && m.combustible_nombre === nombreCombustible);
       const comprasPeriodo = movimientosFiltrados.filter(m => m.tipo === 'COMPRA' && m.combustible_nombre === nombreCombustible);
       const despachosPeriodo = movimientosFiltrados.filter(m => m.tipo === 'DESPACHO' && m.combustible_nombre === nombreCombustible);
+      const comprasReservaHistoricas = comprasHistoricas.filter(m => consumidoresReservaIds.has(m.consumidor_id));
+      const comprasReservaPeriodo = comprasPeriodo.filter(m => consumidoresReservaIds.has(m.consumidor_id));
+      const despachosReservaHistoricos = despachosHistoricos.filter(m => consumidoresReservaIds.has(m.consumidor_origen_id));
+      const despachosReservaPeriodo = despachosPeriodo.filter(m => consumidoresReservaIds.has(m.consumidor_origen_id));
 
       const litrosInicio = comprasHistoricas
         .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
@@ -75,6 +90,27 @@ export default function Dashboard() {
       const montoCompras = comprasPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
       const litrosConsumo = despachosPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
       const montoConsumo = despachosPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
+      const recargasOpsMes = comprasReservaPeriodo.length;
+      const recargasOpsTotal = comprasReservaHistoricas.length;
+      const costoRecargasMes = comprasReservaPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
+      const costoRecargasTotal = comprasReservaHistoricas.reduce((s, m) => s + (m.monto || 0), 0);
+      const despachosOpsMes = despachosReservaPeriodo.length;
+      const despachosOpsTotal = despachosReservaHistoricos.length;
+      const litrosDespachosMes = despachosReservaPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
+      const litrosDespachosTotal = despachosReservaHistoricos.reduce((s, m) => s + (m.litros || 0), 0);
+
+      const reservaIdsDelCombustible = new Set([
+        ...comprasReservaHistoricas.map(m => m.consumidor_id).filter(Boolean),
+        ...despachosReservaHistoricos.map(m => m.consumidor_origen_id).filter(Boolean),
+      ]);
+      const capacidadTotalReserva = [...reservaIdsDelCombustible]
+        .map((id) => consumidores.find(c => c.id === id)?.datos_vehiculo?.capacidad_tanque || 0)
+        .reduce((s, v) => s + (Number(v) || 0), 0);
+      const litrosEnTanqueEstimado = Math.max(
+        0,
+        comprasReservaHistoricas.reduce((s, m) => s + (m.litros || 0), 0)
+          - despachosReservaHistoricos.reduce((s, m) => s + (m.litros || 0), 0)
+      );
 
       const detalleConsumoMap = {};
       despachosPeriodo.forEach(m => {
@@ -105,10 +141,20 @@ export default function Dashboard() {
         montoConsumo,
         litrosSaldoFinal: Math.max(0, litrosInicio + litrosCompras - litrosConsumo),
         montoSaldoFinal: Math.max(0, montoInicio + montoCompras - montoConsumo),
+        capacidadTotalReserva,
+        litrosEnTanqueEstimado,
+        recargasOpsMes,
+        recargasOpsTotal,
+        costoRecargasMes,
+        costoRecargasTotal,
+        despachosOpsMes,
+        despachosOpsTotal,
+        litrosDespachosMes,
+        litrosDespachosTotal,
         detalleConsumo,
       };
     }).filter(r => r.litrosCompras > 0 || r.litrosConsumo > 0 || r.litrosInicio > 0);
-  }, [movimientos, movimientosFiltrados, mesFiltro, tipoCombustible, tarjetasById]);
+  }, [movimientos, movimientosFiltrados, mesFiltro, tipoCombustible, tarjetasById, consumidoresReservaIds, consumidores]);
 
   // Resumen del mes
   const comprasMes = movimientosFiltrados.filter(m => m.tipo === 'COMPRA');
@@ -273,6 +319,33 @@ export default function Dashboard() {
                     <div className="flex justify-between font-semibold border-b pb-1">
                       <span>Total disponible</span>
                       <span>{res.litrosDisponible.toFixed(1)} L | {formatMoneySymbol(res.montoDisponible, res.moneda)}</span>
+                    </div>
+                    <div className="pt-1 text-[11px] text-slate-500">Tanque reserva</div>
+                    <div className="flex justify-between">
+                      <span>Capacidad</span>
+                      <span>{res.capacidadTotalReserva > 0 ? `${res.capacidadTotalReserva.toFixed(1)} L` : 'No registrada'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Le queda</span>
+                      <span>{res.litrosEnTanqueEstimado.toFixed(1)} L</span>
+                    </div>
+                    <div className="pt-1 text-[11px] text-slate-500">Recargas (compras a reserva)</div>
+                    <div className="flex justify-between">
+                      <span>Operaciones (mes / total)</span>
+                      <span>{res.recargasOpsMes} / {res.recargasOpsTotal}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Costo (mes / total)</span>
+                      <span>{formatMoneySymbol(res.costoRecargasMes, res.moneda)} / {formatMoneySymbol(res.costoRecargasTotal, res.moneda)}</span>
+                    </div>
+                    <div className="pt-1 text-[11px] text-slate-500">Despachos relacionados</div>
+                    <div className="flex justify-between">
+                      <span>Movimientos (mes / total)</span>
+                      <span>{res.despachosOpsMes} / {res.despachosOpsTotal}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Litros (mes / total)</span>
+                      <span>{res.litrosDespachosMes.toFixed(1)} L / {res.litrosDespachosTotal.toFixed(1)} L</span>
                     </div>
                     <div className="pt-1 text-[11px] text-slate-500">Consumo</div>
                     {res.detalleConsumo.length === 0 ? (
