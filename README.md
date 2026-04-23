@@ -28,6 +28,8 @@ VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
 
 Run the app: `npm run dev`
 
+Run conflict-marker check: `npm run check:conflicts`
+
 **Publish your changes**
 
 Open [Base44.com](http://Base44.com) and click on Publish.
