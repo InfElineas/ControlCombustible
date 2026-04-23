@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpCircle, ArrowDownCircle, ArrowLeftRight } from 'lucide-react';
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
+import { AUDITORIA_ESTADO } from './auditoriaCombustible';
 
 const TIPO_CONFIG = {
   RECARGA:  { label: 'Recarga',  icon: ArrowUpCircle,   bg: 'bg-emerald-50', text: 'text-emerald-600', badge: 'border-emerald-200 text-emerald-700' },
@@ -24,6 +25,12 @@ export default function MovimientoDetalle({ movimiento: m, onClose }) {
   if (!m) return null;
   const cfg = TIPO_CONFIG[m.tipo] || TIPO_CONFIG.COMPRA;
   const Icon = cfg.icon;
+  const estadoAuditoriaLabel = {
+    [AUDITORIA_ESTADO.OK]: 'Sin inconsistencias',
+    [AUDITORIA_ESTADO.EXCESO]: 'Exceso estimado vs capacidad',
+    [AUDITORIA_ESTADO.SIN_CAPACIDAD]: 'Capacidad no registrada',
+    [AUDITORIA_ESTADO.SIN_ESTIMACION]: 'Estimación no disponible',
+  };
 
   return (
     <Dialog open={!!m} onOpenChange={onClose}>
@@ -59,6 +66,10 @@ export default function MovimientoDetalle({ movimiento: m, onClose }) {
               <Row label="Litros" value={m.litros != null ? `${Number(m.litros).toFixed(2)} L` : null} />
               <Row label="Precio por litro" value={m.precio != null ? `$${Number(m.precio).toFixed(2)}/L` : null} />
               <Row label="Monto total" value={m.monto != null ? formatMonto(m.monto) : null} />
+              <Row label="Remanente estimado antes" value={m.remanente_estimado_antes != null ? `${Number(m.remanente_estimado_antes).toFixed(2)} L` : null} />
+              <Row label="Combustible estimado post" value={m.combustible_estimado_post != null ? `${Number(m.combustible_estimado_post).toFixed(2)} L` : null} />
+              <Row label="Capacidad tanque" value={m.capacidad_tanque != null ? `${Number(m.capacidad_tanque).toFixed(2)} L` : null} />
+              <Row label="Auditoría combustible" value={estadoAuditoriaLabel[m.auditoria_combustible_estado] || null} />
               <Row label="Odómetro" value={m.odometro != null ? `${m.odometro.toLocaleString()} km` : null} />
               <Row label="Km recorridos" value={m.km_recorridos != null ? `${Number(m.km_recorridos).toFixed(0)} km` : null} />
               <Row label="Consumo real" value={m.consumo_real != null ? `${Number(m.consumo_real).toFixed(2)} km/L` : null} />

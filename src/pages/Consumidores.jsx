@@ -25,6 +25,7 @@ const emptyForm = {
   nombre: '', codigo_interno: '',
   combustible_id: '', combustible_nombre: '',
   activo: true, responsable: '', conductor: '', funcion: '', observaciones: '',
+  litros_iniciales: 0,
   datos_vehiculo: {}, datos_tanque: {}, datos_equipo: {},
 };
 
@@ -82,6 +83,7 @@ export default function Consumidores() {
       conductor: c.conductor || '',
       funcion: c.funcion || '',
       observaciones: c.observaciones || '',
+      litros_iniciales: Number.isFinite(Number(c.litros_iniciales)) ? Number(c.litros_iniciales) : 0,
       datos_vehiculo: c.datos_vehiculo || {},
       datos_tanque: c.datos_tanque || {},
       datos_equipo: c.datos_equipo || {},
@@ -92,8 +94,13 @@ export default function Consumidores() {
   const handleSave = () => {
     if (!form.tipo_consumidor_id) { toast.error('Seleccione un tipo de consumidor'); return; }
     if (!form.nombre.trim()) { toast.error('Nombre requerido'); return; }
-    if (editing) updateMut.mutate({ id: editing.id, d: form });
-    else createMut.mutate(form);
+    if (form.litros_iniciales === '' || Number.isNaN(Number(form.litros_iniciales)) || Number(form.litros_iniciales) < 0) {
+      toast.error('Litros iniciales es obligatorio y debe ser un número ≥ 0');
+      return;
+    }
+    const payload = { ...form, litros_iniciales: Number(form.litros_iniciales) };
+    if (editing) updateMut.mutate({ id: editing.id, d: payload });
+    else createMut.mutate(payload);
   };
 
   const toggleActivo = c => updateMut.mutate({ id: c.id, d: { activo: !c.activo } });

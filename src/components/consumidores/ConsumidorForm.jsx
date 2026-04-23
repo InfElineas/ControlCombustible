@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -86,6 +86,17 @@ export default function ConsumidorForm({ form, setForm, tipos, combustibles, edi
           <Input value={form.funcion || ''} onChange={e => set('funcion', e.target.value)} placeholder="Transporte, Generación..." />
         </Field>
       </div>
+
+      <Field label="Litros iniciales" required>
+        <Input
+          type="number"
+          min="0"
+          step="0.1"
+          value={form.litros_iniciales ?? 0}
+          onChange={e => set('litros_iniciales', e.target.value)}
+          placeholder="0"
+        />
+      </Field>
 
       {isVeh && (
         <Field label="Conductor">

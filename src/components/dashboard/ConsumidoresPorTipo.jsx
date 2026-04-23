@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Droplets } from 'lucide-react';
@@ -178,7 +178,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy }) {
           </div>
 
           {/* Odómetro */}
-          {ultimoOdometro != null && (
+          {!esTanqueConsumidor && ultimoOdometro != null && (
             <div>
               <p className="text-[10px] text-slate-400 uppercase tracking-wide">Odómetro</p>
               <p className="font-semibold text-slate-700">{ultimoOdometro.toLocaleString()} km</p>
@@ -197,7 +197,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy }) {
           )}
 
           {/* Consumo real */}
-          {ultimoConsumoReal != null && (
+          {!esTanqueConsumidor && ultimoConsumoReal != null && (
             <div className="col-span-2">
               <p className="text-[10px] text-slate-400 uppercase tracking-wide">Consumo real (últ. carga)</p>
               <div className="flex items-center gap-2">

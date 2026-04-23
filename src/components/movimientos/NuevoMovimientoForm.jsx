@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Save, Loader2, Gauge } from 'lucide-react';
 import { obtenerPrecioVigente, calcularSaldo, formatMonto } from '@/components/ui-helpers/SaldoUtils';
+import { calcularAuditoriaCompra, obtenerCapacidadTanque, AUDITORIA_ESTADO } from './auditoriaCombustible';
 
 export default function NuevoMovimientoForm({ onSuccess }) {
   const queryClient = useQueryClient();
@@ -36,10 +37,55 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     referencia: '',
   });
   const [errors, setErrors] = useState({});
+  const [filtroTipoConsumidor, setFiltroTipoConsumidor] = useState('all');
 
   const tarjetasActivas = tarjetas.filter(t => t.activa);
   const consumidoresActivos = consumidores.filter(c => c.activo);
   const combustiblesActivos = combustibles.filter(c => c.activa);
+
+  const resolverCombustiblesConsumidor = (consumidor) => {
+    if (!consumidor) return [];
+    const ids = new Set();
+    const nombres = new Set();
+    if (consumidor.combustible_id) ids.add(consumidor.combustible_id);
+    (consumidor.combustible_ids || []).forEach(id => ids.add(id));
+    (consumidor.combustibles_admitidos || []).forEach(v => {
+      if (typeof v === 'string') nombres.add(v.toLowerCase());
+      else if (v?.id) ids.add(v.id);
+    });
+    (consumidor.datos_tanque?.combustibles_admitidos || []).forEach(v => {
+      if (typeof v === 'string') nombres.add(v.toLowerCase());
+      else if (v?.id) ids.add(v.id);
+    });
+    combustiblesActivos.forEach(c => {
+      if (nombres.has((c.nombre || '').toLowerCase())) ids.add(c.id);
+    });
+    return [...ids];
+  };
+
+  const consumidoresFiltradosPorTipo = useMemo(() => {
+    if (filtroTipoConsumidor === 'all') return consumidoresActivos;
+    return consumidoresActivos.filter(c => c.tipo_consumidor_id === filtroTipoConsumidor);
+  }, [consumidoresActivos, filtroTipoConsumidor]);
+
+  const combustiblesPermitidosConsumidor = useMemo(() => {
+    const consumidor = consumidores.find(c => c.id === form.consumidor_id);
+    return resolverCombustiblesConsumidor(consumidor);
+  }, [form.consumidor_id, consumidores, combustiblesActivos]);
+
+  useEffect(() => {
+    if (!form.consumidor_id) return;
+    if (combustiblesPermitidosConsumidor.length === 1) {
+      const unico = combustiblesPermitidosConsumidor[0];
+      if (form.combustible_id !== unico) {
+        setForm(f => ({ ...f, combustible_id: unico }));
+      }
+      return;
+    }
+    if (combustiblesPermitidosConsumidor.length > 1 && form.combustible_id && !combustiblesPermitidosConsumidor.includes(form.combustible_id)) {
+      setForm(f => ({ ...f, combustible_id: '' }));
+    }
+  }, [form.consumidor_id, form.combustible_id, combustiblesPermitidosConsumidor]);
 
   // Consumidores que pueden ser origen de despacho (tanques y reservas)
   const consumidoresOrigen = consumidoresActivos.filter(c => {
@@ -66,14 +112,25 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   const consumidorSeleccionado = consumidores.find(c => c.id === form.consumidor_id);
   const tipoConsumidor = tiposConsumidor.find(t => t.id === consumidorSeleccionado?.tipo_consumidor_id);
 
-  // El odómetro es obligatorio en COMPRA siempre (para cualquier consumidor)
-  const requiereOdometro = tipo === 'COMPRA';
+  // Regla de odómetro por tipo de consumidor:
+  // - Priorizar flag del catálogo (requiere_odometro) si existe.
+  // - Fallback por nombre: reserva/tanque/equipo/almacén NO requieren.
+  const consumidorRequiereOdometro = useMemo(() => {
+    if (!consumidorSeleccionado) return false;
+    const n = (consumidorSeleccionado.tipo_consumidor_nombre || '').toLowerCase();
+    // Reserva/tanque/almacén siempre se tratan como almacenamiento global: sin odómetro.
+    if (n.includes('reserva') || n.includes('tanque') || n.includes('equipo') || n.includes('almac')) return false;
+    if (tipoConsumidor?.requiere_odometro != null) return !!tipoConsumidor.requiere_odometro;
+    return true;
+  }, [consumidorSeleccionado, tipoConsumidor]);
+
+  const requiereOdometro = (tipo === 'COMPRA' || tipo === 'DESPACHO') && consumidorRequiereOdometro;
 
   // Obtener el último odómetro registrado para este consumidor (por odómetro más alto, que es más confiable)
   const ultimoMovConOdometro = useMemo(() => {
     if (!form.consumidor_id) return null;
     const movs = movimientos
-      .filter(m => m.consumidor_id === form.consumidor_id && m.tipo === 'COMPRA' && m.odometro != null)
+      .filter(m => m.consumidor_id === form.consumidor_id && (m.tipo === 'COMPRA' || m.tipo === 'DESPACHO') && m.odometro != null)
       .sort((a, b) => b.odometro - a.odometro); // mayor odómetro = más reciente
     return movs.length > 0 ? movs[0] : null;
   }, [form.consumidor_id, movimientos]);
@@ -112,6 +169,23 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     if (desviacion >= umbralAlerta) return { nivel: 'alerta', desviacion };
     return null;
   }, [consumoRealCalculado, consumoReferencia, consumidorSeleccionado]);
+
+  const capacidadTanque = useMemo(
+    () => obtenerCapacidadTanque(consumidorSeleccionado),
+    [consumidorSeleccionado]
+  );
+
+  const auditoriaCompra = useMemo(() => {
+    if (tipo !== 'COMPRA') return null;
+    return calcularAuditoriaCompra({
+      movimientos,
+      consumidorId: form.consumidor_id,
+      combustibleId: form.combustible_id,
+      fecha: form.fecha,
+      litrosAbastecidos: litrosReales,
+      capacidadTanque,
+    });
+  }, [tipo, movimientos, form.consumidor_id, form.combustible_id, form.fecha, litrosReales, capacidadTanque]);
 
   // Stock de un consumidor origen (para DESPACHO)
   const calcularStockConsumidor = (consumidorId, combustibleId) => {
@@ -158,10 +232,15 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       if (saldoTarjeta != null && parseFloat(form.monto) > 0 && parseFloat(form.monto) > saldoTarjeta) {
         e.monto = `Saldo insuficiente. Disponible: ${formatMonto(saldoTarjeta)}`;
       }
-      if (!form.odometro || parseFloat(form.odometro) <= 0) {
-        e.odometro = 'El odómetro actual es obligatorio';
-      } else if (ultimoOdometro != null && parseFloat(form.odometro) <= ultimoOdometro) {
-        e.odometro = `Debe ser mayor al registro anterior: ${ultimoOdometro.toLocaleString()} km`;
+      if (requiereOdometro) {
+        if (!form.odometro || parseFloat(form.odometro) <= 0) {
+          e.odometro = 'El odómetro actual es obligatorio';
+        } else if (ultimoOdometro != null && parseFloat(form.odometro) <= ultimoOdometro) {
+          e.odometro = `Debe ser mayor al registro anterior: ${ultimoOdometro.toLocaleString()} km`;
+        }
+      }
+      if (auditoriaCompra?.estado === AUDITORIA_ESTADO.EXCESO && capacidadTanque != null) {
+        e.monto = `Excede capacidad de tanque (${capacidadTanque.toFixed(2)} L) según estimación.`;
       }
     } else if (tipo === 'RECARGA') {
       if (!form.tarjeta_id) e.tarjeta_id = 'Seleccione tarjeta';
@@ -171,6 +250,13 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       if (!form.consumidor_id) e.consumidor_id = 'Seleccione consumidor destino';
       if (!form.combustible_id) e.combustible_id = 'Seleccione combustible';
       if (!form.litros || parseFloat(form.litros) <= 0) e.litros = 'Litros > 0';
+      if (requiereOdometro) {
+        if (!form.odometro || parseFloat(form.odometro) <= 0) {
+          e.odometro = 'El odómetro actual es obligatorio para este consumidor';
+        } else if (ultimoOdometro != null && parseFloat(form.odometro) <= ultimoOdometro) {
+          e.odometro = `Debe ser mayor al registro anterior: ${ultimoOdometro.toLocaleString()} km`;
+        }
+      }
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -198,10 +284,14 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       data.combustible_nombre = combustible.nombre;
       data.precio = precioVigente;
       data.litros = litrosCalculados;
-      data.odometro = parseFloat(form.odometro);
-      data.odometro_anterior = ultimoOdometro;
-      if (kmRecorridos != null) data.km_recorridos = kmRecorridos;
-      if (consumoRealCalculado != null) data.consumo_real = consumoRealCalculado;
+      data.remanente_estimado_antes = auditoriaCompra?.remanenteAntes ?? null;
+      data.combustible_estimado_post = auditoriaCompra?.combustibleEstimadoPost ?? null;
+      data.capacidad_tanque = capacidadTanque;
+      data.auditoria_combustible_estado = auditoriaCompra?.estado || AUDITORIA_ESTADO.SIN_ESTIMACION;
+      if (form.odometro) data.odometro = parseFloat(form.odometro);
+      if (ultimoOdometro != null) data.odometro_anterior = ultimoOdometro;
+      if (kmRecorridos != null && requiereOdometro) data.km_recorridos = kmRecorridos;
+      if (consumoRealCalculado != null && requiereOdometro) data.consumo_real = consumoRealCalculado;
     } else if (tipo === 'RECARGA') {
       data.tarjeta_id = tarjeta.id;
       data.tarjeta_alias = tarjeta.alias || tarjeta.id_tarjeta;
@@ -219,6 +309,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       data.combustible_id = combustible.id;
       data.combustible_nombre = combustible.nombre;
       data.litros = parseFloat(form.litros);
+      if (form.odometro) data.odometro = parseFloat(form.odometro);
       data.referencia = form.referencia;
     }
     createMutation.mutate(data);
@@ -278,11 +369,21 @@ export default function NuevoMovimientoForm({ onSuccess }) {
         {tipo === 'COMPRA' && (
           <>
             <div>
+              <Label className="text-xs text-slate-500">Tipo de consumidor</Label>
+              <Select value={filtroTipoConsumidor} onValueChange={setFiltroTipoConsumidor}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Filtrar tipo" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {tiposConsumidor.filter(t => t.activo !== false).map(t => <SelectItem key={t.id} value={t.id}>{t.nombre}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label className="text-xs text-slate-500">Consumidor</Label>
               <Select value={form.consumidor_id} onValueChange={v => set('consumidor_id', v)}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar consumidor" /></SelectTrigger>
                 <SelectContent>
-                  {consumidoresActivos.map(c => (
+                  {consumidoresFiltradosPorTipo.map(c => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.nombre}{c.codigo_interno ? ` · ${c.codigo_interno}` : ''}{c.tipo_consumidor_nombre ? ` (${c.tipo_consumidor_nombre})` : ''}
                     </SelectItem>
@@ -293,10 +394,17 @@ export default function NuevoMovimientoForm({ onSuccess }) {
             </div>
             <div>
               <Label className="text-xs text-slate-500">Combustible</Label>
-              <Select value={form.combustible_id} onValueChange={v => set('combustible_id', v)}>
+              <Select
+                value={form.combustible_id}
+                onValueChange={v => set('combustible_id', v)}
+                disabled={combustiblesPermitidosConsumidor.length === 1}
+              >
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar combustible" /></SelectTrigger>
                 <SelectContent>
-                  {combustiblesActivos.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
+                  {(combustiblesPermitidosConsumidor.length > 0
+                    ? combustiblesActivos.filter(c => combustiblesPermitidosConsumidor.includes(c.id))
+                    : combustiblesActivos
+                  ).map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
                 </SelectContent>
               </Select>
               {errors.combustible_id && <p className="text-xs text-red-500 mt-1">{errors.combustible_id}</p>}
@@ -311,12 +419,26 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               <span className="text-sm text-slate-500">Litros equivalentes</span>
               <span className="text-lg font-bold text-slate-800">{litrosCalculados != null ? `${litrosCalculados.toFixed(2)} L` : '—'}</span>
             </div>
+            {auditoriaCompra && (
+              <div className={`rounded-xl p-3 border text-xs space-y-1 ${
+                auditoriaCompra.estado === AUDITORIA_ESTADO.EXCESO
+                  ? 'bg-red-50 border-red-200 text-red-700'
+                  : 'bg-slate-50 border-slate-200 text-slate-700'
+              }`}>
+                <p>Remanente estimado antes: <b>{auditoriaCompra.remanenteAntes != null ? `${auditoriaCompra.remanenteAntes.toFixed(2)} L` : 'No disponible'}</b></p>
+                <p>Combustible estimado post-abastecimiento: <b>{auditoriaCompra.combustibleEstimadoPost != null ? `${auditoriaCompra.combustibleEstimadoPost.toFixed(2)} L` : 'No disponible'}</b></p>
+                <p>Capacidad de tanque: <b>{capacidadTanque != null ? `${capacidadTanque.toFixed(2)} L` : 'No registrada'}</b></p>
+                {auditoriaCompra.estado === AUDITORIA_ESTADO.EXCESO && capacidadTanque != null && (
+                  <p className="font-semibold">⚠ Inconsistencia: el estimado supera la capacidad del tanque.</p>
+                )}
+              </div>
+            )}
 
-            {/* Odómetro - obligatorio en toda COMPRA */}
+            {/* Odómetro - requerido solo para tipos que lo necesitan */}
             <div className={`border rounded-xl p-3 space-y-2 ${errors.odometro ? 'border-red-200 bg-red-50/30' : 'border-sky-100 bg-sky-50/40'}`}>
               <div className="flex items-center gap-1.5 text-xs font-semibold text-sky-700">
                 <Gauge className="w-3.5 h-3.5" />
-                Odómetro actual <span className="text-red-400">*</span>
+                Odómetro actual {requiereOdometro && <span className="text-red-400">*</span>}
                 {ultimoOdometro != null && (
                   <span className="font-normal text-slate-400 ml-auto">Anterior: {ultimoOdometro.toLocaleString()} km</span>
                 )}
@@ -330,6 +452,9 @@ export default function NuevoMovimientoForm({ onSuccess }) {
                 placeholder="Lectura actual (km)"
                 className={errors.odometro ? 'border-red-300 focus-visible:ring-red-300' : ''}
               />
+              {!requiereOdometro && (
+                <p className="text-[11px] text-slate-400">No obligatorio para el tipo de consumidor seleccionado.</p>
+              )}
               {errors.odometro && <p className="text-xs text-red-500">{errors.odometro}</p>}
               {kmRecorridos != null && (
                 <div className="flex justify-between text-xs text-slate-500 pt-1 flex-wrap gap-1">
@@ -391,11 +516,21 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               {errors.consumidor_origen_id && <p className="text-xs text-red-500 mt-1">{errors.consumidor_origen_id}</p>}
             </div>
             <div>
+              <Label className="text-xs text-slate-500">Tipo de consumidor</Label>
+              <Select value={filtroTipoConsumidor} onValueChange={setFiltroTipoConsumidor}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Filtrar tipo" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {tiposConsumidor.filter(t => t.activo !== false).map(t => <SelectItem key={t.id} value={t.id}>{t.nombre}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label className="text-xs text-slate-500">Destino (Consumidor)</Label>
               <Select value={form.consumidor_id} onValueChange={v => set('consumidor_id', v)}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar destino" /></SelectTrigger>
                 <SelectContent>
-                  {consumidoresActivos.filter(c => c.id !== form.consumidor_origen_id).map(c => (
+                  {consumidoresFiltradosPorTipo.filter(c => c.id !== form.consumidor_origen_id).map(c => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.nombre}{c.codigo_interno ? ` · ${c.codigo_interno}` : ''}
                     </SelectItem>
@@ -406,10 +541,17 @@ export default function NuevoMovimientoForm({ onSuccess }) {
             </div>
             <div>
               <Label className="text-xs text-slate-500">Combustible</Label>
-              <Select value={form.combustible_id} onValueChange={v => set('combustible_id', v)}>
+              <Select
+                value={form.combustible_id}
+                onValueChange={v => set('combustible_id', v)}
+                disabled={combustiblesPermitidosConsumidor.length === 1}
+              >
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar combustible" /></SelectTrigger>
                 <SelectContent>
-                  {combustiblesActivos.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
+                  {(combustiblesPermitidosConsumidor.length > 0
+                    ? combustiblesActivos.filter(c => combustiblesPermitidosConsumidor.includes(c.id))
+                    : combustiblesActivos
+                  ).map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
                 </SelectContent>
               </Select>
               {errors.combustible_id && <p className="text-xs text-red-500 mt-1">{errors.combustible_id}</p>}
@@ -428,6 +570,28 @@ export default function NuevoMovimientoForm({ onSuccess }) {
             <div>
               <Label className="text-xs text-slate-500">Referencia (opcional)</Label>
               <Input value={form.referencia} onChange={e => set('referencia', e.target.value)} placeholder="Nota..." className="mt-1" />
+            </div>
+            <div className={`border rounded-xl p-3 space-y-2 ${errors.odometro ? 'border-red-200 bg-red-50/30' : 'border-purple-100 bg-purple-50/40'}`}>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-700">
+                <Gauge className="w-3.5 h-3.5" />
+                Odómetro despacho {requiereOdometro && <span className="text-red-400">*</span>}
+                {ultimoOdometro != null && (
+                  <span className="font-normal text-slate-400 ml-auto">Anterior: {ultimoOdometro.toLocaleString()} km</span>
+                )}
+              </div>
+              <Input
+                type="number"
+                min={ultimoOdometro != null ? ultimoOdometro + 1 : 0}
+                step="1"
+                value={form.odometro}
+                onChange={e => set('odometro', e.target.value)}
+                placeholder="Lectura actual (km)"
+                className={errors.odometro ? 'border-red-300 focus-visible:ring-red-300' : ''}
+              />
+              {!requiereOdometro && (
+                <p className="text-[11px] text-slate-400">No obligatorio para reserva/tanque/equipo.</p>
+              )}
+              {errors.odometro && <p className="text-xs text-red-500">{errors.odometro}</p>}
             </div>
           </>
         )}
