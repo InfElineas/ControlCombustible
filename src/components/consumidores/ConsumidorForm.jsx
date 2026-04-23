@@ -87,6 +87,17 @@ export default function ConsumidorForm({ form, setForm, tipos, combustibles, edi
         </Field>
       </div>
 
+      <Field label="Litros iniciales" required>
+        <Input
+          type="number"
+          min="0"
+          step="0.1"
+          value={form.litros_iniciales ?? 0}
+          onChange={e => set('litros_iniciales', e.target.value)}
+          placeholder="0"
+        />
+      </Field>
+
       {isVeh && (
         <Field label="Conductor">
           <Input value={form.conductor || ''} onChange={e => set('conductor', e.target.value)} />

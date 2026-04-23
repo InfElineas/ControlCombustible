@@ -24,8 +24,10 @@ const isOnOrBefore = (candidate, limit) => {
 };
 
 export const obtenerCapacidadTanque = (consumidor) => {
-  const capacidad = toNumber(consumidor?.datos_vehiculo?.capacidad_tanque);
-  return capacidad && capacidad > 0 ? capacidad : null;
+  const capacidadReserva = toNumber(consumidor?.datos_tanque?.capacidad_litros);
+  if (capacidadReserva && capacidadReserva > 0) return capacidadReserva;
+  const capacidadVehiculo = toNumber(consumidor?.datos_vehiculo?.capacidad_tanque);
+  return capacidadVehiculo && capacidadVehiculo > 0 ? capacidadVehiculo : null;
 };
 
 export const calcularAuditoriaCompra = ({

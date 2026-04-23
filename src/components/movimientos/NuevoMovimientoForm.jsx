@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
@@ -37,10 +37,55 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     referencia: '',
   });
   const [errors, setErrors] = useState({});
+  const [filtroTipoConsumidor, setFiltroTipoConsumidor] = useState('all');
 
   const tarjetasActivas = tarjetas.filter(t => t.activa);
   const consumidoresActivos = consumidores.filter(c => c.activo);
   const combustiblesActivos = combustibles.filter(c => c.activa);
+
+  const resolverCombustiblesConsumidor = (consumidor) => {
+    if (!consumidor) return [];
+    const ids = new Set();
+    const nombres = new Set();
+    if (consumidor.combustible_id) ids.add(consumidor.combustible_id);
+    (consumidor.combustible_ids || []).forEach(id => ids.add(id));
+    (consumidor.combustibles_admitidos || []).forEach(v => {
+      if (typeof v === 'string') nombres.add(v.toLowerCase());
+      else if (v?.id) ids.add(v.id);
+    });
+    (consumidor.datos_tanque?.combustibles_admitidos || []).forEach(v => {
+      if (typeof v === 'string') nombres.add(v.toLowerCase());
+      else if (v?.id) ids.add(v.id);
+    });
+    combustiblesActivos.forEach(c => {
+      if (nombres.has((c.nombre || '').toLowerCase())) ids.add(c.id);
+    });
+    return [...ids];
+  };
+
+  const consumidoresFiltradosPorTipo = useMemo(() => {
+    if (filtroTipoConsumidor === 'all') return consumidoresActivos;
+    return consumidoresActivos.filter(c => c.tipo_consumidor_id === filtroTipoConsumidor);
+  }, [consumidoresActivos, filtroTipoConsumidor]);
+
+  const combustiblesPermitidosConsumidor = useMemo(() => {
+    const consumidor = consumidores.find(c => c.id === form.consumidor_id);
+    return resolverCombustiblesConsumidor(consumidor);
+  }, [form.consumidor_id, consumidores, combustiblesActivos]);
+
+  useEffect(() => {
+    if (!form.consumidor_id) return;
+    if (combustiblesPermitidosConsumidor.length === 1) {
+      const unico = combustiblesPermitidosConsumidor[0];
+      if (form.combustible_id !== unico) {
+        setForm(f => ({ ...f, combustible_id: unico }));
+      }
+      return;
+    }
+    if (combustiblesPermitidosConsumidor.length > 1 && form.combustible_id && !combustiblesPermitidosConsumidor.includes(form.combustible_id)) {
+      setForm(f => ({ ...f, combustible_id: '' }));
+    }
+  }, [form.consumidor_id, form.combustible_id, combustiblesPermitidosConsumidor]);
 
   // Consumidores que pueden ser origen de despacho (tanques y reservas)
   const consumidoresOrigen = consumidoresActivos.filter(c => {
@@ -72,9 +117,10 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   // - Fallback por nombre: reserva/tanque/equipo/almacén NO requieren.
   const consumidorRequiereOdometro = useMemo(() => {
     if (!consumidorSeleccionado) return false;
-    if (tipoConsumidor?.requiere_odometro != null) return !!tipoConsumidor.requiere_odometro;
     const n = (consumidorSeleccionado.tipo_consumidor_nombre || '').toLowerCase();
+    // Reserva/tanque/almacén siempre se tratan como almacenamiento global: sin odómetro.
     if (n.includes('reserva') || n.includes('tanque') || n.includes('equipo') || n.includes('almac')) return false;
+    if (tipoConsumidor?.requiere_odometro != null) return !!tipoConsumidor.requiere_odometro;
     return true;
   }, [consumidorSeleccionado, tipoConsumidor]);
 
@@ -323,11 +369,21 @@ export default function NuevoMovimientoForm({ onSuccess }) {
         {tipo === 'COMPRA' && (
           <>
             <div>
+              <Label className="text-xs text-slate-500">Tipo de consumidor</Label>
+              <Select value={filtroTipoConsumidor} onValueChange={setFiltroTipoConsumidor}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Filtrar tipo" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {tiposConsumidor.filter(t => t.activo !== false).map(t => <SelectItem key={t.id} value={t.id}>{t.nombre}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label className="text-xs text-slate-500">Consumidor</Label>
               <Select value={form.consumidor_id} onValueChange={v => set('consumidor_id', v)}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar consumidor" /></SelectTrigger>
                 <SelectContent>
-                  {consumidoresActivos.map(c => (
+                  {consumidoresFiltradosPorTipo.map(c => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.nombre}{c.codigo_interno ? ` · ${c.codigo_interno}` : ''}{c.tipo_consumidor_nombre ? ` (${c.tipo_consumidor_nombre})` : ''}
                     </SelectItem>
@@ -338,10 +394,17 @@ export default function NuevoMovimientoForm({ onSuccess }) {
             </div>
             <div>
               <Label className="text-xs text-slate-500">Combustible</Label>
-              <Select value={form.combustible_id} onValueChange={v => set('combustible_id', v)}>
+              <Select
+                value={form.combustible_id}
+                onValueChange={v => set('combustible_id', v)}
+                disabled={combustiblesPermitidosConsumidor.length === 1}
+              >
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar combustible" /></SelectTrigger>
                 <SelectContent>
-                  {combustiblesActivos.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
+                  {(combustiblesPermitidosConsumidor.length > 0
+                    ? combustiblesActivos.filter(c => combustiblesPermitidosConsumidor.includes(c.id))
+                    : combustiblesActivos
+                  ).map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
                 </SelectContent>
               </Select>
               {errors.combustible_id && <p className="text-xs text-red-500 mt-1">{errors.combustible_id}</p>}
@@ -453,11 +516,21 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               {errors.consumidor_origen_id && <p className="text-xs text-red-500 mt-1">{errors.consumidor_origen_id}</p>}
             </div>
             <div>
+              <Label className="text-xs text-slate-500">Tipo de consumidor</Label>
+              <Select value={filtroTipoConsumidor} onValueChange={setFiltroTipoConsumidor}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Filtrar tipo" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {tiposConsumidor.filter(t => t.activo !== false).map(t => <SelectItem key={t.id} value={t.id}>{t.nombre}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label className="text-xs text-slate-500">Destino (Consumidor)</Label>
               <Select value={form.consumidor_id} onValueChange={v => set('consumidor_id', v)}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar destino" /></SelectTrigger>
                 <SelectContent>
-                  {consumidoresActivos.filter(c => c.id !== form.consumidor_origen_id).map(c => (
+                  {consumidoresFiltradosPorTipo.filter(c => c.id !== form.consumidor_origen_id).map(c => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.nombre}{c.codigo_interno ? ` · ${c.codigo_interno}` : ''}
                     </SelectItem>
@@ -468,10 +541,17 @@ export default function NuevoMovimientoForm({ onSuccess }) {
             </div>
             <div>
               <Label className="text-xs text-slate-500">Combustible</Label>
-              <Select value={form.combustible_id} onValueChange={v => set('combustible_id', v)}>
+              <Select
+                value={form.combustible_id}
+                onValueChange={v => set('combustible_id', v)}
+                disabled={combustiblesPermitidosConsumidor.length === 1}
+              >
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar combustible" /></SelectTrigger>
                 <SelectContent>
-                  {combustiblesActivos.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
+                  {(combustiblesPermitidosConsumidor.length > 0
+                    ? combustiblesActivos.filter(c => combustiblesPermitidosConsumidor.includes(c.id))
+                    : combustiblesActivos
+                  ).map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
                 </SelectContent>
               </Select>
               {errors.combustible_id && <p className="text-xs text-red-500 mt-1">{errors.combustible_id}</p>}
