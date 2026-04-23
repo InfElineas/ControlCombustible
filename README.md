@@ -28,6 +28,8 @@ VITE_BASE44_APP_BASE_URL=https://my-to-do-list-81bfaad7.base44.app
 
 Run the app: `npm run dev`
 
+Run conflict-marker check: `npm run check:conflicts`
+
 **Publish your changes**
 
 Open [Base44.com](http://Base44.com) and click on Publish.
@@ -37,3 +39,19 @@ Open [Base44.com](http://Base44.com) and click on Publish.
 Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
 
 Support: [https://app.base44.com/support](https://app.base44.com/support)
+
+
+**Import seed data (Supabase)**
+
+1. Place exported datasets under `seed-data/` (see `seed-data/manifest.json`).
+2. Configure credentials in `.env.local` (recommended):
+
+```
+VITE_SUPABASE_URL=https://<tu-proyecto>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<tu-service-role-key>
+```
+
+3. Dry run (no DB writes): `npm run seed:import`
+4. Apply import: `npm run seed:import:apply`
+
+The importer respects relational order: `tipo_combustible` → `tipo_consumidor` → `vehiculo` → `tarjeta` → `consumidor` → `precio_combustible` → `config_alerta` → `movimiento`.

@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { toast } from "sonner";
 import { Plus, Pencil, Power, Trash2, User, AlertTriangle, CreditCard } from 'lucide-react';
 import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
+import { computeChoferDelMes, getMonthOptionsFromMovimientos } from '@/lib/fuel-analytics';
 
 const emptyForm = {
   nombre: '', ci: '', telefono: '', email: '',
@@ -34,6 +35,8 @@ export default function Conductores() {
   const queryClient = useQueryClient();
   const { data: conductores = [] } = useQuery({ queryKey: ['conductores'], queryFn: () => base44.entities.Conductor.list() });
   const { data: vehiculos = [] } = useQuery({ queryKey: ['vehiculos'], queryFn: () => base44.entities.Vehiculo.list() });
+  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 1000) });
+  const [mesFiltro, setMesFiltro] = useState('ALL');
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -41,6 +44,11 @@ export default function Conductores() {
   const [confirmAction, setConfirmAction] = useState(null);
 
   const vehiculosActivos = useMemo(() => vehiculos.filter(v => v.activa), [vehiculos]);
+  const opcionesMes = useMemo(() => getMonthOptionsFromMovimientos(movimientos), [movimientos]);
+  const choferDelMes = useMemo(
+    () => computeChoferDelMes({ month: mesFiltro, movimientos, conductores }),
+    [mesFiltro, movimientos, conductores],
+  );
 
   const createMut = useMutation({
     mutationFn: (d) => base44.entities.Conductor.create(d),
@@ -95,10 +103,32 @@ export default function Conductores() {
           <h1 className="text-xl font-bold text-slate-800">Conductores</h1>
           <p className="text-xs text-slate-400">{conductores.length} registrados</p>
         </div>
-        <Button size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700" onClick={() => { setForm(emptyForm); setEditing(null); setDialogOpen(true); }}>
-          <Plus className="w-4 h-4" /> Nuevo
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select value={mesFiltro} onValueChange={setMesFiltro}>
+            <SelectTrigger className="h-8 w-48"><SelectValue placeholder="Mes" /></SelectTrigger>
+            <SelectContent>
+              {opcionesMes.map(opt => <SelectItem key={opt.key} value={opt.key}>{opt.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700" onClick={() => { setForm(emptyForm); setEditing(null); setDialogOpen(true); }}>
+            <Plus className="w-4 h-4" /> Nuevo
+          </Button>
+        </div>
       </div>
+
+      <Card className="border-0 shadow-sm">
+        <CardContent className="p-4">
+          <p className="text-[11px] text-slate-400 uppercase tracking-wide">Chofer del mes</p>
+          {choferDelMes ? (
+            <>
+              <p className="text-lg font-bold text-slate-800">{choferDelMes.conductor.nombre}</p>
+              <p className="text-xs text-slate-500">{choferDelMes.litros.toFixed(1)} L • {choferDelMes.movimientos} movimientos válidos</p>
+            </>
+          ) : (
+            <p className="text-sm text-slate-400">Sin datos suficientes para cálculo en el período seleccionado.</p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Alertas licencias */}
       {alertasLicencia.length > 0 && (

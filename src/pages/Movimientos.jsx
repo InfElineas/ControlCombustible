@@ -56,6 +56,7 @@ export default function Movimientos() {
   });
 
   const filtered = useMemo(() => {
+    const consumidorById = Object.fromEntries(consumidores.map(c => [c.id, c]));
     return movimientos.filter(m => {
       if (filters.fechaDesde && m.fecha < filters.fechaDesde) return false;
       if (filters.fechaHasta && m.fecha > filters.fechaHasta) return false;
@@ -63,6 +64,8 @@ export default function Movimientos() {
       if (filters.tarjeta !== 'all' && m.tarjeta_id !== filters.tarjeta) return false;
       if (filters.consumidor !== 'all' && m.consumidor_id !== filters.consumidor) return false;
       if (filters.tipoCombustible !== 'all' && m.combustible_id !== filters.tipoCombustible) return false;
+      const identificador = String(m.vehiculo_chapa || consumidorById[m.consumidor_id]?.codigo_interno || '').toLowerCase();
+      if (filters.chapa && !identificador.includes(String(filters.chapa).toLowerCase())) return false;
       // Filtro por tipo de consumidor (requiere cruzar con consumidores)
       if (filters.tipoConsumidor !== 'all') {
         const con = consumidores.find(c => c.id === m.consumidor_id);
@@ -85,6 +88,7 @@ export default function Movimientos() {
     { label: 'Tipo', accessor: 'tipo' },
     { label: 'Tarjeta', accessor: r => r.tarjeta_alias || r.tarjeta_id || '' },
     { label: 'Consumidor Destino', accessor: r => r.consumidor_nombre || r.vehiculo_chapa || '' },
+    { label: 'Chapa/Código destino', accessor: r => r.vehiculo_chapa || consumidores.find(c => c.id === r.consumidor_id)?.codigo_interno || '' },
     { label: 'Consumidor Origen', accessor: r => r.consumidor_origen_nombre || r.vehiculo_origen_chapa || '' },
     { label: 'Combustible', accessor: r => r.combustible_nombre || '' },
     { label: 'Litros', accessor: r => r.litros || '' },
@@ -178,6 +182,7 @@ export default function Movimientos() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Combustible</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Origen / Tarjeta</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Destino / Consumidor</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Chapa/Código</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Litros</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">Precio/L</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
@@ -212,9 +217,16 @@ export default function Movimientos() {
                       </td>
                       <td className="px-4 py-3 text-slate-600 text-xs">
                         {m.consumidor_nombre || m.vehiculo_chapa
-                          ? <span className="font-medium">{m.consumidor_nombre || m.vehiculo_chapa}</span>
+                          ? (
+                            <span className="font-medium">
+                              {m.consumidor_nombre || m.vehiculo_chapa}
+                            </span>
+                          )
                           : '—'
                         }
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 text-xs hidden md:table-cell">
+                        {m.vehiculo_chapa || consumidores.find(c => c.id === m.consumidor_id)?.codigo_interno || '—'}
                       </td>
                       <td className="px-4 py-3 text-right text-slate-700 font-medium whitespace-nowrap text-xs">
                         {m.litros != null ? `${Number(m.litros).toFixed(1)} L` : '—'}
