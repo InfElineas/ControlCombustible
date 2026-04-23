@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import {
-  LayoutDashboard, List, CreditCard, Truck, Fuel,
-  DollarSign, BarChart3, Menu, ChevronRight, LogOut, Settings, ShieldCheck, Users, UserCheck, Bell, BookOpen
+  LayoutDashboard, List, Fuel, BarChart3, Menu, ChevronRight, LogOut, Settings, ShieldCheck, Users, Bell, BookOpen
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";

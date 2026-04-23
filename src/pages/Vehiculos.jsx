@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { Plus, Pencil, Power, Trash2, Truck } from 'lucide-react';
 import StatusBadge from '@/components/ui-helpers/StatusBadge';
 import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
+import { computeVehiculoMonthlyStats, getMonthOptionsFromMovimientos } from '@/lib/fuel-analytics';
 
 const ESTADOS_VEHICULO = ['Operativo', 'En mantenimiento', 'Fuera de servicio', 'Baja'];
 
@@ -29,9 +30,12 @@ export default function Vehiculos() {
   const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-created_date', 500) });
 
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [mesFiltro, setMesFiltro] = useState('ALL');
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [confirmAction, setConfirmAction] = useState(null);
+
+  const opcionesMes = useMemo(() => getMonthOptionsFromMovimientos(movimientos), [movimientos]);
 
   const createMut = useMutation({
     mutationFn: (d) => base44.entities.Vehiculo.create(d),
@@ -88,13 +92,22 @@ export default function Vehiculos() {
           <h1 className="text-2xl font-bold text-slate-800">Vehículos</h1>
           <p className="text-sm text-slate-400">{vehiculos.length} registrados</p>
         </div>
-        <Button size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700" onClick={() => { setForm(emptyForm); setEditing(null); setDialogOpen(true); }}>
-          <Plus className="w-4 h-4" /> Nuevo
-        </Button>
+        <div className="flex items-center gap-2">
+          <Select value={mesFiltro} onValueChange={setMesFiltro}>
+            <SelectTrigger className="h-8 w-48"><SelectValue placeholder="Mes" /></SelectTrigger>
+            <SelectContent>
+              {opcionesMes.map(opt => <SelectItem key={opt.key} value={opt.key}>{opt.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700" onClick={() => { setForm(emptyForm); setEditing(null); setDialogOpen(true); }}>
+            <Plus className="w-4 h-4" /> Nuevo
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-3">
         {vehiculos.map(v => {
+          const stats = computeVehiculoMonthlyStats(v, movimientos, mesFiltro);
           const estadoColor = {
             'Operativo': 'bg-emerald-50 text-emerald-700 border-emerald-200',
             'En mantenimiento': 'bg-amber-50 text-amber-700 border-amber-200',
@@ -125,6 +138,14 @@ export default function Vehiculos() {
                     {v.conductor && <span>👤 {v.conductor}</span>}
                     {v.responsable && <span>🏷 {v.responsable}</span>}
                     {v.funcion && <span className="truncate max-w-xs">{v.funcion}</span>}
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-[11px] text-slate-600">
+                    <span><b>Litros del mes:</b> {stats.litrosMes ? `${stats.litrosMes.toFixed(1)} L` : 'Sin datos'}</span>
+                    <span><b>Consumo del mes:</b> {stats.consumoMes ? stats.consumoMes.toFixed(2) : 'No disponible'}</span>
+                    <span><b>Odómetro inicio:</b> {stats.odometroInicio != null ? `${stats.odometroInicio.toLocaleString()} km` : 'No disponible'}</span>
+                    <span><b>Última carga:</b> {stats.ultimaCarga?.fecha || 'Sin datos'}</span>
+                    <span><b>Fecha último abast.:</b> {stats.fechaUltimoAbastecimiento || 'Sin datos'}</span>
+                    <span><b>Días desde abast.:</b> {stats.diasDesdeUltimoAbast != null ? `${stats.diasDesdeUltimoAbast} días` : 'Sin datos'}</span>
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
