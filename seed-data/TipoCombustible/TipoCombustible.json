@@ -1,0 +1,32 @@
+[
+  {
+    "nombre": "Diesel",
+    "activa": true,
+    "id": "69c14c6070632ab67fe95378",
+    "created_date": "2026-03-23T14:21:20.105000",
+    "updated_date": "2026-03-23T14:21:20.105000",
+    "created_by_id": "69c14b6251ead42928d8a2d1",
+    "created_by": "proyectoscubahab@gmail.com",
+    "is_sample": false
+  },
+  {
+    "nombre": "Gasolina Regular",
+    "activa": true,
+    "id": "69c14c6070632ab67fe95379",
+    "created_date": "2026-03-23T14:21:20.105000",
+    "updated_date": "2026-03-23T14:21:20.105000",
+    "created_by_id": "69c14b6251ead42928d8a2d1",
+    "created_by": "proyectoscubahab@gmail.com",
+    "is_sample": false
+  },
+  {
+    "nombre": "Gasolina Especial",
+    "activa": true,
+    "id": "69c14c6070632ab67fe95377",
+    "created_date": "2026-03-23T14:21:20.104000",
+    "updated_date": "2026-03-23T14:21:20.104000",
+    "created_by_id": "69c14b6251ead42928d8a2d1",
+    "created_by": "proyectoscubahab@gmail.com",
+    "is_sample": false
+  }
+]
