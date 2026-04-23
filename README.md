@@ -55,3 +55,14 @@ SUPABASE_SERVICE_ROLE_KEY=<tu-service-role-key>
 4. Apply import: `npm run seed:import:apply`
 
 The importer respects relational order: `tipo_combustible` → `tipo_consumidor` → `vehiculo` → `tarjeta` → `consumidor` → `precio_combustible` → `config_alerta` → `movimiento`.
+
+**Apply DB schema changes (Supabase)**
+
+If the UI sends new fields (for example `consumidor.litros_iniciales`) and Supabase returns `400 Bad Request`, run the SQL migration in `migrations/` from Supabase SQL Editor.
+
+Example migration for `litros_iniciales`:
+
+- File: `migrations/2026-04-23_add_litros_iniciales_to_consumidor.sql`
+- SQL:
+  - `ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS litros_iniciales numeric DEFAULT 0 NOT NULL;`
+  - `UPDATE consumidor SET litros_iniciales = 0 WHERE litros_iniciales IS NULL;`
