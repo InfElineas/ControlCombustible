@@ -1,0 +1,58 @@
+[
+  {
+    "icono": "settings",
+    "campos_extra_schema": null,
+    "unidad_consumo": "km/L",
+    "nombre": "Uso de almacen",
+    "requiere_odometro": false,
+    "activo": true,
+    "id": "69d6a5cafba4ee76c432a591",
+    "created_date": "2026-04-08T19:00:26.400000",
+    "updated_date": "2026-04-08T19:00:26.400000",
+    "created_by_id": "69c14b6251ead42928d8a2d1",
+    "created_by": "proyectoscubahab@gmail.com",
+    "is_sample": false
+  },
+  {
+    "icono": "truck",
+    "campos_extra_schema": null,
+    "unidad_consumo": "km/L",
+    "nombre": "Vehículo",
+    "requiere_odometro": true,
+    "activo": true,
+    "id": "69cd22126339220ca63b63cd",
+    "created_date": "2026-04-01T13:48:02.589000",
+    "updated_date": "2026-04-01T13:55:56.455000",
+    "created_by_id": "69c14b6251ead42928d8a2d1",
+    "created_by": "proyectoscubahab@gmail.com",
+    "is_sample": false
+  },
+  {
+    "icono": "zap",
+    "campos_extra_schema": null,
+    "unidad_consumo": "L/h",
+    "nombre": "Equipo / Generador",
+    "requiere_odometro": false,
+    "activo": true,
+    "id": "69cd22126339220ca63b63cf",
+    "created_date": "2026-04-01T13:48:02.589000",
+    "updated_date": "2026-04-01T13:48:02.589000",
+    "created_by_id": "69c14b6251ead42928d8a2d1",
+    "created_by": "proyectoscubahab@gmail.com",
+    "is_sample": false
+  },
+  {
+    "icono": "container",
+    "campos_extra_schema": null,
+    "unidad_consumo": "L/ciclo",
+    "nombre": "Reserva",
+    "requiere_odometro": false,
+    "activo": true,
+    "id": "69cd22126339220ca63b63ce",
+    "created_date": "2026-04-01T13:48:02.589000",
+    "updated_date": "2026-04-08T19:41:46.763000",
+    "created_by_id": "69c14b6251ead42928d8a2d1",
+    "created_by": "proyectoscubahab@gmail.com",
+    "is_sample": false
+  }
+]
