@@ -219,31 +219,37 @@ export default function Dashboard() {
           <Card className="border-0 shadow-sm">
             <CardContent className="p-4">
               <p className="text-[11px] text-slate-400 uppercase tracking-wide">Gasto combustible</p>
-              <p className="text-lg font-bold text-slate-800 mt-1">{formatMonto(gastoMes)}</p>
-              <p className="text-xs text-slate-400">{comprasMes.length} compras</p>
+              <p className="text-lg font-bold text-slate-800 mt-1 leading-tight">{formatMonto(gastoMes)}</p>
+              <p className="text-xs text-slate-400 mt-1">{comprasMes.length} compras</p>
             </CardContent>
           </Card>
           <Card className="border-0 shadow-sm">
             <CardContent className="p-4">
               <p className="text-[11px] text-slate-400 uppercase tracking-wide">Litros comprados</p>
-              <p className="text-lg font-bold text-orange-600 mt-1">{litrosMes.toFixed(1)} L</p>
-              <p className="text-xs text-slate-400">{litrosDespachadosMes.toFixed(1)} L despachados</p>
+              <p className="text-lg font-bold text-orange-600 mt-1 leading-tight inline-flex items-baseline gap-1.5">
+                <span>{litrosMes.toFixed(1)}</span>
+                <span className="text-base font-semibold">L</span>
+              </p>
+              <p className="text-xs text-slate-400 mt-1 inline-flex items-baseline gap-1">
+                <span>{litrosDespachadosMes.toFixed(1)}</span>
+                <span>L despachados</span>
+              </p>
             </CardContent>
           </Card>
           <Card className="border-0 shadow-sm">
             <CardContent className="p-4">
               <p className="text-[11px] text-slate-400 uppercase tracking-wide">Consumidores activos</p>
-              <p className="text-lg font-bold text-emerald-600 mt-1">{consumidoresActivos.length}</p>
-              <p className="text-xs text-slate-400">{tiposConsumidor.filter(t => t.activo !== false).length} tipos</p>
+              <p className="text-lg font-bold text-emerald-600 mt-1 leading-tight">{consumidoresActivos.length}</p>
+              <p className="text-xs text-slate-400 mt-1">{tiposConsumidor.filter(t => t.activo !== false).length} tipos</p>
             </CardContent>
           </Card>
           <Card className={`border-0 shadow-sm ${alertasConsumo.length > 0 ? 'ring-1 ring-red-200 bg-red-50/20' : ''}`}>
             <CardContent className="p-4">
               <p className="text-[11px] text-slate-400 uppercase tracking-wide">Consumo crítico</p>
-              <p className={`text-lg font-bold mt-1 ${alertasConsumo.length > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+              <p className={`text-lg font-bold mt-1 leading-tight ${alertasConsumo.length > 0 ? 'text-red-500' : 'text-slate-400'}`}>
                 {alertasConsumo.length}
               </p>
-              <p className="text-xs text-slate-400">unidades con alerta</p>
+              <p className="text-xs text-slate-400 mt-1">unidades con alerta</p>
             </CardContent>
           </Card>
         </div>
