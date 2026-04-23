@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Save, Loader2, Gauge } from 'lucide-react';
 import { obtenerPrecioVigente, calcularSaldo, formatMonto } from '@/components/ui-helpers/SaldoUtils';
+import { calcularAuditoriaCompra, obtenerCapacidadTanque, AUDITORIA_ESTADO } from './auditoriaCombustible';
 
 export default function NuevoMovimientoForm({ onSuccess }) {
   const queryClient = useQueryClient();
@@ -66,14 +67,25 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   const consumidorSeleccionado = consumidores.find(c => c.id === form.consumidor_id);
   const tipoConsumidor = tiposConsumidor.find(t => t.id === consumidorSeleccionado?.tipo_consumidor_id);
 
-  // El odómetro es obligatorio en COMPRA siempre (para cualquier consumidor)
-  const requiereOdometro = tipo === 'COMPRA';
+  // Regla de odómetro por tipo de consumidor:
+  // - Priorizar flag del catálogo (requiere_odometro) si existe.
+  // - Fallback por nombre: reserva/tanque/equipo/almacén NO requieren.
+  const consumidorRequiereOdometro = useMemo(() => {
+    if (!consumidorSeleccionado) return false;
+    const n = (consumidorSeleccionado.tipo_consumidor_nombre || '').toLowerCase();
+    // Reserva/tanque/almacén siempre se tratan como almacenamiento global: sin odómetro.
+    if (n.includes('reserva') || n.includes('tanque') || n.includes('equipo') || n.includes('almac')) return false;
+    if (tipoConsumidor?.requiere_odometro != null) return !!tipoConsumidor.requiere_odometro;
+    return true;
+  }, [consumidorSeleccionado, tipoConsumidor]);
+
+  const requiereOdometro = (tipo === 'COMPRA' || tipo === 'DESPACHO') && consumidorRequiereOdometro;
 
   // Obtener el último odómetro registrado para este consumidor (por odómetro más alto, que es más confiable)
   const ultimoMovConOdometro = useMemo(() => {
     if (!form.consumidor_id) return null;
     const movs = movimientos
-      .filter(m => m.consumidor_id === form.consumidor_id && m.tipo === 'COMPRA' && m.odometro != null)
+      .filter(m => m.consumidor_id === form.consumidor_id && (m.tipo === 'COMPRA' || m.tipo === 'DESPACHO') && m.odometro != null)
       .sort((a, b) => b.odometro - a.odometro); // mayor odómetro = más reciente
     return movs.length > 0 ? movs[0] : null;
   }, [form.consumidor_id, movimientos]);
@@ -112,6 +124,23 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     if (desviacion >= umbralAlerta) return { nivel: 'alerta', desviacion };
     return null;
   }, [consumoRealCalculado, consumoReferencia, consumidorSeleccionado]);
+
+  const capacidadTanque = useMemo(
+    () => obtenerCapacidadTanque(consumidorSeleccionado),
+    [consumidorSeleccionado]
+  );
+
+  const auditoriaCompra = useMemo(() => {
+    if (tipo !== 'COMPRA') return null;
+    return calcularAuditoriaCompra({
+      movimientos,
+      consumidorId: form.consumidor_id,
+      combustibleId: form.combustible_id,
+      fecha: form.fecha,
+      litrosAbastecidos: litrosReales,
+      capacidadTanque,
+    });
+  }, [tipo, movimientos, form.consumidor_id, form.combustible_id, form.fecha, litrosReales, capacidadTanque]);
 
   // Stock de un consumidor origen (para DESPACHO)
   const calcularStockConsumidor = (consumidorId, combustibleId) => {
@@ -158,10 +187,15 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       if (saldoTarjeta != null && parseFloat(form.monto) > 0 && parseFloat(form.monto) > saldoTarjeta) {
         e.monto = `Saldo insuficiente. Disponible: ${formatMonto(saldoTarjeta)}`;
       }
-      if (!form.odometro || parseFloat(form.odometro) <= 0) {
-        e.odometro = 'El odómetro actual es obligatorio';
-      } else if (ultimoOdometro != null && parseFloat(form.odometro) <= ultimoOdometro) {
-        e.odometro = `Debe ser mayor al registro anterior: ${ultimoOdometro.toLocaleString()} km`;
+      if (requiereOdometro) {
+        if (!form.odometro || parseFloat(form.odometro) <= 0) {
+          e.odometro = 'El odómetro actual es obligatorio';
+        } else if (ultimoOdometro != null && parseFloat(form.odometro) <= ultimoOdometro) {
+          e.odometro = `Debe ser mayor al registro anterior: ${ultimoOdometro.toLocaleString()} km`;
+        }
+      }
+      if (auditoriaCompra?.estado === AUDITORIA_ESTADO.EXCESO && capacidadTanque != null) {
+        e.monto = `Excede capacidad de tanque (${capacidadTanque.toFixed(2)} L) según estimación.`;
       }
     } else if (tipo === 'RECARGA') {
       if (!form.tarjeta_id) e.tarjeta_id = 'Seleccione tarjeta';
@@ -171,6 +205,13 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       if (!form.consumidor_id) e.consumidor_id = 'Seleccione consumidor destino';
       if (!form.combustible_id) e.combustible_id = 'Seleccione combustible';
       if (!form.litros || parseFloat(form.litros) <= 0) e.litros = 'Litros > 0';
+      if (requiereOdometro) {
+        if (!form.odometro || parseFloat(form.odometro) <= 0) {
+          e.odometro = 'El odómetro actual es obligatorio para este consumidor';
+        } else if (ultimoOdometro != null && parseFloat(form.odometro) <= ultimoOdometro) {
+          e.odometro = `Debe ser mayor al registro anterior: ${ultimoOdometro.toLocaleString()} km`;
+        }
+      }
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -198,10 +239,14 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       data.combustible_nombre = combustible.nombre;
       data.precio = precioVigente;
       data.litros = litrosCalculados;
-      data.odometro = parseFloat(form.odometro);
-      data.odometro_anterior = ultimoOdometro;
-      if (kmRecorridos != null) data.km_recorridos = kmRecorridos;
-      if (consumoRealCalculado != null) data.consumo_real = consumoRealCalculado;
+      data.remanente_estimado_antes = auditoriaCompra?.remanenteAntes ?? null;
+      data.combustible_estimado_post = auditoriaCompra?.combustibleEstimadoPost ?? null;
+      data.capacidad_tanque = capacidadTanque;
+      data.auditoria_combustible_estado = auditoriaCompra?.estado || AUDITORIA_ESTADO.SIN_ESTIMACION;
+      if (form.odometro) data.odometro = parseFloat(form.odometro);
+      if (ultimoOdometro != null) data.odometro_anterior = ultimoOdometro;
+      if (kmRecorridos != null && requiereOdometro) data.km_recorridos = kmRecorridos;
+      if (consumoRealCalculado != null && requiereOdometro) data.consumo_real = consumoRealCalculado;
     } else if (tipo === 'RECARGA') {
       data.tarjeta_id = tarjeta.id;
       data.tarjeta_alias = tarjeta.alias || tarjeta.id_tarjeta;
@@ -219,6 +264,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       data.combustible_id = combustible.id;
       data.combustible_nombre = combustible.nombre;
       data.litros = parseFloat(form.litros);
+      if (form.odometro) data.odometro = parseFloat(form.odometro);
       data.referencia = form.referencia;
     }
     createMutation.mutate(data);
@@ -311,12 +357,26 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               <span className="text-sm text-slate-500">Litros equivalentes</span>
               <span className="text-lg font-bold text-slate-800">{litrosCalculados != null ? `${litrosCalculados.toFixed(2)} L` : '—'}</span>
             </div>
+            {auditoriaCompra && (
+              <div className={`rounded-xl p-3 border text-xs space-y-1 ${
+                auditoriaCompra.estado === AUDITORIA_ESTADO.EXCESO
+                  ? 'bg-red-50 border-red-200 text-red-700'
+                  : 'bg-slate-50 border-slate-200 text-slate-700'
+              }`}>
+                <p>Remanente estimado antes: <b>{auditoriaCompra.remanenteAntes != null ? `${auditoriaCompra.remanenteAntes.toFixed(2)} L` : 'No disponible'}</b></p>
+                <p>Combustible estimado post-abastecimiento: <b>{auditoriaCompra.combustibleEstimadoPost != null ? `${auditoriaCompra.combustibleEstimadoPost.toFixed(2)} L` : 'No disponible'}</b></p>
+                <p>Capacidad de tanque: <b>{capacidadTanque != null ? `${capacidadTanque.toFixed(2)} L` : 'No registrada'}</b></p>
+                {auditoriaCompra.estado === AUDITORIA_ESTADO.EXCESO && capacidadTanque != null && (
+                  <p className="font-semibold">⚠ Inconsistencia: el estimado supera la capacidad del tanque.</p>
+                )}
+              </div>
+            )}
 
-            {/* Odómetro - obligatorio en toda COMPRA */}
+            {/* Odómetro - requerido solo para tipos que lo necesitan */}
             <div className={`border rounded-xl p-3 space-y-2 ${errors.odometro ? 'border-red-200 bg-red-50/30' : 'border-sky-100 bg-sky-50/40'}`}>
               <div className="flex items-center gap-1.5 text-xs font-semibold text-sky-700">
                 <Gauge className="w-3.5 h-3.5" />
-                Odómetro actual <span className="text-red-400">*</span>
+                Odómetro actual {requiereOdometro && <span className="text-red-400">*</span>}
                 {ultimoOdometro != null && (
                   <span className="font-normal text-slate-400 ml-auto">Anterior: {ultimoOdometro.toLocaleString()} km</span>
                 )}
@@ -330,6 +390,9 @@ export default function NuevoMovimientoForm({ onSuccess }) {
                 placeholder="Lectura actual (km)"
                 className={errors.odometro ? 'border-red-300 focus-visible:ring-red-300' : ''}
               />
+              {!requiereOdometro && (
+                <p className="text-[11px] text-slate-400">No obligatorio para el tipo de consumidor seleccionado.</p>
+              )}
               {errors.odometro && <p className="text-xs text-red-500">{errors.odometro}</p>}
               {kmRecorridos != null && (
                 <div className="flex justify-between text-xs text-slate-500 pt-1 flex-wrap gap-1">
@@ -428,6 +491,28 @@ export default function NuevoMovimientoForm({ onSuccess }) {
             <div>
               <Label className="text-xs text-slate-500">Referencia (opcional)</Label>
               <Input value={form.referencia} onChange={e => set('referencia', e.target.value)} placeholder="Nota..." className="mt-1" />
+            </div>
+            <div className={`border rounded-xl p-3 space-y-2 ${errors.odometro ? 'border-red-200 bg-red-50/30' : 'border-purple-100 bg-purple-50/40'}`}>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-700">
+                <Gauge className="w-3.5 h-3.5" />
+                Odómetro despacho {requiereOdometro && <span className="text-red-400">*</span>}
+                {ultimoOdometro != null && (
+                  <span className="font-normal text-slate-400 ml-auto">Anterior: {ultimoOdometro.toLocaleString()} km</span>
+                )}
+              </div>
+              <Input
+                type="number"
+                min={ultimoOdometro != null ? ultimoOdometro + 1 : 0}
+                step="1"
+                value={form.odometro}
+                onChange={e => set('odometro', e.target.value)}
+                placeholder="Lectura actual (km)"
+                className={errors.odometro ? 'border-red-300 focus-visible:ring-red-300' : ''}
+              />
+              {!requiereOdometro && (
+                <p className="text-[11px] text-slate-400">No obligatorio para reserva/tanque/equipo.</p>
+              )}
+              {errors.odometro && <p className="text-xs text-red-500">{errors.odometro}</p>}
             </div>
           </>
         )}

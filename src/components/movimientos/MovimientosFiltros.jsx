@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { X } from 'lucide-react';
 
-const EMPTY = { fechaDesde: '', fechaHasta: '', tipo: 'all', tipoConsumidor: 'all', consumidor: 'all', tipoCombustible: 'all', tarjeta: 'all' };
+const EMPTY = { fechaDesde: '', fechaHasta: '', tipo: 'all', tipoConsumidor: 'all', consumidor: 'all', tipoCombustible: 'all', tarjeta: 'all', chapa: '' };
 
 export default function MovimientosFiltros({ filters, onChange, consumidores, tiposConsumidor, combustibles, tarjetas }) {
   // Consumidores filtrados por tipo seleccionado
@@ -67,7 +67,7 @@ export default function MovimientosFiltros({ filters, onChange, consumidores, ti
         </div>
 
         {/* Fila 2: Consumidor (tipo → subtipo) + Combustible */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <div>
             <label className="text-xs text-slate-500 font-medium">Tipo de consumidor</label>
             <Select value={filters.tipoConsumidor} onValueChange={v => set('tipoConsumidor', v)}>
@@ -108,6 +108,15 @@ export default function MovimientosFiltros({ filters, onChange, consumidores, ti
                 {combustibles.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 font-medium">Chapa</label>
+            <Input
+              value={filters.chapa || ''}
+              onChange={e => set('chapa', e.target.value)}
+              className="mt-1 text-xs h-8"
+              placeholder="Ej: B123456"
+            />
           </div>
         </div>
 
