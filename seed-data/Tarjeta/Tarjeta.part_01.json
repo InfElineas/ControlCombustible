@@ -1,0 +1,72 @@
+[
+  {
+    "alias": null,
+    "moneda": "USD",
+    "id_tarjeta": "Saldo Inicio 2026",
+    "saldo_inicial": 10000,
+    "umbral_alerta": null,
+    "activa": false,
+    "id": "69e137de858325f5eb73f987",
+    "created_date": "2026-04-16T19:26:22.768000",
+    "updated_date": "2026-04-20T19:17:22.991000",
+    "created_by_id": "69c14b6251ead42928d8a2d1",
+    "created_by": "proyectoscubahab@gmail.com",
+    "is_sample": false
+  },
+  {
+    "alias": "SM23",
+    "moneda": "USD",
+    "id_tarjeta": "Otra Cuenta",
+    "saldo_inicial": 22000,
+    "umbral_alerta": null,
+    "activa": true,
+    "id": "69c293013f555c797f762cec",
+    "created_date": "2026-03-24T13:34:57.522000",
+    "updated_date": "2026-04-22T11:15:51.148000",
+    "created_by_id": "69c14b6251ead42928d8a2d1",
+    "created_by": "proyectoscubahab@gmail.com",
+    "is_sample": false
+  },
+  {
+    "alias": "Tarjeta #78321",
+    "moneda": "USD",
+    "id_tarjeta": "9240069992278321",
+    "saldo_inicial": 0,
+    "umbral_alerta": null,
+    "activa": true,
+    "id": "69c14c6070632ab67fe95374",
+    "created_date": "2026-03-23T14:21:20.100000",
+    "updated_date": "2026-04-09T18:13:45.827000",
+    "created_by_id": "69c14b6251ead42928d8a2d1",
+    "created_by": "proyectoscubahab@gmail.com",
+    "is_sample": false
+  },
+  {
+    "alias": "Tarjeta #79149",
+    "moneda": "USD",
+    "id_tarjeta": "9240069992279149",
+    "saldo_inicial": 1250,
+    "umbral_alerta": null,
+    "activa": true,
+    "id": "69c14c6070632ab67fe95375",
+    "created_date": "2026-03-23T14:21:20.100000",
+    "updated_date": "2026-04-09T18:14:21.871000",
+    "created_by_id": "69c14b6251ead42928d8a2d1",
+    "created_by": "proyectoscubahab@gmail.com",
+    "is_sample": false
+  },
+  {
+    "alias": "Tarjeta #59765",
+    "moneda": "USD",
+    "id_tarjeta": "9240069994759765",
+    "saldo_inicial": 5960.87,
+    "umbral_alerta": null,
+    "activa": true,
+    "id": "69c14c6070632ab67fe95376",
+    "created_date": "2026-03-23T14:21:20.100000",
+    "updated_date": "2026-03-23T16:27:42.616000",
+    "created_by_id": "69c14b6251ead42928d8a2d1",
+    "created_by": "proyectoscubahab@gmail.com",
+    "is_sample": false
+  }
+]

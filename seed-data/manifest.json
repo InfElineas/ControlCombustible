@@ -1,0 +1,53 @@
+{
+  "ConfigAlerta": {
+    "records": 1,
+    "chunks": [
+      "ConfigAlerta.part_01.json"
+    ]
+  },
+  "Consumidor": {
+    "records": 20,
+    "chunks": [
+      "Consumidor.part_01.json"
+    ]
+  },
+  "TipoConsumidor": {
+    "records": 4,
+    "chunks": [
+      "TipoConsumidor.part_01.json"
+    ]
+  },
+  "Movimiento": {
+    "records": 179,
+    "chunks": [
+      "Movimiento.part_01.json",
+      "Movimiento.part_02.json",
+      "Movimiento.part_03.json",
+      "Movimiento.part_04.json"
+    ]
+  },
+  "PrecioCombustible": {
+    "records": 3,
+    "chunks": [
+      "PrecioCombustible.part_01.json"
+    ]
+  },
+  "TipoCombustible": {
+    "records": 3,
+    "chunks": [
+      "TipoCombustible.part_01.json"
+    ]
+  },
+  "Vehiculo": {
+    "records": 18,
+    "chunks": [
+      "Vehiculo.part_01.json"
+    ]
+  },
+  "Tarjeta": {
+    "records": 5,
+    "chunks": [
+      "Tarjeta.part_01.json"
+    ]
+  }
+}
