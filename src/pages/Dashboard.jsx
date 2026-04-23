@@ -1,14 +1,17 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertTriangle, CreditCard, ArrowLeftRight, TrendingDown, TrendingUp, Users } from 'lucide-react';
+import { AlertTriangle, CreditCard, ArrowLeftRight, TrendingDown, TrendingUp, Users, CalendarDays } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { calcularSaldo, formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import GastosMensualesChart from '@/components/dashboard/GastosMensualesChart';
 import ConsumidoresPorTipo from '@/components/dashboard/ConsumidoresPorTipo';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { filterMovimientosByMonth, getMonthOptionsFromMovimientos } from '@/lib/fuel-analytics';
 
 function SectionTitle({ icon: Icon, title, iconColor = 'text-slate-400' }) {
   return (
@@ -20,19 +23,184 @@ function SectionTitle({ icon: Icon, title, iconColor = 'text-slate-400' }) {
 }
 
 export default function Dashboard() {
+  const [mesFiltro, setMesFiltro] = useState('ALL');
+  const [statModal, setStatModal] = useState({ open: false, tipo: null });
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
   const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 1000) });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
   const { data: tiposConsumidor = [] } = useQuery({ queryKey: ['tiposConsumidor'], queryFn: () => base44.entities.TipoConsumidor.list() });
+  const { data: tipoCombustible = [] } = useQuery({ queryKey: ['tipoCombustible'], queryFn: () => base44.entities.TipoCombustible.list() });
 
   const hoy = new Date();
-  const mesActual = hoy.toISOString().slice(0, 7);
+  const movimientosFiltrados = filterMovimientosByMonth(movimientos, mesFiltro);
+
+  const opcionesMes = useMemo(() => {
+    return getMonthOptionsFromMovimientos(movimientos);
+  }, [movimientos]);
+
+  const tarjetasById = useMemo(
+    () => Object.fromEntries(tarjetas.map(t => [t.id, t])),
+    [tarjetas],
+  );
+
+  const formatMoneySymbol = (monto, moneda = 'USD') => {
+    return formatMonto(monto, moneda);
+  };
+
+  const consumidoresReservaIds = useMemo(() => {
+    return new Set(
+      consumidores
+        .filter((c) => {
+          const tipo = (c.tipo_consumidor_nombre || '').toLowerCase();
+          return tipo.includes('tanque') || tipo.includes('reserva');
+        })
+        .map(c => c.id)
+    );
+  }, [consumidores]);
+
+  const resumenPorCombustible = useMemo(() => {
+    const keys = new Set([
+      ...tipoCombustible.map(c => c.nombre).filter(Boolean),
+      ...movimientos.map(m => m.combustible_nombre).filter(Boolean),
+    ]);
+
+    return [...keys].map((nombreCombustible) => {
+      const comprasHistoricas = movimientos.filter(m => m.tipo === 'COMPRA' && m.combustible_nombre === nombreCombustible);
+      const despachosHistoricos = movimientos.filter(m => m.tipo === 'DESPACHO' && m.combustible_nombre === nombreCombustible);
+      const comprasPeriodo = movimientosFiltrados.filter(m => m.tipo === 'COMPRA' && m.combustible_nombre === nombreCombustible);
+      const despachosPeriodo = movimientosFiltrados.filter(m => m.tipo === 'DESPACHO' && m.combustible_nombre === nombreCombustible);
+      const comprasReservaHistoricas = comprasHistoricas.filter(m => consumidoresReservaIds.has(m.consumidor_id));
+      const comprasReservaPeriodo = comprasPeriodo.filter(m => consumidoresReservaIds.has(m.consumidor_id));
+      const despachosReservaHistoricos = despachosHistoricos.filter(m => consumidoresReservaIds.has(m.consumidor_origen_id));
+      const despachosReservaPeriodo = despachosPeriodo.filter(m => consumidoresReservaIds.has(m.consumidor_origen_id));
+
+      const litrosInicio = comprasHistoricas
+        .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
+        .reduce((s, m) => s + (m.litros || 0), 0)
+        - despachosHistoricos
+          .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
+          .reduce((s, m) => s + (m.litros || 0), 0);
+
+      const montoInicio = comprasHistoricas
+        .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
+        .reduce((s, m) => s + (m.monto || 0), 0)
+        - despachosHistoricos
+          .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
+          .reduce((s, m) => s + (m.monto || 0), 0);
+
+      const litrosCompras = comprasPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
+      const montoCompras = comprasPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
+      const litrosConsumo = despachosPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
+      const montoConsumo = despachosPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
+      const comprasOpsMes = comprasPeriodo.length;
+      const despachosOpsCombMes = despachosPeriodo.length;
+      const recargasOpsMes = comprasReservaPeriodo.length;
+      const recargasOpsTotal = comprasReservaHistoricas.length;
+      const litrosComprasReservaMes = comprasReservaPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
+      const costoRecargasMes = comprasReservaPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
+      const costoRecargasTotal = comprasReservaHistoricas.reduce((s, m) => s + (m.monto || 0), 0);
+      const despachosOpsMes = despachosReservaPeriodo.length;
+      const despachosOpsTotal = despachosReservaHistoricos.length;
+      const litrosDespachosMes = despachosReservaPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
+      const litrosDespachosTotal = despachosReservaHistoricos.reduce((s, m) => s + (m.litros || 0), 0);
+      const montoDespachosMes = despachosReservaPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
+
+      const reservaIdsDelCombustible = new Set([
+        ...comprasReservaHistoricas.map(m => m.consumidor_id).filter(Boolean),
+        ...despachosReservaHistoricos.map(m => m.consumidor_origen_id).filter(Boolean),
+      ]);
+      const capacidadTotalReserva = [...reservaIdsDelCombustible]
+        .map((id) => consumidores.find(c => c.id === id)?.datos_vehiculo?.capacidad_tanque || 0)
+        .reduce((s, v) => s + (Number(v) || 0), 0);
+      const litrosEnTanqueEstimado = Math.max(
+        0,
+        comprasReservaHistoricas.reduce((s, m) => s + (m.litros || 0), 0)
+          - despachosReservaHistoricos.reduce((s, m) => s + (m.litros || 0), 0)
+      );
+      const litrosInicioReserva = comprasReservaHistoricas
+        .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
+        .reduce((s, m) => s + (m.litros || 0), 0)
+        - despachosReservaHistoricos
+          .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
+          .reduce((s, m) => s + (m.litros || 0), 0);
+      const montoInicioReserva = comprasReservaHistoricas
+        .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
+        .reduce((s, m) => s + (m.monto || 0), 0)
+        - despachosReservaHistoricos
+          .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
+          .reduce((s, m) => s + (m.monto || 0), 0);
+      const litrosTotalDisponibleReserva = Math.max(0, litrosInicioReserva + litrosComprasReservaMes);
+      const montoTotalDisponibleReserva = Math.max(0, montoInicioReserva + costoRecargasMes);
+
+      const detalleConsumoReservaMap = {};
+      despachosReservaPeriodo.forEach(m => {
+        const key = m.consumidor_nombre || 'Sin identificar';
+        if (!detalleConsumoReservaMap[key]) detalleConsumoReservaMap[key] = { litros: 0, monto: 0 };
+        detalleConsumoReservaMap[key].litros += m.litros || 0;
+        detalleConsumoReservaMap[key].monto += m.monto || 0;
+      });
+      const detalleConsumoReserva = Object.entries(detalleConsumoReservaMap)
+        .map(([nombre, data]) => ({ nombre, ...data }))
+        .sort((a, b) => b.litros - a.litros);
+
+      const detalleConsumoMap = {};
+      despachosPeriodo.forEach(m => {
+        const key = m.consumidor_nombre || 'Sin identificar';
+        if (!detalleConsumoMap[key]) detalleConsumoMap[key] = { litros: 0, monto: 0 };
+        detalleConsumoMap[key].litros += m.litros || 0;
+        detalleConsumoMap[key].monto += m.monto || 0;
+      });
+      const detalleConsumo = Object.entries(detalleConsumoMap)
+        .map(([nombre, data]) => ({ nombre, ...data }))
+        .sort((a, b) => b.litros - a.litros);
+
+      const ultimaCompra = comprasPeriodo[0] || comprasHistoricas[0] || null;
+      const moneda = (ultimaCompra && tarjetasById[ultimaCompra.tarjeta_id]?.moneda) || 'USD';
+      const precioRef = ultimaCompra?.precio || (litrosCompras > 0 ? montoCompras / litrosCompras : 0);
+
+      return {
+        nombreCombustible,
+        moneda,
+        precioRef,
+        litrosInicio: Math.max(0, litrosInicio),
+        montoInicio: Math.max(0, montoInicio),
+        litrosCompras,
+        montoCompras,
+        comprasOpsMes,
+        litrosDisponible: Math.max(0, litrosInicio + litrosCompras),
+        montoDisponible: Math.max(0, montoInicio + montoCompras),
+        litrosConsumo,
+        montoConsumo,
+        despachosOpsCombMes,
+        litrosSaldoFinal: Math.max(0, litrosInicio + litrosCompras - litrosConsumo),
+        montoSaldoFinal: Math.max(0, montoInicio + montoCompras - montoConsumo),
+        capacidadTotalReserva,
+        litrosEnTanqueEstimado,
+        recargasOpsMes,
+        recargasOpsTotal,
+        litrosComprasReservaMes,
+        costoRecargasMes,
+        costoRecargasTotal,
+        despachosOpsMes,
+        despachosOpsTotal,
+        litrosDespachosMes,
+        litrosDespachosTotal,
+        montoDespachosMes,
+        litrosInicioReserva: Math.max(0, litrosInicioReserva),
+        montoInicioReserva: Math.max(0, montoInicioReserva),
+        litrosTotalDisponibleReserva,
+        montoTotalDisponibleReserva,
+        detalleConsumoReserva,
+        detalleConsumo,
+      };
+    }).filter(r => r.litrosCompras > 0 || r.litrosConsumo > 0 || r.litrosInicio > 0);
+  }, [movimientos, movimientosFiltrados, mesFiltro, tipoCombustible, tarjetasById, consumidoresReservaIds, consumidores]);
 
   // Resumen del mes
-  const comprasMes = movimientos.filter(m => m.tipo === 'COMPRA' && m.fecha?.startsWith(mesActual));
+  const comprasMes = movimientosFiltrados.filter(m => m.tipo === 'COMPRA');
   const litrosMes = comprasMes.reduce((s, m) => s + (m.litros || 0), 0);
   const gastoMes = comprasMes.reduce((s, m) => s + (m.monto || 0), 0);
-  const despachosMes = movimientos.filter(m => m.tipo === 'DESPACHO' && m.fecha?.startsWith(mesActual));
+  const despachosMes = movimientosFiltrados.filter(m => m.tipo === 'DESPACHO');
   const litrosDespachadosMes = despachosMes.reduce((s, m) => s + (m.litros || 0), 0);
 
   // Consumidores activos
@@ -42,7 +210,7 @@ export default function Dashboard() {
   const alertasConsumo = consumidoresActivos.filter(c => {
     const consumoRef = c.datos_vehiculo?.indice_consumo_real || c.datos_vehiculo?.indice_consumo_fabricante;
     const movsConConsumo = movimientos
-      .filter(m => m.tipo === 'COMPRA' && m.consumidor_id === c.id && m.consumo_real != null)
+      .filter(m => m.tipo === 'COMPRA' && m.consumidor_id === c.id && m.consumo_real != null && (mesFiltro === 'ALL' || m.fecha?.startsWith(mesFiltro)))
       .sort((a, b) => b.odometro - a.odometro);
     if (!consumoRef || movsConConsumo.length === 0) return false;
     const consumoUltimo = movsConConsumo[0].consumo_real;
@@ -74,11 +242,47 @@ export default function Dashboard() {
   })();
 
   const hayStockReserva = Object.keys(stockReserva).length > 0;
+  const categoriasReserva = useMemo(() => {
+    const rows = { Particular: 0, Cupet: 0, 'Almacén': 0 };
+    movimientosFiltrados
+      .filter(m => m.tipo === 'DESPACHO')
+      .forEach((m) => {
+        const raw = `${m.consumidor_origen_nombre || ''} ${m.referencia || ''}`.toLowerCase();
+        if (raw.includes('cupet')) rows.Cupet += m.litros || 0;
+        else if (raw.includes('almac')) rows['Almacén'] += m.litros || 0;
+        else rows.Particular += m.litros || 0;
+      });
+    return rows;
+  }, [movimientosFiltrados]);
+
+  const consumidoresPorCombustible = useMemo(() => {
+    const map = {};
+    movimientosFiltrados
+      .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DESPACHO') && m.combustible_nombre)
+      .forEach((m) => {
+        const key = m.combustible_nombre;
+        if (!map[key]) map[key] = new Set();
+        if (m.consumidor_id) map[key].add(m.consumidor_id);
+      });
+    return Object.entries(map).map(([comb, ids]) => ({ combustible: comb, total: ids.size }));
+  }, [movimientosFiltrados]);
+
+  const alertasPorCombustible = useMemo(() => {
+    const map = {};
+    alertasConsumo.forEach((c) => {
+      const ultCompra = movimientos
+        .filter(m => m.tipo === 'COMPRA' && m.consumidor_id === c.id && (mesFiltro === 'ALL' || m.fecha?.startsWith(mesFiltro)))
+        .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')))[0];
+      const comb = ultCompra?.combustible_nombre || 'Sin combustible';
+      map[comb] = (map[comb] || 0) + 1;
+    });
+    return Object.entries(map).map(([combustible, total]) => ({ combustible, total }));
+  }, [alertasConsumo, movimientos, mesFiltro]);
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-slate-800">Dashboard</h1>
+        <h1 className="text-xl font-bold text-slate-800">Panel Global</h1>
         <p className="text-xs text-slate-400 mt-0.5">
           {hoy.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
         </p>
@@ -86,40 +290,175 @@ export default function Dashboard() {
 
       {/* Resumen del mes */}
       <div>
-        <SectionTitle icon={TrendingDown} title={`Resumen ${hoy.toLocaleDateString('es-ES', { month: 'long' })}`} iconColor="text-sky-500" />
+        <div className="flex flex-wrap items-end justify-between gap-2 mb-1">
+          <SectionTitle icon={TrendingDown} title={`Resumen ${mesFiltro === 'ALL' ? 'general' : opcionesMes.find(x => x.key === mesFiltro)?.label || ''}`} iconColor="text-sky-500" />
+          <div className="min-w-[220px] flex items-center gap-2">
+            <span className="text-[11px] uppercase tracking-wide text-slate-400">Período</span>
+            <Select value={mesFiltro} onValueChange={setMesFiltro}>
+              <SelectTrigger className="h-8 text-xs">
+                <CalendarDays className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
+                <SelectValue placeholder="Filtrar por mes" />
+              </SelectTrigger>
+              <SelectContent>
+                {opcionesMes.map(opt => (
+                  <SelectItem key={opt.key} value={opt.key} className="text-xs">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card className="border-0 shadow-sm">
+          <Card className="border-0 shadow-sm cursor-pointer hover:ring-1 hover:ring-sky-200 transition" onClick={() => setStatModal({ open: true, tipo: 'gasto' })}>
             <CardContent className="p-4">
               <p className="text-[11px] text-slate-400 uppercase tracking-wide">Gasto combustible</p>
-              <p className="text-lg font-bold text-slate-800 mt-1">{formatMonto(gastoMes)}</p>
-              <p className="text-xs text-slate-400">{comprasMes.length} compras</p>
+              <p className="text-lg font-bold text-slate-800 mt-1 leading-tight">{formatMonto(gastoMes)}</p>
+              <p className="text-xs text-slate-400 mt-1">{comprasMes.length} compras</p>
             </CardContent>
           </Card>
-          <Card className="border-0 shadow-sm">
+          <Card className="border-0 shadow-sm cursor-pointer hover:ring-1 hover:ring-sky-200 transition" onClick={() => setStatModal({ open: true, tipo: 'litros' })}>
             <CardContent className="p-4">
               <p className="text-[11px] text-slate-400 uppercase tracking-wide">Litros comprados</p>
-              <p className="text-lg font-bold text-orange-600 mt-1">{litrosMes.toFixed(1)} L</p>
-              <p className="text-xs text-slate-400">{litrosDespachadosMes.toFixed(1)} L despachados</p>
+              <p className="text-lg font-bold text-orange-600 mt-1 leading-tight inline-flex items-baseline gap-1.5">
+                <span>{litrosMes.toFixed(1)}</span>
+                <span className="text-base font-semibold">L</span>
+              </p>
+              <p className="text-xs text-slate-400 mt-1 inline-flex items-baseline gap-1">
+                <span>•</span>
+                <span>{litrosDespachadosMes.toFixed(1)}</span>
+                <span>L despachados</span>
+              </p>
             </CardContent>
           </Card>
-          <Card className="border-0 shadow-sm">
+          <Card className="border-0 shadow-sm cursor-pointer hover:ring-1 hover:ring-sky-200 transition" onClick={() => setStatModal({ open: true, tipo: 'consumidores' })}>
             <CardContent className="p-4">
               <p className="text-[11px] text-slate-400 uppercase tracking-wide">Consumidores activos</p>
-              <p className="text-lg font-bold text-emerald-600 mt-1">{consumidoresActivos.length}</p>
-              <p className="text-xs text-slate-400">{tiposConsumidor.filter(t => t.activo !== false).length} tipos</p>
+              <p className="text-lg font-bold text-emerald-600 mt-1 leading-tight">{consumidoresActivos.length}</p>
+              <p className="text-xs text-slate-400 mt-1">{tiposConsumidor.filter(t => t.activo !== false).length} tipos</p>
             </CardContent>
           </Card>
-          <Card className={`border-0 shadow-sm ${alertasConsumo.length > 0 ? 'ring-1 ring-red-200 bg-red-50/20' : ''}`}>
+          <Card className={`border-0 shadow-sm cursor-pointer transition hover:ring-1 hover:ring-sky-200 ${alertasConsumo.length > 0 ? 'ring-1 ring-red-200 bg-red-50/20' : ''}`} onClick={() => setStatModal({ open: true, tipo: 'alertas' })}>
             <CardContent className="p-4">
               <p className="text-[11px] text-slate-400 uppercase tracking-wide">Consumo crítico</p>
-              <p className={`text-lg font-bold mt-1 ${alertasConsumo.length > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+              <p className={`text-lg font-bold mt-1 leading-tight ${alertasConsumo.length > 0 ? 'text-red-500' : 'text-slate-400'}`}>
                 {alertasConsumo.length}
               </p>
-              <p className="text-xs text-slate-400">unidades con alerta</p>
+              <p className="text-xs text-slate-400 mt-1">unidades con alerta</p>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {/* Resumen por combustible */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <SectionTitle icon={TrendingUp} title="Resumen por combustible" iconColor="text-blue-500" />
+          <Link to={createPageUrl('Movimientos')} className="text-xs text-sky-600 hover:underline">
+            Ver/cargar movimientos relacionados →
+          </Link>
+        </div>
+
+        {resumenPorCombustible.length === 0 ? (
+          <p className="text-sm text-slate-400">No hay datos de consumo para el período seleccionado.</p>
+        ) : (
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-slate-700">Consumo total de combustible {mesFiltro === 'ALL' ? 'hasta la fecha' : `(${opcionesMes.find(x => x.key === mesFiltro)?.label || mesFiltro})`}</h3>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+              {resumenPorCombustible.map(res => (
+                <Card key={`${res.nombreCombustible}-total`} className="border border-slate-200 shadow-sm">
+                  <CardContent className="p-3">
+                    <h3 className="text-sm font-bold text-center mb-2">{res.nombreCombustible}</h3>
+                    <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-xs">
+                      <span>Precio</span><span className="text-right">—</span><span className="text-right font-medium">{formatMoneySymbol(res.precioRef, res.moneda)}</span>
+                      <span className="text-slate-400 col-span-3 mt-1">Litros / Valor</span>
+                      <span>Inicio</span><span className="text-right">{res.litrosInicio.toFixed(1)}</span><span className="text-right">{formatMoneySymbol(res.montoInicio, res.moneda)}</span>
+                      <span>Compras</span><span className="text-right">{res.litrosCompras.toFixed(1)}</span><span className="text-right">{formatMoneySymbol(res.montoCompras, res.moneda)}</span>
+                      <span className="text-slate-400 col-span-3 mt-1">Consumo</span>
+                      {res.detalleConsumo.map(item => (
+                        <React.Fragment key={`${res.nombreCombustible}-${item.nombre}`}>
+                          <span className="truncate">{item.nombre}</span><span className="text-right">{item.litros.toFixed(1)}</span><span className="text-right">{formatMoneySymbol(item.monto, res.moneda)}</span>
+                        </React.Fragment>
+                      ))}
+                      <span className="font-semibold">Total consumo</span><span className="text-right font-semibold">{res.litrosConsumo.toFixed(1)}</span><span className="text-right font-semibold">{formatMoneySymbol(res.montoConsumo, res.moneda)}</span>
+                      <span className="font-bold">Saldo final</span><span className="text-right font-bold">{res.litrosSaldoFinal.toFixed(1)}</span><span className="text-right font-bold">{formatMoneySymbol(res.montoSaldoFinal, res.moneda)}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <h3 className="text-sm font-semibold text-slate-700">Uso de la reserva almacenada {mesFiltro === 'ALL' ? 'hasta la fecha' : `(${opcionesMes.find(x => x.key === mesFiltro)?.label || mesFiltro})`}</h3>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+              {resumenPorCombustible.map(res => (
+                <Card key={`${res.nombreCombustible}-reserva`} className="border border-slate-200 shadow-sm">
+                  <CardContent className="p-3">
+                    <h3 className="text-sm font-bold text-center mb-2">{res.nombreCombustible}</h3>
+                    <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-xs">
+                      <span>Capacidad tanque</span><span className="text-right col-span-2">{res.capacidadTotalReserva > 0 ? `${res.capacidadTotalReserva.toFixed(1)} L` : 'No registrada'}</span>
+                      <span>Le queda al tanque</span><span className="text-right col-span-2">{res.litrosEnTanqueEstimado.toFixed(1)} L</span>
+                      <span>Recargas (ops)</span><span className="text-right">{res.recargasOpsMes}</span><span className="text-right">{res.recargasOpsTotal} total</span>
+                      <span>Costo recarga</span><span className="text-right">{formatMoneySymbol(res.costoRecargasMes, res.moneda)}</span><span className="text-right">{formatMoneySymbol(res.costoRecargasTotal, res.moneda)}</span>
+                      <span className="text-slate-400 col-span-3 mt-1">Litros / Valor</span>
+                      <span>Inicio</span><span className="text-right">{res.litrosInicioReserva.toFixed(1)}</span><span className="text-right">{formatMoneySymbol(res.montoInicioReserva, res.moneda)}</span>
+                      <span>Compras reserva</span><span className="text-right">{res.litrosComprasReservaMes.toFixed(1)}</span><span className="text-right">{formatMoneySymbol(res.costoRecargasMes, res.moneda)}</span>
+                      <span className="text-slate-400 col-span-3 mt-1">Despachos relacionados</span>
+                      {res.detalleConsumoReserva.map(item => (
+                        <React.Fragment key={`${res.nombreCombustible}-r-${item.nombre}`}>
+                          <span className="truncate">{item.nombre}</span><span className="text-right">{item.litros.toFixed(1)}</span><span className="text-right">{formatMoneySymbol(item.monto, res.moneda)}</span>
+                        </React.Fragment>
+                      ))}
+                      <span className="font-semibold">Total consumo</span><span className="text-right font-semibold">{res.litrosDespachosMes.toFixed(1)}</span><span className="text-right font-semibold">{formatMoneySymbol(res.montoDespachosMes, res.moneda)}</span>
+                      <span className="font-bold">Saldo final</span><span className="text-right font-bold">{Math.max(0, res.litrosTotalDisponibleReserva - res.litrosDespachosMes).toFixed(1)}</span><span className="text-right font-bold">{formatMoneySymbol(Math.max(0, res.montoTotalDisponibleReserva - res.montoDespachosMes), res.moneda)}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <Dialog open={statModal.open} onOpenChange={(open) => setStatModal(s => ({ ...s, open }))}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              {statModal.tipo === 'gasto' && 'Detalle de gasto por combustible'}
+              {statModal.tipo === 'litros' && 'Detalle de litros por combustible'}
+              {statModal.tipo === 'consumidores' && 'Consumidores por combustible'}
+              {statModal.tipo === 'alertas' && 'Alertas críticas por combustible'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+            {statModal.tipo === 'gasto' && resumenPorCombustible.map(res => (
+              <div key={`m-g-${res.nombreCombustible}`} className="flex justify-between text-sm border-b pb-1">
+                <span>{res.nombreCombustible} ({res.comprasOpsMes} compras)</span>
+                <span className="font-semibold">{formatMoneySymbol(res.montoCompras, res.moneda)}</span>
+              </div>
+            ))}
+            {statModal.tipo === 'litros' && resumenPorCombustible.map(res => (
+              <div key={`m-l-${res.nombreCombustible}`} className="flex justify-between text-sm border-b pb-1">
+                <span>{res.nombreCombustible}</span>
+                <span className="font-semibold">{res.litrosCompras.toFixed(1)} L comprados · {res.litrosConsumo.toFixed(1)} L despachados</span>
+              </div>
+            ))}
+            {statModal.tipo === 'consumidores' && consumidoresPorCombustible.map(item => (
+              <div key={`m-c-${item.combustible}`} className="flex justify-between text-sm border-b pb-1">
+                <span>{item.combustible}</span>
+                <span className="font-semibold">{item.total} consumidores</span>
+              </div>
+            ))}
+            {statModal.tipo === 'alertas' && (
+              alertasPorCombustible.length > 0 ? alertasPorCombustible.map(item => (
+                <div key={`m-a-${item.combustible}`} className="flex justify-between text-sm border-b pb-1">
+                  <span>{item.combustible}</span>
+                  <span className="font-semibold">{item.total} alertas</span>
+                </div>
+              )) : <p className="text-sm text-slate-500">No hay alertas críticas para el período.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Alertas de consumo crítico */}
       {alertasConsumo.length > 0 && (
@@ -168,7 +507,7 @@ export default function Dashboard() {
                       </Badge>
                     </div>
                     <p className={`text-2xl font-bold ${t.saldo < 0 ? 'text-red-600' : enAlerta ? 'text-amber-600' : 'text-slate-800'}`}>
-                      {formatMonto(t.saldo)}
+                      {formatMonto(t.saldo, t.moneda || 'USD')}
                     </p>
                     {t.umbral_alerta != null && (
                       <div className="mt-2">
@@ -178,7 +517,7 @@ export default function Dashboard() {
                             style={{ width: `${pct}%` }}
                           />
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-1">Umbral: {formatMonto(t.umbral_alerta)}</p>
+                        <p className="text-[10px] text-slate-400 mt-1">Umbral: {formatMonto(t.umbral_alerta, t.moneda || 'USD')}</p>
                       </div>
                     )}
                     {enAlerta && (
@@ -212,6 +551,16 @@ export default function Dashboard() {
                       <AlertTriangle className="w-3 h-3" /> Stock negativo
                     </p>
                   )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {Object.entries(categoriasReserva).map(([cat, litros]) => (
+              <Card key={cat} className="border-0 shadow-sm">
+                <CardContent className="p-3">
+                  <p className="text-[11px] text-slate-400 uppercase">{cat}</p>
+                  <p className="text-sm font-bold text-slate-700">{Number(litros || 0).toFixed(1)} L</p>
                 </CardContent>
               </Card>
             ))}
