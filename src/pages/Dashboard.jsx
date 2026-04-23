@@ -189,7 +189,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-slate-800">Dashboard</h1>
+        <h1 className="text-xl font-bold text-slate-800">Panel Global</h1>
         <p className="text-xs text-slate-400 mt-0.5">
           {hoy.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
         </p>
@@ -197,9 +197,10 @@ export default function Dashboard() {
 
       {/* Resumen del mes */}
       <div>
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-end justify-between gap-2 mb-1">
           <SectionTitle icon={TrendingDown} title={`Resumen ${mesFiltro === 'ALL' ? 'general' : opcionesMes.find(x => x.key === mesFiltro)?.label || ''}`} iconColor="text-sky-500" />
-          <div className="min-w-[220px]">
+          <div className="min-w-[220px] flex items-center gap-2">
+            <span className="text-[11px] uppercase tracking-wide text-slate-400">Período</span>
             <Select value={mesFiltro} onValueChange={setMesFiltro}>
               <SelectTrigger className="h-8 text-xs">
                 <CalendarDays className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
@@ -231,6 +232,7 @@ export default function Dashboard() {
                 <span className="text-base font-semibold">L</span>
               </p>
               <p className="text-xs text-slate-400 mt-1 inline-flex items-baseline gap-1">
+                <span>•</span>
                 <span>{litrosDespachadosMes.toFixed(1)}</span>
                 <span>L despachados</span>
               </p>
