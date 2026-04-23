@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Upload, FileJson, FileSpreadsheet, CheckCircle2, XCircle, AlertCircle, Loader2, Info, ListTree } from 'lucide-react';
+import { Upload, FileJson, FileSpreadsheet, CheckCircle2, XCircle, AlertCircle, Loader2, ListTree } from 'lucide-react';
 import ImportResultsTable from '@/components/configuracion/ImportResultsTable';
 import ImportGuide from '@/components/configuracion/ImportGuide';
 import TiposConsumidorPanel from '@/components/configuracion/TiposConsumidorPanel';

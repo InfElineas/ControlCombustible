@@ -1,17 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { AlertTriangle, Bell, Settings2, Mail, TrendingDown, ChevronDown, ChevronUp, Send } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AlertTriangle, Settings2, Mail, ChevronDown, ChevronUp, Send } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import GraficoConsumoHistorico from '@/components/alertas/GraficoConsumoHistorico';
 
 function estadoConsumo(consumoReal, consumoRef, umbralAlerta, umbralCritico) {

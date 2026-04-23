@@ -23,14 +23,16 @@ function getIconForTipo(nombre) {
   return '🚗';
 }
 
-function CapacidadBar({ litrosActuales, capacidad, label }) {
+function CapacidadBar({ litrosActuales, capacidad }) {
+  const [hovered, setHovered] = useState(false);
+
   if (!capacidad || capacidad <= 0) {
     // Barra relativa al máximo del reporte
     return null;
   }
+
   const pct = Math.min(100, (litrosActuales / capacidad) * 100);
   const color = pct < 20 ? 'bg-red-400' : pct < 50 ? 'bg-amber-400' : 'bg-sky-400';
-  const [hovered, setHovered] = useState(false);
 
   return (
     <div className="relative w-full"
