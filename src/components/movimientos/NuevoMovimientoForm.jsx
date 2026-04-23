@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Save, Loader2, Gauge } from 'lucide-react';
 import { obtenerPrecioVigente, calcularSaldo, formatMonto } from '@/components/ui-helpers/SaldoUtils';
+import { calcularAuditoriaCompra, obtenerCapacidadTanque, AUDITORIA_ESTADO } from './auditoriaCombustible';
 
 export default function NuevoMovimientoForm({ onSuccess }) {
   const queryClient = useQueryClient();
@@ -123,6 +124,23 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     return null;
   }, [consumoRealCalculado, consumoReferencia, consumidorSeleccionado]);
 
+  const capacidadTanque = useMemo(
+    () => obtenerCapacidadTanque(consumidorSeleccionado),
+    [consumidorSeleccionado]
+  );
+
+  const auditoriaCompra = useMemo(() => {
+    if (tipo !== 'COMPRA') return null;
+    return calcularAuditoriaCompra({
+      movimientos,
+      consumidorId: form.consumidor_id,
+      combustibleId: form.combustible_id,
+      fecha: form.fecha,
+      litrosAbastecidos: litrosReales,
+      capacidadTanque,
+    });
+  }, [tipo, movimientos, form.consumidor_id, form.combustible_id, form.fecha, litrosReales, capacidadTanque]);
+
   // Stock de un consumidor origen (para DESPACHO)
   const calcularStockConsumidor = (consumidorId, combustibleId) => {
     if (!consumidorId || !combustibleId) return null;
@@ -175,6 +193,9 @@ export default function NuevoMovimientoForm({ onSuccess }) {
           e.odometro = `Debe ser mayor al registro anterior: ${ultimoOdometro.toLocaleString()} km`;
         }
       }
+      if (auditoriaCompra?.estado === AUDITORIA_ESTADO.EXCESO && capacidadTanque != null) {
+        e.monto = `Excede capacidad de tanque (${capacidadTanque.toFixed(2)} L) según estimación.`;
+      }
     } else if (tipo === 'RECARGA') {
       if (!form.tarjeta_id) e.tarjeta_id = 'Seleccione tarjeta';
       if (!form.monto || parseFloat(form.monto) <= 0) e.monto = 'Monto > 0';
@@ -217,6 +238,10 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       data.combustible_nombre = combustible.nombre;
       data.precio = precioVigente;
       data.litros = litrosCalculados;
+      data.remanente_estimado_antes = auditoriaCompra?.remanenteAntes ?? null;
+      data.combustible_estimado_post = auditoriaCompra?.combustibleEstimadoPost ?? null;
+      data.capacidad_tanque = capacidadTanque;
+      data.auditoria_combustible_estado = auditoriaCompra?.estado || AUDITORIA_ESTADO.SIN_ESTIMACION;
       if (form.odometro) data.odometro = parseFloat(form.odometro);
       if (ultimoOdometro != null) data.odometro_anterior = ultimoOdometro;
       if (kmRecorridos != null && requiereOdometro) data.km_recorridos = kmRecorridos;
@@ -331,6 +356,20 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               <span className="text-sm text-slate-500">Litros equivalentes</span>
               <span className="text-lg font-bold text-slate-800">{litrosCalculados != null ? `${litrosCalculados.toFixed(2)} L` : '—'}</span>
             </div>
+            {auditoriaCompra && (
+              <div className={`rounded-xl p-3 border text-xs space-y-1 ${
+                auditoriaCompra.estado === AUDITORIA_ESTADO.EXCESO
+                  ? 'bg-red-50 border-red-200 text-red-700'
+                  : 'bg-slate-50 border-slate-200 text-slate-700'
+              }`}>
+                <p>Remanente estimado antes: <b>{auditoriaCompra.remanenteAntes != null ? `${auditoriaCompra.remanenteAntes.toFixed(2)} L` : 'No disponible'}</b></p>
+                <p>Combustible estimado post-abastecimiento: <b>{auditoriaCompra.combustibleEstimadoPost != null ? `${auditoriaCompra.combustibleEstimadoPost.toFixed(2)} L` : 'No disponible'}</b></p>
+                <p>Capacidad de tanque: <b>{capacidadTanque != null ? `${capacidadTanque.toFixed(2)} L` : 'No registrada'}</b></p>
+                {auditoriaCompra.estado === AUDITORIA_ESTADO.EXCESO && capacidadTanque != null && (
+                  <p className="font-semibold">⚠ Inconsistencia: el estimado supera la capacidad del tanque.</p>
+                )}
+              </div>
+            )}
 
             {/* Odómetro - requerido solo para tipos que lo necesitan */}
             <div className={`border rounded-xl p-3 space-y-2 ${errors.odometro ? 'border-red-200 bg-red-50/30' : 'border-sky-100 bg-sky-50/40'}`}>
