@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { base44 } from '@/api/base44Client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,10 +26,14 @@ function parseDate(raw) {
 }
 
 export default function Configuracion() {
+  const queryClient = useQueryClient();
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [results, setResults] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [tarjetasJson, setTarjetasJson] = useState('');
+  const [previewTarjetas, setPreviewTarjetas] = useState(null);
+  const [isImportingTarjetas, setIsImportingTarjetas] = useState(false);
   const fileRef = useRef();
 
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
@@ -40,6 +44,42 @@ export default function Configuracion() {
   const combustibleMap = Object.fromEntries(combustibles.map(c => [c.nombre?.toLowerCase(), c]));
   // Consumidor map: nombre exacto → objeto
   const consumidorMap = Object.fromEntries(consumidores.map(c => [c.nombre?.trim(), c]));
+
+  const normalizeTarjetaRow = (row) => {
+    const idTarjeta = String(row?.id_tarjeta || row?.Tarjeta || '').trim();
+    const moneda = String(row?.moneda || 'USD').trim() || 'USD';
+    const saldoInicial = Number(row?.saldo_inicial ?? 0);
+    const umbralRaw = row?.umbral_alerta;
+    const umbralAlerta = umbralRaw === '' || umbralRaw == null ? null : Number(umbralRaw);
+    const activa = row?.activa == null ? true : Boolean(row.activa);
+    const alias = row?.alias == null ? null : String(row.alias).trim() || null;
+
+    const errors = [];
+    const warnings = [];
+
+    if (!idTarjeta) errors.push('id_tarjeta es requerido');
+    if (!Number.isFinite(saldoInicial)) errors.push('saldo_inicial debe ser numérico');
+    if (umbralRaw != null && umbralRaw !== '' && !Number.isFinite(umbralAlerta)) {
+      errors.push('umbral_alerta debe ser numérico o null');
+    }
+
+    const ignoredFields = ['id', 'created_date', 'updated_date', 'created_by_id', 'created_by', 'is_sample'];
+    const presentIgnored = ignoredFields.filter((k) => row?.[k] != null);
+    if (presentIgnored.length > 0) {
+      warnings.push(`Se ignorarán campos externos: ${presentIgnored.join(', ')}`);
+    }
+
+    const tarjeta = errors.length > 0 ? null : {
+      id_tarjeta: idTarjeta,
+      alias,
+      moneda,
+      saldo_inicial: saldoInicial,
+      umbral_alerta: umbralAlerta,
+      activa,
+    };
+
+    return { row, tarjeta, warnings, errors };
+  };
 
   const normalizeRow = (row) => {
     const tarjetaNum = String(row['Tarjeta'] || row['tarjeta'] || '').trim();
@@ -247,6 +287,47 @@ export default function Configuracion() {
     toast.success(`Importación completada: ${ok} registros insertados`);
   };
 
+  const handlePreviewTarjetas = () => {
+    let rows = [];
+    try {
+      const parsed = JSON.parse(tarjetasJson);
+      rows = Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      toast.error('JSON inválido. Revise el formato.');
+      return;
+    }
+
+    const normalized = rows.map(normalizeTarjetaRow);
+    setPreviewTarjetas(normalized);
+  };
+
+  const handleImportTarjetas = async () => {
+    if (!previewTarjetas) return;
+    setIsImportingTarjetas(true);
+
+    let ok = 0;
+    let failed = 0;
+
+    for (const item of previewTarjetas) {
+      if (!item.tarjeta || item.errors.length > 0) continue;
+      try {
+        const existing = tarjetaMap[item.tarjeta.id_tarjeta];
+        if (existing?.id) {
+          await base44.entities.Tarjeta.update(existing.id, item.tarjeta);
+        } else {
+          await base44.entities.Tarjeta.create(item.tarjeta);
+        }
+        ok++;
+      } catch {
+        failed++;
+      }
+    }
+
+    await queryClient.invalidateQueries({ queryKey: ['tarjetas'] });
+    setIsImportingTarjetas(false);
+    toast.success(`Importación de tarjetas finalizada: ${ok} ok, ${failed} con error`);
+  };
+
   const handleDrop = (e) => {
     e.preventDefault();
     setIsDragging(false);
@@ -266,9 +347,12 @@ export default function Configuracion() {
       </div>
 
       <Tabs defaultValue="importacion">
-        <TabsList className="w-full grid grid-cols-2">
+        <TabsList className="w-full grid grid-cols-3">
           <TabsTrigger value="importacion" className="gap-1.5 text-xs">
             <Upload className="w-3.5 h-3.5" /> Importar movimientos
+          </TabsTrigger>
+          <TabsTrigger value="tarjetas" className="gap-1.5 text-xs">
+            <FileJson className="w-3.5 h-3.5" /> Importar tarjetas
           </TabsTrigger>
           <TabsTrigger value="tipos" className="gap-1.5 text-xs">
             <ListTree className="w-3.5 h-3.5" /> Tipos de consumidor
@@ -407,6 +491,71 @@ export default function Configuracion() {
       {/* Guide */}
       <ImportGuide />
 
+        </TabsContent>
+
+        <TabsContent value="tarjetas" className="mt-4 space-y-4">
+          <Card className="border-0 shadow-sm">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                <FileJson className="w-4 h-4 text-sky-500" />
+                Importación de tarjetas (JSON)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-slate-500">
+                Pegue aquí el arreglo JSON de tarjetas. Si una tarjeta ya existe por <span className="font-mono">id_tarjeta</span>, se actualiza.
+              </p>
+              <textarea
+                value={tarjetasJson}
+                onChange={(e) => setTarjetasJson(e.target.value)}
+                className="w-full min-h-56 rounded-xl border border-slate-200 px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-sky-200"
+                placeholder='[{"id_tarjeta":"9240069992278321","alias":"Tarjeta #78321","moneda":"USD","saldo_inicial":0,"umbral_alerta":null,"activa":true}]'
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={handlePreviewTarjetas} disabled={!tarjetasJson.trim()}>
+                  Validar JSON
+                </Button>
+                <Button onClick={handleImportTarjetas} disabled={!previewTarjetas || isImportingTarjetas}>
+                  {isImportingTarjetas ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  Importar tarjetas válidas
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {previewTarjetas && (
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold text-slate-700">Previsualización tarjetas</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex flex-wrap gap-2 text-[11px]">
+                  <Badge variant="secondary">Total: {previewTarjetas.length}</Badge>
+                  <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                    Válidas: {previewTarjetas.filter(x => x.errors.length === 0).length}
+                  </Badge>
+                  <Badge className="bg-red-100 text-red-700 hover:bg-red-100">
+                    Con error: {previewTarjetas.filter(x => x.errors.length > 0).length}
+                  </Badge>
+                </div>
+                <div className="max-h-72 overflow-auto border rounded-xl divide-y divide-slate-100">
+                  {previewTarjetas.map((item, idx) => (
+                    <div key={idx} className="p-3 text-xs">
+                      <div className="font-medium text-slate-700">
+                        {item.tarjeta?.id_tarjeta || '(sin id_tarjeta)'}
+                      </div>
+                      {item.errors.length > 0 && (
+                        <div className="text-red-600 mt-1">Errores: {item.errors.join(' · ')}</div>
+                      )}
+                      {item.warnings.length > 0 && (
+                        <div className="text-amber-600 mt-1">Avisos: {item.warnings.join(' · ')}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

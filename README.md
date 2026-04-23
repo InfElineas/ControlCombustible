@@ -39,3 +39,13 @@ Open [Base44.com](http://Base44.com) and click on Publish.
 Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
 
 Support: [https://app.base44.com/support](https://app.base44.com/support)
+
+
+**Import seed data (Supabase)**
+
+1. Place exported datasets under `seed-data/` (see `seed-data/manifest.json`).
+2. Dry run (no DB writes): `npm run seed:import`
+3. Apply import: `npm run seed:import:apply`
+
+The importer respects relational order: `tipo_combustible` → `tipo_consumidor` → `vehiculo` → `tarjeta` → `consumidor` → `precio_combustible` → `config_alerta` → `movimiento`.
+
