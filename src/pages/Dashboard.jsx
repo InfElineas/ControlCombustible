@@ -92,12 +92,14 @@ export default function Dashboard() {
       const montoConsumo = despachosPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
       const recargasOpsMes = comprasReservaPeriodo.length;
       const recargasOpsTotal = comprasReservaHistoricas.length;
+      const litrosComprasReservaMes = comprasReservaPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
       const costoRecargasMes = comprasReservaPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
       const costoRecargasTotal = comprasReservaHistoricas.reduce((s, m) => s + (m.monto || 0), 0);
       const despachosOpsMes = despachosReservaPeriodo.length;
       const despachosOpsTotal = despachosReservaHistoricos.length;
       const litrosDespachosMes = despachosReservaPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
       const litrosDespachosTotal = despachosReservaHistoricos.reduce((s, m) => s + (m.litros || 0), 0);
+      const montoDespachosMes = despachosReservaPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
 
       const reservaIdsDelCombustible = new Set([
         ...comprasReservaHistoricas.map(m => m.consumidor_id).filter(Boolean),
@@ -111,6 +113,31 @@ export default function Dashboard() {
         comprasReservaHistoricas.reduce((s, m) => s + (m.litros || 0), 0)
           - despachosReservaHistoricos.reduce((s, m) => s + (m.litros || 0), 0)
       );
+      const litrosInicioReserva = comprasReservaHistoricas
+        .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
+        .reduce((s, m) => s + (m.litros || 0), 0)
+        - despachosReservaHistoricos
+          .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
+          .reduce((s, m) => s + (m.litros || 0), 0);
+      const montoInicioReserva = comprasReservaHistoricas
+        .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
+        .reduce((s, m) => s + (m.monto || 0), 0)
+        - despachosReservaHistoricos
+          .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
+          .reduce((s, m) => s + (m.monto || 0), 0);
+      const litrosTotalDisponibleReserva = Math.max(0, litrosInicioReserva + litrosComprasReservaMes);
+      const montoTotalDisponibleReserva = Math.max(0, montoInicioReserva + costoRecargasMes);
+
+      const detalleConsumoReservaMap = {};
+      despachosReservaPeriodo.forEach(m => {
+        const key = m.consumidor_nombre || 'Sin identificar';
+        if (!detalleConsumoReservaMap[key]) detalleConsumoReservaMap[key] = { litros: 0, monto: 0 };
+        detalleConsumoReservaMap[key].litros += m.litros || 0;
+        detalleConsumoReservaMap[key].monto += m.monto || 0;
+      });
+      const detalleConsumoReserva = Object.entries(detalleConsumoReservaMap)
+        .map(([nombre, data]) => ({ nombre, ...data }))
+        .sort((a, b) => b.litros - a.litros);
 
       const detalleConsumoMap = {};
       despachosPeriodo.forEach(m => {
@@ -145,12 +172,19 @@ export default function Dashboard() {
         litrosEnTanqueEstimado,
         recargasOpsMes,
         recargasOpsTotal,
+        litrosComprasReservaMes,
         costoRecargasMes,
         costoRecargasTotal,
         despachosOpsMes,
         despachosOpsTotal,
         litrosDespachosMes,
         litrosDespachosTotal,
+        montoDespachosMes,
+        litrosInicioReserva: Math.max(0, litrosInicioReserva),
+        montoInicioReserva: Math.max(0, montoInicioReserva),
+        litrosTotalDisponibleReserva,
+        montoTotalDisponibleReserva,
+        detalleConsumoReserva,
         detalleConsumo,
       };
     }).filter(r => r.litrosCompras > 0 || r.litrosConsumo > 0 || r.litrosInicio > 0);
@@ -286,7 +320,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Resumen por combustible estilo auditoría */}
+      {/* Resumen por combustible */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <SectionTitle icon={TrendingUp} title="Resumen por combustible" iconColor="text-blue-500" />
@@ -298,78 +332,61 @@ export default function Dashboard() {
         {resumenPorCombustible.length === 0 ? (
           <p className="text-sm text-slate-400">No hay datos de consumo para el período seleccionado.</p>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-            {resumenPorCombustible.map(res => (
-              <Card key={res.nombreCombustible} className="border border-slate-200 shadow-sm">
-                <CardContent className="p-3">
-                  <h3 className="text-sm font-bold text-center mb-2">{res.nombreCombustible}</h3>
-                  <div className="text-xs space-y-1">
-                    <div className="flex justify-between">
-                      <span>Precio</span>
-                      <span className="font-medium">{formatMoneySymbol(res.precioRef, res.moneda)}</span>
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-slate-700">Consumo total de combustible {mesFiltro === 'ALL' ? 'hasta la fecha' : `(${opcionesMes.find(x => x.key === mesFiltro)?.label || mesFiltro})`}</h3>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+              {resumenPorCombustible.map(res => (
+                <Card key={`${res.nombreCombustible}-total`} className="border border-slate-200 shadow-sm">
+                  <CardContent className="p-3">
+                    <h3 className="text-sm font-bold text-center mb-2">{res.nombreCombustible}</h3>
+                    <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-xs">
+                      <span>Precio</span><span className="text-right">—</span><span className="text-right font-medium">{formatMoneySymbol(res.precioRef, res.moneda)}</span>
+                      <span className="text-slate-400 col-span-3 mt-1">Litros / Valor</span>
+                      <span>Inicio</span><span className="text-right">{res.litrosInicio.toFixed(1)}</span><span className="text-right">{formatMoneySymbol(res.montoInicio, res.moneda)}</span>
+                      <span>Compras</span><span className="text-right">{res.litrosCompras.toFixed(1)}</span><span className="text-right">{formatMoneySymbol(res.montoCompras, res.moneda)}</span>
+                      <span className="font-semibold">Total disponible</span><span className="text-right font-semibold">{res.litrosDisponible.toFixed(1)}</span><span className="text-right font-semibold">{formatMoneySymbol(res.montoDisponible, res.moneda)}</span>
+                      <span className="text-slate-400 col-span-3 mt-1">Consumo</span>
+                      {res.detalleConsumo.map(item => (
+                        <React.Fragment key={`${res.nombreCombustible}-${item.nombre}`}>
+                          <span className="truncate">{item.nombre}</span><span className="text-right">{item.litros.toFixed(1)}</span><span className="text-right">{formatMoneySymbol(item.monto, res.moneda)}</span>
+                        </React.Fragment>
+                      ))}
+                      <span className="font-semibold">Total consumo</span><span className="text-right font-semibold">{res.litrosConsumo.toFixed(1)}</span><span className="text-right font-semibold">{formatMoneySymbol(res.montoConsumo, res.moneda)}</span>
+                      <span className="font-bold">Saldo final</span><span className="text-right font-bold">{res.litrosSaldoFinal.toFixed(1)}</span><span className="text-right font-bold">{formatMoneySymbol(res.montoSaldoFinal, res.moneda)}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Inicio</span>
-                      <span>{res.litrosInicio.toFixed(1)} L | {formatMoneySymbol(res.montoInicio, res.moneda)}</span>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <h3 className="text-sm font-semibold text-slate-700">Uso de la reserva almacenada {mesFiltro === 'ALL' ? 'hasta la fecha' : `(${opcionesMes.find(x => x.key === mesFiltro)?.label || mesFiltro})`}</h3>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+              {resumenPorCombustible.map(res => (
+                <Card key={`${res.nombreCombustible}-reserva`} className="border border-slate-200 shadow-sm">
+                  <CardContent className="p-3">
+                    <h3 className="text-sm font-bold text-center mb-2">{res.nombreCombustible}</h3>
+                    <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 text-xs">
+                      <span>Capacidad tanque</span><span className="text-right col-span-2">{res.capacidadTotalReserva > 0 ? `${res.capacidadTotalReserva.toFixed(1)} L` : 'No registrada'}</span>
+                      <span>Le queda al tanque</span><span className="text-right col-span-2">{res.litrosEnTanqueEstimado.toFixed(1)} L</span>
+                      <span>Recargas (ops)</span><span className="text-right">{res.recargasOpsMes}</span><span className="text-right">{res.recargasOpsTotal} total</span>
+                      <span>Costo recarga</span><span className="text-right">{formatMoneySymbol(res.costoRecargasMes, res.moneda)}</span><span className="text-right">{formatMoneySymbol(res.costoRecargasTotal, res.moneda)}</span>
+                      <span className="text-slate-400 col-span-3 mt-1">Litros / Valor</span>
+                      <span>Inicio</span><span className="text-right">{res.litrosInicioReserva.toFixed(1)}</span><span className="text-right">{formatMoneySymbol(res.montoInicioReserva, res.moneda)}</span>
+                      <span>Compras reserva</span><span className="text-right">{res.litrosComprasReservaMes.toFixed(1)}</span><span className="text-right">{formatMoneySymbol(res.costoRecargasMes, res.moneda)}</span>
+                      <span className="font-semibold">Total disponible</span><span className="text-right font-semibold">{res.litrosTotalDisponibleReserva.toFixed(1)}</span><span className="text-right font-semibold">{formatMoneySymbol(res.montoTotalDisponibleReserva, res.moneda)}</span>
+                      <span className="text-slate-400 col-span-3 mt-1">Despachos relacionados</span>
+                      {res.detalleConsumoReserva.map(item => (
+                        <React.Fragment key={`${res.nombreCombustible}-r-${item.nombre}`}>
+                          <span className="truncate">{item.nombre}</span><span className="text-right">{item.litros.toFixed(1)}</span><span className="text-right">{formatMoneySymbol(item.monto, res.moneda)}</span>
+                        </React.Fragment>
+                      ))}
+                      <span className="font-semibold">Total consumo</span><span className="text-right font-semibold">{res.litrosDespachosMes.toFixed(1)}</span><span className="text-right font-semibold">{formatMoneySymbol(res.montoDespachosMes, res.moneda)}</span>
+                      <span className="font-bold">Saldo final</span><span className="text-right font-bold">{Math.max(0, res.litrosTotalDisponibleReserva - res.litrosDespachosMes).toFixed(1)}</span><span className="text-right font-bold">{formatMoneySymbol(Math.max(0, res.montoTotalDisponibleReserva - res.montoDespachosMes), res.moneda)}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Compras</span>
-                      <span>{res.litrosCompras.toFixed(1)} L | {formatMoneySymbol(res.montoCompras, res.moneda)}</span>
-                    </div>
-                    <div className="flex justify-between font-semibold border-b pb-1">
-                      <span>Total disponible</span>
-                      <span>{res.litrosDisponible.toFixed(1)} L | {formatMoneySymbol(res.montoDisponible, res.moneda)}</span>
-                    </div>
-                    <div className="pt-1 text-[11px] text-slate-500">Tanque reserva</div>
-                    <div className="flex justify-between">
-                      <span>Capacidad</span>
-                      <span>{res.capacidadTotalReserva > 0 ? `${res.capacidadTotalReserva.toFixed(1)} L` : 'No registrada'}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Le queda</span>
-                      <span>{res.litrosEnTanqueEstimado.toFixed(1)} L</span>
-                    </div>
-                    <div className="pt-1 text-[11px] text-slate-500">Recargas (compras a reserva)</div>
-                    <div className="flex justify-between">
-                      <span>Operaciones (mes / total)</span>
-                      <span>{res.recargasOpsMes} / {res.recargasOpsTotal}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Costo (mes / total)</span>
-                      <span>{formatMoneySymbol(res.costoRecargasMes, res.moneda)} / {formatMoneySymbol(res.costoRecargasTotal, res.moneda)}</span>
-                    </div>
-                    <div className="pt-1 text-[11px] text-slate-500">Despachos relacionados</div>
-                    <div className="flex justify-between">
-                      <span>Movimientos (mes / total)</span>
-                      <span>{res.despachosOpsMes} / {res.despachosOpsTotal}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Litros (mes / total)</span>
-                      <span>{res.litrosDespachosMes.toFixed(1)} L / {res.litrosDespachosTotal.toFixed(1)} L</span>
-                    </div>
-                    <div className="pt-1 text-[11px] text-slate-500">Consumo</div>
-                    {res.detalleConsumo.length === 0 ? (
-                      <div className="text-[11px] text-slate-400">Sin despachos registrados.</div>
-                    ) : (
-                      res.detalleConsumo.map(item => (
-                        <div key={item.nombre} className="flex justify-between text-[11px]">
-                          <span className="truncate pr-2">{item.nombre}</span>
-                          <span>{item.litros.toFixed(1)} L | {formatMoneySymbol(item.monto, res.moneda)}</span>
-                        </div>
-                      ))
-                    )}
-                    <div className="flex justify-between font-semibold border-t pt-1">
-                      <span>Total consumo</span>
-                      <span>{res.litrosConsumo.toFixed(1)} L | {formatMoneySymbol(res.montoConsumo, res.moneda)}</span>
-                    </div>
-                    <div className="flex justify-between font-bold">
-                      <span>Saldo final</span>
-                      <span>{res.litrosSaldoFinal.toFixed(1)} L | {formatMoneySymbol(res.montoSaldoFinal, res.moneda)}</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </div>
         )}
       </div>
