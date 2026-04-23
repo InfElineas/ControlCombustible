@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertTriangle, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { AlertTriangle, TrendingUp } from 'lucide-react';
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import CSVExport from '@/components/ui-helpers/CSVExport';
 
