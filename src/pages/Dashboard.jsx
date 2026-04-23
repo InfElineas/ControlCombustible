@@ -10,6 +10,7 @@ import { createPageUrl } from '@/utils';
 import GastosMensualesChart from '@/components/dashboard/GastosMensualesChart';
 import ConsumidoresPorTipo from '@/components/dashboard/ConsumidoresPorTipo';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { computeChoferDelMes, filterMovimientosByMonth, getMonthOptionsFromMovimientos } from '@/lib/fuel-analytics';
 
 function SectionTitle({ icon: Icon, title, iconColor = 'text-slate-400' }) {
   return (
@@ -27,24 +28,13 @@ export default function Dashboard() {
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
   const { data: tiposConsumidor = [] } = useQuery({ queryKey: ['tiposConsumidor'], queryFn: () => base44.entities.TipoConsumidor.list() });
   const { data: tipoCombustible = [] } = useQuery({ queryKey: ['tipoCombustible'], queryFn: () => base44.entities.TipoCombustible.list() });
+  const { data: conductores = [] } = useQuery({ queryKey: ['conductores'], queryFn: () => base44.entities.Conductor.list() });
 
   const hoy = new Date();
-  const mesActual = hoy.toISOString().slice(0, 7);
-  const movimientosFiltrados = mesFiltro === 'ALL'
-    ? movimientos
-    : movimientos.filter(m => m.fecha?.startsWith(mesFiltro));
+  const movimientosFiltrados = filterMovimientosByMonth(movimientos, mesFiltro);
 
   const opcionesMes = useMemo(() => {
-    const keys = [...new Set(movimientos.map(m => m.fecha?.slice(0, 7)).filter(Boolean))]
-      .sort((a, b) => b.localeCompare(a));
-    return [{ key: 'ALL', label: 'Todo' }, ...keys.map(k => {
-      const [y, m] = k.split('-').map(Number);
-      const fecha = new Date(y, (m || 1) - 1, 1);
-      return {
-        key: k,
-        label: fecha.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }),
-      };
-    })];
+    return getMonthOptionsFromMovimientos(movimientos);
   }, [movimientos]);
 
   const tarjetasById = useMemo(
@@ -125,10 +115,10 @@ export default function Dashboard() {
   }, [movimientos, movimientosFiltrados, mesFiltro, tipoCombustible, tarjetasById]);
 
   // Resumen del mes
-  const comprasMes = movimientos.filter(m => m.tipo === 'COMPRA' && m.fecha?.startsWith(mesActual));
+  const comprasMes = movimientosFiltrados.filter(m => m.tipo === 'COMPRA');
   const litrosMes = comprasMes.reduce((s, m) => s + (m.litros || 0), 0);
   const gastoMes = comprasMes.reduce((s, m) => s + (m.monto || 0), 0);
-  const despachosMes = movimientos.filter(m => m.tipo === 'DESPACHO' && m.fecha?.startsWith(mesActual));
+  const despachosMes = movimientosFiltrados.filter(m => m.tipo === 'DESPACHO');
   const litrosDespachadosMes = despachosMes.reduce((s, m) => s + (m.litros || 0), 0);
 
   // Consumidores activos
@@ -138,7 +128,7 @@ export default function Dashboard() {
   const alertasConsumo = consumidoresActivos.filter(c => {
     const consumoRef = c.datos_vehiculo?.indice_consumo_real || c.datos_vehiculo?.indice_consumo_fabricante;
     const movsConConsumo = movimientos
-      .filter(m => m.tipo === 'COMPRA' && m.consumidor_id === c.id && m.consumo_real != null)
+      .filter(m => m.tipo === 'COMPRA' && m.consumidor_id === c.id && m.consumo_real != null && (mesFiltro === 'ALL' || m.fecha?.startsWith(mesFiltro)))
       .sort((a, b) => b.odometro - a.odometro);
     if (!consumoRef || movsConConsumo.length === 0) return false;
     const consumoUltimo = movsConConsumo[0].consumo_real;
@@ -170,6 +160,34 @@ export default function Dashboard() {
   })();
 
   const hayStockReserva = Object.keys(stockReserva).length > 0;
+  const choferDelMes = useMemo(
+    () => computeChoferDelMes({ month: mesFiltro, movimientos, conductores }),
+    [mesFiltro, movimientos, conductores],
+  );
+  const resumenEquipo = useMemo(() => {
+    const movs = movimientosFiltrados.filter(m => m.tipo === 'COMPRA' || m.tipo === 'DESPACHO');
+    const ultAbast = movs
+      .filter(m => m.tipo === 'COMPRA')
+      .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')))[0];
+    return {
+      litros: movs.reduce((s, m) => s + (m.litros || 0), 0),
+      consumo: movs.filter(m => m.tipo === 'DESPACHO').reduce((s, m) => s + (m.litros || 0), 0),
+      tipoCombustible: [...new Set(movs.map(m => m.combustible_nombre).filter(Boolean))].join(', ') || 'Sin datos',
+      ultimoAbast: ultAbast?.fecha || 'Sin datos',
+    };
+  }, [movimientosFiltrados]);
+  const categoriasReserva = useMemo(() => {
+    const rows = { Particular: 0, Cupet: 0, 'Almacén': 0 };
+    movimientosFiltrados
+      .filter(m => m.tipo === 'DESPACHO')
+      .forEach((m) => {
+        const raw = `${m.consumidor_origen_nombre || ''} ${m.referencia || ''}`.toLowerCase();
+        if (raw.includes('cupet')) rows.Cupet += m.litros || 0;
+        else if (raw.includes('almac')) rows['Almacén'] += m.litros || 0;
+        else rows.Particular += m.litros || 0;
+      });
+    return rows;
+  }, [movimientosFiltrados]);
 
   return (
     <div className="space-y-6">
@@ -182,7 +200,24 @@ export default function Dashboard() {
 
       {/* Resumen del mes */}
       <div>
-        <SectionTitle icon={TrendingDown} title={`Resumen ${hoy.toLocaleDateString('es-ES', { month: 'long' })}`} iconColor="text-sky-500" />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <SectionTitle icon={TrendingDown} title={`Resumen ${mesFiltro === 'ALL' ? 'general' : opcionesMes.find(x => x.key === mesFiltro)?.label || ''}`} iconColor="text-sky-500" />
+          <div className="min-w-[220px]">
+            <Select value={mesFiltro} onValueChange={setMesFiltro}>
+              <SelectTrigger className="h-8 text-xs">
+                <CalendarDays className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
+                <SelectValue placeholder="Filtrar por mes" />
+              </SelectTrigger>
+              <SelectContent>
+                {opcionesMes.map(opt => (
+                  <SelectItem key={opt.key} value={opt.key} className="text-xs">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Card className="border-0 shadow-sm">
             <CardContent className="p-4">
@@ -217,25 +252,38 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Equipo + Personal del mes */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-4 space-y-1">
+            <p className="text-[11px] text-slate-400 uppercase tracking-wide">Personal del mes</p>
+            {choferDelMes ? (
+              <>
+                <p className="text-lg font-bold text-slate-800">{choferDelMes.conductor.nombre}</p>
+                <p className="text-xs text-slate-500">{choferDelMes.litros.toFixed(1)} L • {choferDelMes.movimientos} movimientos</p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-400">Sin datos para calcular chofer del mes</p>
+            )}
+          </CardContent>
+        </Card>
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-4 space-y-1">
+            <p className="text-[11px] text-slate-400 uppercase tracking-wide">Equipo</p>
+            <p className="text-sm text-slate-700"><b>Tipo combustible:</b> {resumenEquipo.tipoCombustible}</p>
+            <p className="text-sm text-slate-700"><b>Consumo:</b> {resumenEquipo.consumo.toFixed(1)} L</p>
+            <p className="text-sm text-slate-700"><b>Último abastecimiento:</b> {resumenEquipo.ultimoAbast}</p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Resumen por combustible estilo auditoría */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <SectionTitle icon={TrendingUp} title="Resumen por combustible" iconColor="text-blue-500" />
-          <div className="min-w-[220px]">
-            <Select value={mesFiltro} onValueChange={setMesFiltro}>
-              <SelectTrigger className="h-8 text-xs">
-                <CalendarDays className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
-                <SelectValue placeholder="Filtrar por mes" />
-              </SelectTrigger>
-              <SelectContent>
-                {opcionesMes.map(opt => (
-                  <SelectItem key={opt.key} value={opt.key} className="text-xs">
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Link to={createPageUrl('Movimientos')} className="text-xs text-sky-600 hover:underline">
+            Ver/cargar movimientos relacionados →
+          </Link>
         </div>
 
         {resumenPorCombustible.length === 0 ? (
@@ -381,6 +429,16 @@ export default function Dashboard() {
                       <AlertTriangle className="w-3 h-3" /> Stock negativo
                     </p>
                   )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {Object.entries(categoriasReserva).map(([cat, litros]) => (
+              <Card key={cat} className="border-0 shadow-sm">
+                <CardContent className="p-3">
+                  <p className="text-[11px] text-slate-400 uppercase">{cat}</p>
+                  <p className="text-sm font-bold text-slate-700">{Number(litros || 0).toFixed(1)} L</p>
                 </CardContent>
               </Card>
             ))}
