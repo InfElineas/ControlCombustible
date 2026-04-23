@@ -14,6 +14,32 @@ const getArg = (name, fallback) => {
 const SEED_DIR = path.resolve(process.cwd(), getArg('--dir', 'seed-data'));
 const DRY_RUN = !hasFlag('--apply');
 
+const loadDotEnv = async (filePath) => {
+  try {
+    const content = await fs.readFile(filePath, 'utf8');
+    const lines = content.split(/\r?\n/);
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#')) continue;
+      const idx = line.indexOf('=');
+      if (idx <= 0) continue;
+      const key = line.slice(0, idx).trim();
+      let value = line.slice(idx + 1).trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith('\'') && value.endsWith('\''))) {
+        value = value.slice(1, -1);
+      }
+      if (process.env[key] == null) {
+        process.env[key] = value;
+      }
+    }
+  } catch {
+    // Archivo .env no encontrado: ignorar.
+  }
+};
+
+await loadDotEnv(path.resolve(process.cwd(), '.env.local'));
+await loadDotEnv(path.resolve(process.cwd(), '.env'));
+
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 

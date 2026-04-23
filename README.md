@@ -44,8 +44,14 @@ Support: [https://app.base44.com/support](https://app.base44.com/support)
 **Import seed data (Supabase)**
 
 1. Place exported datasets under `seed-data/` (see `seed-data/manifest.json`).
-2. Dry run (no DB writes): `npm run seed:import`
-3. Apply import: `npm run seed:import:apply`
+2. Configure credentials in `.env.local` (recommended):
+
+```
+VITE_SUPABASE_URL=https://<tu-proyecto>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<tu-service-role-key>
+```
+
+3. Dry run (no DB writes): `npm run seed:import`
+4. Apply import: `npm run seed:import:apply`
 
 The importer respects relational order: `tipo_combustible` → `tipo_consumidor` → `vehiculo` → `tarjeta` → `consumidor` → `precio_combustible` → `config_alerta` → `movimiento`.
-
