@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import {
@@ -69,27 +69,30 @@ function NavContent({ currentPageName, role, onNavigate }) {
   );
 }
 
-export default function Layout({ children, currentPageName }) {
+export default function Layout() {
   const { user, role: rawRole, loading } = useUserRole();
   // 'admin' es el rol por defecto de Base44, tratarlo como superadmin
   const role = rawRole === 'admin' ? 'superadmin' : rawRole;
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const currentPageName = location.pathname === '/' ? 'Dashboard' : location.pathname.replace('/', '');
 
   useEffect(() => {
     if (!loading && !user) {
-      window.location.href = '/Login';
+      navigate('/Login', { replace: true });
     }
-  }, [loading, user]);
+  }, [loading, user, navigate]);
 
   // Redirigir si el rol no tiene acceso a la página actual
   useEffect(() => {
     if (!loading && user && role) {
       const allowedRoles = pageRoles[currentPageName];
       if (allowedRoles && !allowedRoles.includes(role)) {
-        window.location.href = createPageUrl('Dashboard');
+        navigate(createPageUrl('Dashboard'), { replace: true });
       }
     }
-  }, [loading, user, role, currentPageName]);
+  }, [loading, user, role, currentPageName, navigate]);
 
   if (loading || !user) {
     return (
@@ -127,7 +130,7 @@ export default function Layout({ children, currentPageName }) {
               <Button
                 variant="ghost" size="sm"
                 className="w-full justify-start text-xs text-slate-400 hover:text-red-500 px-0 h-7"
-                onClick={() => supabase.auth.signOut().then(() => { window.location.href = '/Login'; })}
+                onClick={() => supabase.auth.signOut().then(() => navigate('/Login', { replace: true }))}
               >
                 <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
               </Button>
@@ -160,7 +163,7 @@ export default function Layout({ children, currentPageName }) {
             <Button
               variant="ghost" size="sm"
               className="w-full justify-start text-xs text-slate-400 hover:text-red-500 px-0 h-7"
-              onClick={() => supabase.auth.signOut().then(() => { window.location.href = '/Login'; })}
+              onClick={() => supabase.auth.signOut().then(() => navigate('/Login', { replace: true }))}
             >
               <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
             </Button>
@@ -170,7 +173,7 @@ export default function Layout({ children, currentPageName }) {
         {/* Content */}
         <main className="flex-1 lg:ml-56 min-h-screen">
           <div className="max-w-6xl mx-auto px-4 py-5 lg:px-8 lg:py-6">
-            {children}
+            <Outlet />
           </div>
         </main>
       </div>
