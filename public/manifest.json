@@ -1,0 +1,15 @@
+{
+  "name": "Control Combustible",
+  "short_name": "Combustible",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/logo-control-combustible.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 // Vehiculo needed for conductor assignment dropdown
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';

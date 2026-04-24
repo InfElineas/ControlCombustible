@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS consumidor (
   responsable            text,
   conductor              text,
   funcion                text,
+  litros_iniciales       numeric DEFAULT 0 NOT NULL,
   observaciones          text,
   datos_vehiculo         jsonb,
   datos_tanque           jsonb,

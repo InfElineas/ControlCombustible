@@ -18,12 +18,14 @@ export function obtenerPrecioVigente(precios, combustibleId, fecha) {
   return preciosComb.length > 0 ? preciosComb[0].precio_por_litro : null;
 }
 
-// Formatea número como moneda
-export function formatMonto(amount, moneda = '') {
+// Formatea número como moneda con símbolo
+export function formatMonto(amount, moneda = 'USD') {
   if (amount == null) return '—';
   const formatted = new Intl.NumberFormat('es-CU', { 
     minimumFractionDigits: 2, 
     maximumFractionDigits: 2 
   }).format(amount);
-  return moneda ? `${formatted} ${moneda}` : formatted;
+  const symbolMap = { USD: '$', EUR: '€', CUP: '$', MLC: '$' };
+  const symbol = symbolMap[moneda] || '$';
+  return `${symbol} ${formatted}`;
 }

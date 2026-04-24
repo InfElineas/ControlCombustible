@@ -44,9 +44,25 @@ export default function Precios() {
   };
 
   // Agrupar por combustible
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const nombreCombustible = (precio) => {
+    const combById = combustibles.find(c => c.id === precio.combustible_id);
+    if (combById?.nombre) return combById.nombre;
+
+    if (precio.combustible_nombre) {
+      const nombreNormalizado = String(precio.combustible_nombre).trim();
+      const combByNombre = combustibles.find(c => c.nombre?.toLowerCase() === nombreNormalizado.toLowerCase());
+      if (combByNombre?.nombre) return combByNombre.nombre;
+      if (!UUID_RE.test(nombreNormalizado)) return nombreNormalizado;
+    }
+
+    const combPorNombreComoId = combustibles.find(c => c.id === precio.combustible_nombre);
+    return combPorNombreComoId?.nombre || precio.combustible_id || 'Sin combustible';
+  };
+
   const grouped = {};
   precios.forEach(p => {
-    const key = p.combustible_nombre || p.combustible_id;
+    const key = nombreCombustible(p);
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(p);
   });

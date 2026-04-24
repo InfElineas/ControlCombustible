@@ -8,8 +8,12 @@
     "build": "vite build",
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
+    "check:conflicts": "node scripts/check-merge-conflicts.mjs",
+    "release:verify": "npm run check:conflicts && npm run lint && npm run build",
     "typecheck": "tsc -p ./jsconfig.json",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "seed:import": "node scripts/import-seed-data.mjs",
+    "seed:import:apply": "node scripts/import-seed-data.mjs --apply"
   },
   "dependencies": {
     "@base44/sdk": "^0.8.26",

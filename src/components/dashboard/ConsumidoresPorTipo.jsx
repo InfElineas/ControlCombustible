@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Droplets } from 'lucide-react';
@@ -86,12 +86,13 @@ function ConsumidorCard({ consumidor, movimientos, hoy }) {
   const capacidad = consumidor.datos_tanque?.capacidad_litros || null;
   const stockActual = React.useMemo(() => {
     if (!esTanqueConsumidor) return null;
+    const stockInicial = Number(consumidor.litros_iniciales) || 0;
     const entradas = movimientos.filter(m => m.tipo === 'COMPRA' && m.consumidor_id === consumidor.id)
       .reduce((s, m) => s + (m.litros || 0), 0);
     const salidas = movimientos.filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === consumidor.id)
       .reduce((s, m) => s + (m.litros || 0), 0);
-    return Math.max(0, entradas - salidas);
-  }, [esTanqueConsumidor, movimientos, consumidor.id]);
+    return Math.max(0, stockInicial + entradas - salidas);
+  }, [esTanqueConsumidor, movimientos, consumidor.id, consumidor.litros_iniciales]);
 
   // Cobertura en días: promedio diario de consumo de los últimos 30 días de despacho
   const coberturaDias = React.useMemo(() => {
@@ -178,7 +179,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy }) {
           </div>
 
           {/* Odómetro */}
-          {ultimoOdometro != null && (
+          {!esTanqueConsumidor && ultimoOdometro != null && (
             <div>
               <p className="text-[10px] text-slate-400 uppercase tracking-wide">Odómetro</p>
               <p className="font-semibold text-slate-700">{ultimoOdometro.toLocaleString()} km</p>
@@ -197,7 +198,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy }) {
           )}
 
           {/* Consumo real */}
-          {ultimoConsumoReal != null && (
+          {!esTanqueConsumidor && ultimoConsumoReal != null && (
             <div className="col-span-2">
               <p className="text-[10px] text-slate-400 uppercase tracking-wide">Consumo real (últ. carga)</p>
               <div className="flex items-center gap-2">

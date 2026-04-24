@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,12 +8,14 @@ import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from "sonner";
 import { Save, Loader2 } from 'lucide-react';
+import { calcularAuditoriaCompra, obtenerCapacidadTanque, AUDITORIA_ESTADO } from './auditoriaCombustible';
 
 export default function EditarMovimientoModal({ movimiento, onClose }) {
   const queryClient = useQueryClient();
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
   const { data: combustibles = [] } = useQuery({ queryKey: ['combustibles'], queryFn: () => base44.entities.TipoCombustible.list() });
+  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 500) });
 
   // Re-initialize form when movimiento changes (pre-load existing data)
   const [form, setForm] = useState(() => ({
@@ -28,6 +30,7 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
     consumidor_origen_id: movimiento?.consumidor_origen_id || '',
     combustible_id: movimiento?.combustible_id || '',
   }));
+  const [filtroTipoConsumidor, setFiltroTipoConsumidor] = useState('all');
 
   useEffect(() => {
     if (movimiento) {
@@ -48,6 +51,61 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
 
+  const resolverCombustiblesConsumidor = (consumidor) => {
+    if (!consumidor) return [];
+    const ids = new Set();
+    const nombres = new Set();
+    if (consumidor.combustible_id) ids.add(consumidor.combustible_id);
+    (consumidor.combustible_ids || []).forEach(id => ids.add(id));
+    (consumidor.combustibles_admitidos || []).forEach(v => {
+      if (typeof v === 'string') nombres.add(v.toLowerCase());
+      else if (v?.id) ids.add(v.id);
+    });
+    combustibles.forEach(c => { if (nombres.has((c.nombre || '').toLowerCase())) ids.add(c.id); });
+    return [...ids];
+  };
+
+  const consumidoresFiltradosPorTipo = useMemo(() => {
+    if (filtroTipoConsumidor === 'all') return consumidores;
+    return consumidores.filter(c => c.tipo_consumidor_id === filtroTipoConsumidor);
+  }, [consumidores, filtroTipoConsumidor]);
+
+  const combustiblesPermitidosConsumidor = useMemo(() => {
+    const consumidor = consumidores.find(c => c.id === form.consumidor_id);
+    return resolverCombustiblesConsumidor(consumidor);
+  }, [form.consumidor_id, consumidores, combustibles]);
+
+  useEffect(() => {
+    if (!form.consumidor_id) return;
+    if (combustiblesPermitidosConsumidor.length === 1 && form.combustible_id !== combustiblesPermitidosConsumidor[0]) {
+      set('combustible_id', combustiblesPermitidosConsumidor[0]);
+    }
+    if (combustiblesPermitidosConsumidor.length > 1 && form.combustible_id && !combustiblesPermitidosConsumidor.includes(form.combustible_id)) {
+      set('combustible_id', '');
+    }
+  }, [form.consumidor_id, combustiblesPermitidosConsumidor.join(','), form.combustible_id]);
+
+  const consumidorSeleccionado = useMemo(
+    () => consumidores.find(c => c.id === form.consumidor_id),
+    [consumidores, form.consumidor_id]
+  );
+  const capacidadTanque = useMemo(
+    () => obtenerCapacidadTanque(consumidorSeleccionado),
+    [consumidorSeleccionado]
+  );
+  const auditoriaCompra = useMemo(() => {
+    if (movimiento?.tipo !== 'COMPRA') return null;
+    return calcularAuditoriaCompra({
+      movimientos,
+      consumidorId: form.consumidor_id,
+      combustibleId: form.combustible_id,
+      fecha: form.fecha,
+      litrosAbastecidos: form.litros,
+      capacidadTanque,
+      excludeMovimientoId: movimiento?.id,
+    });
+  }, [movimiento?.tipo, movimiento?.id, movimientos, form.consumidor_id, form.combustible_id, form.fecha, form.litros, capacidadTanque]);
+
   const updateMutation = useMutation({
     mutationFn: (data) => base44.entities.Movimiento.update(movimiento.id, data),
     onSuccess: () => {
@@ -58,6 +116,11 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
   });
 
   const handleSubmit = () => {
+    if (movimiento?.tipo === 'COMPRA' && auditoriaCompra?.estado === AUDITORIA_ESTADO.EXCESO && capacidadTanque != null) {
+      toast.error(`Inconsistencia detectada: supera capacidad de tanque (${capacidadTanque.toFixed(2)} L).`);
+      return;
+    }
+
     const tarjeta = tarjetas.find(t => t.id === form.tarjeta_id);
     const consumidor = consumidores.find(c => c.id === form.consumidor_id);
     const consumidorOrigen = consumidores.find(c => c.id === form.consumidor_origen_id);
@@ -88,6 +151,12 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
     if (form.litros !== '') data.litros = parseFloat(form.litros);
     if (form.precio !== '') data.precio = parseFloat(form.precio);
     if (form.odometro !== '') data.odometro = parseFloat(form.odometro);
+    if (movimiento?.tipo === 'COMPRA') {
+      data.remanente_estimado_antes = auditoriaCompra?.remanenteAntes ?? null;
+      data.combustible_estimado_post = auditoriaCompra?.combustibleEstimadoPost ?? null;
+      data.capacidad_tanque = capacidadTanque;
+      data.auditoria_combustible_estado = auditoriaCompra?.estado || AUDITORIA_ESTADO.SIN_ESTIMACION;
+    }
 
     updateMutation.mutate(data);
   };
@@ -134,20 +203,35 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
                 </div>
               )}
               <div>
+                <Label className="text-xs text-slate-500">Tipo de consumidor</Label>
+                <Select value={filtroTipoConsumidor} onValueChange={setFiltroTipoConsumidor}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Filtrar tipo" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    {[...new Map(consumidores.map(c => [c.tipo_consumidor_id, c.tipo_consumidor_nombre])).entries()]
+                      .filter(([id]) => !!id)
+                      .map(([id, nombre]) => <SelectItem key={id} value={id}>{nombre || 'Tipo'}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
                 <Label className="text-xs text-slate-500">Consumidor destino</Label>
                 <Select value={form.consumidor_id} onValueChange={v => set('consumidor_id', v)}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                   <SelectContent>
-                    {consumidores.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}{c.codigo_interno ? ` · ${c.codigo_interno}` : ''}</SelectItem>)}
+                    {consumidoresFiltradosPorTipo.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}{c.codigo_interno ? ` · ${c.codigo_interno}` : ''}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div>
                 <Label className="text-xs text-slate-500">Combustible</Label>
-                <Select value={form.combustible_id} onValueChange={v => set('combustible_id', v)}>
+                <Select value={form.combustible_id} onValueChange={v => set('combustible_id', v)} disabled={combustiblesPermitidosConsumidor.length === 1}>
                   <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar" /></SelectTrigger>
                   <SelectContent>
-                    {combustibles.map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
+                    {(combustiblesPermitidosConsumidor.length > 0
+                      ? combustibles.filter(c => combustiblesPermitidosConsumidor.includes(c.id))
+                      : combustibles
+                    ).map(c => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -165,6 +249,17 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
             <div>
               <Label className="text-xs text-slate-500">Litros</Label>
               <Input type="number" step="0.01" value={form.litros} onChange={e => set('litros', e.target.value)} className="mt-1" />
+            </div>
+          )}
+          {tipo === 'COMPRA' && auditoriaCompra && (
+            <div className={`rounded-lg border p-2 text-xs space-y-1 ${
+              auditoriaCompra.estado === AUDITORIA_ESTADO.EXCESO
+                ? 'bg-red-50 border-red-200 text-red-700'
+                : 'bg-slate-50 border-slate-200 text-slate-700'
+            }`}>
+              <p>Remanente estimado: <b>{auditoriaCompra.remanenteAntes != null ? `${auditoriaCompra.remanenteAntes.toFixed(2)} L` : 'No disponible'}</b></p>
+              <p>Post-abastecimiento: <b>{auditoriaCompra.combustibleEstimadoPost != null ? `${auditoriaCompra.combustibleEstimadoPost.toFixed(2)} L` : 'No disponible'}</b></p>
+              <p>Capacidad tanque: <b>{capacidadTanque != null ? `${capacidadTanque.toFixed(2)} L` : 'No registrada'}</b></p>
             </div>
           )}
 
