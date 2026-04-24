@@ -192,13 +192,15 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     if (!consumidorId || !combustibleId) return null;
     const con = consumidores.find(c => c.id === consumidorId);
     if (!con) return null;
+    const combustibleCompatible = con.combustible_id ? con.combustible_id === combustibleId : true;
+    const stockInicial = combustibleCompatible ? (Number(con.litros_iniciales) || 0) : 0;
     const entradas = movimientos
       .filter(m => m.tipo === 'COMPRA' && m.consumidor_id === consumidorId && m.combustible_id === combustibleId)
       .reduce((s, m) => s + (m.litros || 0), 0);
     const salidas = movimientos
       .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === consumidorId && m.combustible_id === combustibleId)
       .reduce((s, m) => s + (m.litros || 0), 0);
-    return entradas - salidas;
+    return stockInicial + entradas - salidas;
   };
 
   const stockOrigenDespacho = useMemo(() => {

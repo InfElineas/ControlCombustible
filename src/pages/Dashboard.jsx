@@ -66,6 +66,17 @@ export default function Dashboard() {
     return 0;
   };
 
+  const obtenerLitrosInicialesConsumidor = (consumidor, combustibleId, combustibleNombre) => {
+    if (!consumidor) return 0;
+    const inicial = Number(consumidor.litros_iniciales) || 0;
+    if (inicial <= 0) return 0;
+    if (consumidor.combustible_id && combustibleId) return consumidor.combustible_id === combustibleId ? inicial : 0;
+    if (consumidor.combustible_nombre && combustibleNombre) {
+      return consumidor.combustible_nombre.toLowerCase() === combustibleNombre.toLowerCase() ? inicial : 0;
+    }
+    return inicial;
+  };
+
   const resumenPorCombustible = useMemo(() => {
     const keys = new Set([
       ...tipoCombustible.map(c => c.nombre).filter(Boolean),
@@ -73,6 +84,8 @@ export default function Dashboard() {
     ]);
 
     return [...keys].map((nombreCombustible) => {
+      const combustibleRef = tipoCombustible.find(c => c.nombre === nombreCombustible) || null;
+      const combustibleIdRef = combustibleRef?.id;
       const comprasHistoricas = movimientos.filter(m => m.tipo === 'COMPRA' && m.combustible_nombre === nombreCombustible);
       const despachosHistoricos = movimientos.filter(m => m.tipo === 'DESPACHO' && m.combustible_nombre === nombreCombustible);
       const comprasPeriodo = movimientosFiltrados.filter(m => m.tipo === 'COMPRA' && m.combustible_nombre === nombreCombustible);
@@ -81,6 +94,10 @@ export default function Dashboard() {
       const comprasReservaPeriodo = comprasPeriodo.filter(m => consumidoresReservaIds.has(m.consumidor_id));
       const despachosReservaHistoricos = despachosHistoricos.filter(m => consumidoresReservaIds.has(m.consumidor_origen_id));
       const despachosReservaPeriodo = despachosPeriodo.filter(m => consumidoresReservaIds.has(m.consumidor_origen_id));
+
+      const litrosInicialesReserva = consumidores
+        .filter(c => consumidoresReservaIds.has(c.id))
+        .reduce((s, c) => s + obtenerLitrosInicialesConsumidor(c, combustibleIdRef, nombreCombustible), 0);
 
       const litrosInicio = comprasHistoricas
         .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
@@ -122,7 +139,7 @@ export default function Dashboard() {
         .reduce((s, v) => s + (Number(v) || 0), 0);
       const litrosEnTanqueEstimado = Math.max(
         0,
-        comprasReservaHistoricas.reduce((s, m) => s + (m.litros || 0), 0)
+        litrosInicialesReserva + comprasReservaHistoricas.reduce((s, m) => s + (m.litros || 0), 0)
           - despachosReservaHistoricos.reduce((s, m) => s + (m.litros || 0), 0)
       );
       const litrosInicioReserva = comprasReservaHistoricas
@@ -137,7 +154,7 @@ export default function Dashboard() {
         - despachosReservaHistoricos
           .filter(m => mesFiltro !== 'ALL' && m.fecha < `${mesFiltro}-01`)
           .reduce((s, m) => s + (m.monto || 0), 0);
-      const litrosTotalDisponibleReserva = Math.max(0, litrosInicioReserva + litrosComprasReservaMes);
+      const litrosTotalDisponibleReserva = Math.max(0, litrosInicialesReserva + litrosInicioReserva + litrosComprasReservaMes);
       const montoTotalDisponibleReserva = Math.max(0, montoInicioReserva + costoRecargasMes);
 
       const detalleConsumoReservaMap = {};
@@ -194,7 +211,7 @@ export default function Dashboard() {
         litrosDespachosMes,
         litrosDespachosTotal,
         montoDespachosMes,
-        litrosInicioReserva: Math.max(0, litrosInicioReserva),
+        litrosInicioReserva: Math.max(0, litrosInicialesReserva + litrosInicioReserva),
         montoInicioReserva: Math.max(0, montoInicioReserva),
         litrosTotalDisponibleReserva,
         montoTotalDisponibleReserva,
@@ -234,6 +251,14 @@ export default function Dashboard() {
   // Stock en reserva (consumidores tanque/reserva - basado en compras y despachos)
   const stockReserva = (() => {
     const map = {};
+    consumidores.forEach((c) => {
+      const esTanque = c?.tipo_consumidor_nombre?.toLowerCase().includes('tanque')
+        || c?.tipo_consumidor_nombre?.toLowerCase().includes('reserva');
+      if (!esTanque) return;
+      const key = c.combustible_nombre || tipoCombustible.find(tc => tc.id === c.combustible_id)?.nombre;
+      if (!key) return;
+      map[key] = (map[key] || 0) + (Number(c.litros_iniciales) || 0);
+    });
     movimientos.filter(m => m.tipo === 'COMPRA' && m.litros && m.consumidor_id).forEach(m => {
       const con = consumidores.find(c => c.id === m.consumidor_id);
       const esTanque = con?.tipo_consumidor_nombre?.toLowerCase().includes('tanque')

@@ -86,12 +86,13 @@ function ConsumidorCard({ consumidor, movimientos, hoy }) {
   const capacidad = consumidor.datos_tanque?.capacidad_litros || null;
   const stockActual = React.useMemo(() => {
     if (!esTanqueConsumidor) return null;
+    const stockInicial = Number(consumidor.litros_iniciales) || 0;
     const entradas = movimientos.filter(m => m.tipo === 'COMPRA' && m.consumidor_id === consumidor.id)
       .reduce((s, m) => s + (m.litros || 0), 0);
     const salidas = movimientos.filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === consumidor.id)
       .reduce((s, m) => s + (m.litros || 0), 0);
-    return Math.max(0, entradas - salidas);
-  }, [esTanqueConsumidor, movimientos, consumidor.id]);
+    return Math.max(0, stockInicial + entradas - salidas);
+  }, [esTanqueConsumidor, movimientos, consumidor.id, consumidor.litros_iniciales]);
 
   // Cobertura en días: promedio diario de consumo de los últimos 30 días de despacho
   const coberturaDias = React.useMemo(() => {
