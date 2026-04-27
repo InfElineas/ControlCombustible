@@ -51,10 +51,12 @@ import Catalogos from './pages/Catalogos';
 import Configuracion from './pages/Configuracion';
 import Consumidores from './pages/Consumidores';
 import Dashboard from './pages/Dashboard';
+import Finanzas from './pages/Finanzas';
 import Movimientos from './pages/Movimientos';
 import Reportes from './pages/Reportes';
 import Conductores from './pages/Conductores';
 import Alertas from './pages/Alertas';
+import AdminPanel from './pages/AdminPanel';
 import __Layout from './Layout.jsx';
 
 
@@ -62,11 +64,13 @@ export const PAGES = {
     "Catalogos": Catalogos,
     "Consumidores": Consumidores,
     "Dashboard": Dashboard,
+    "Finanzas": Finanzas,
     "Movimientos": Movimientos,
     "Reportes": Reportes,
     "Conductores": Conductores,
     "Alertas": Alertas,
     "Configuracion": Configuracion,
+    "AdminPanel": AdminPanel,
 }
 
 export const pagesConfig = {

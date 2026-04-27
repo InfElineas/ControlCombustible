@@ -6,8 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useSearchParams } from 'react-router-dom';
-import { ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Filter, Plus } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Filter, Plus, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
+import CombustibleBadge from '@/components/ui-helpers/CombustibleBadge';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
 import CSVExport from '@/components/ui-helpers/CSVExport';
@@ -19,6 +20,8 @@ import ConsumidorDetalleModal from '@/components/movimientos/ConsumidorDetalleMo
 import EditarMovimientoModal from '@/components/movimientos/EditarMovimientoModal';
 import MovimientosFiltros, { FILTROS_INICIAL } from '@/components/movimientos/MovimientosFiltros';
 
+const PAGE_SIZE = 25;
+
 const TIPO_CONFIG = {
   RECARGA:  { label: 'Recarga',  icon: ArrowUpCircle,   bg: 'bg-emerald-50', text: 'text-emerald-600', badge: 'border-emerald-200 text-emerald-700' },
   COMPRA:   { label: 'Compra',   icon: ArrowDownCircle, bg: 'bg-orange-50',  text: 'text-orange-600',  badge: 'border-orange-200 text-orange-700' },
@@ -26,12 +29,13 @@ const TIPO_CONFIG = {
 };
 
 export default function Movimientos() {
-  const { canDelete, canWrite } = useUserRole();
+  const { canDelete, canWrite, canRecargar } = useUserRole();
   const queryClient = useQueryClient();
 
   const { data: movimientos = [], isLoading } = useQuery({
     queryKey: ['movimientos'],
     queryFn: () => base44.entities.Movimiento.list('-fecha', 1000),
+    select: data => [...data].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')),
   });
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
@@ -41,16 +45,25 @@ export default function Movimientos() {
   const [searchParams] = useSearchParams();
   const [filters, setFilters] = useState(FILTROS_INICIAL);
   const [showFilters, setShowFilters] = useState(false);
+  const [tabCombustible, setTabCombustible] = useState('all');
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     const nombreCombustible = searchParams.get('combustible');
     if (!nombreCombustible || combustibles.length === 0) return;
     const match = combustibles.find(c => c.nombre === nombreCombustible);
-    if (match) {
-      setFilters(f => ({ ...f, tipoCombustible: match.id }));
-      setShowFilters(true);
-    }
+    if (match) setTabCombustible(match.id);
   }, [searchParams, combustibles]);
+
+  useEffect(() => { setPage(1); }, [filters, tabCombustible]);
+
+  const [collapsedDates, setCollapsedDates] = useState(new Set());
+  const toggleDate = (fecha) => setCollapsedDates(prev => {
+    const next = new Set(prev);
+    next.has(fecha) ? next.delete(fecha) : next.add(fecha);
+    return next;
+  });
+
   const [deleteId, setDeleteId] = useState(null);
   const [showNuevo, setShowNuevo] = useState(false);
   const [detalleMovimiento, setDetalleMovimiento] = useState(null);
@@ -75,10 +88,8 @@ export default function Movimientos() {
       if (filters.tipo !== 'all' && m.tipo !== filters.tipo) return false;
       if (filters.tarjeta !== 'all' && m.tarjeta_id !== filters.tarjeta) return false;
       if (filters.consumidor !== 'all' && m.consumidor_id !== filters.consumidor) return false;
-      if (filters.tipoCombustible !== 'all' && m.combustible_id !== filters.tipoCombustible) return false;
       const identificador = String(m.vehiculo_chapa || consumidorById[m.consumidor_id]?.codigo_interno || '').toLowerCase();
       if (filters.chapa && !identificador.includes(String(filters.chapa).toLowerCase())) return false;
-      // Filtro por tipo de consumidor (requiere cruzar con consumidores)
       if (filters.tipoConsumidor !== 'all') {
         const con = consumidores.find(c => c.id === m.consumidor_id);
         if (!con || con.tipo_consumidor_id !== filters.tipoConsumidor) return false;
@@ -87,13 +98,36 @@ export default function Movimientos() {
     });
   }, [movimientos, filters, consumidores]);
 
-  // Resumen rápido de filtrados
-  const resumen = useMemo(() => {
-    const litros = filtered.filter(m => m.tipo === 'COMPRA').reduce((s, m) => s + (m.litros || 0), 0);
-    const gasto = filtered.filter(m => m.tipo === 'COMPRA').reduce((s, m) => s + (m.monto || 0), 0);
-    const litrosDespacho = filtered.filter(m => m.tipo === 'DESPACHO').reduce((s, m) => s + (m.litros || 0), 0);
-    return { litros, gasto, litrosDespacho };
+  // Count per combustible for tab badges
+  const tabCounts = useMemo(() => {
+    const counts = {};
+    filtered.forEach(m => {
+      if (m.combustible_id) counts[m.combustible_id] = (counts[m.combustible_id] || 0) + 1;
+    });
+    return counts;
   }, [filtered]);
+
+  // Only show tabs for combustibles that actually appear in filtered results
+  const activeTabs = useMemo(() => combustibles.filter(c => tabCounts[c.id] > 0), [combustibles, tabCounts]);
+
+  const filteredByTab = useMemo(() => {
+    if (tabCombustible === 'all') return filtered;
+    return filtered.filter(m => m.combustible_id === tabCombustible);
+  }, [filtered, tabCombustible]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredByTab.length / PAGE_SIZE));
+
+  const paginated = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filteredByTab.slice(start, start + PAGE_SIZE);
+  }, [filteredByTab, page]);
+
+  const resumen = useMemo(() => {
+    const litros = filteredByTab.filter(m => m.tipo === 'COMPRA').reduce((s, m) => s + (m.litros || 0), 0);
+    const gasto = filteredByTab.filter(m => m.tipo === 'COMPRA').reduce((s, m) => s + (m.monto || 0), 0);
+    const litrosDespacho = filteredByTab.filter(m => m.tipo === 'DESPACHO').reduce((s, m) => s + (m.litros || 0), 0);
+    return { litros, gasto, litrosDespacho };
+  }, [filteredByTab]);
 
   const csvColumns = [
     { label: 'Fecha', accessor: 'fecha' },
@@ -120,10 +154,10 @@ export default function Movimientos() {
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <h1 className="text-xl font-bold text-slate-800">Movimientos</h1>
-          <p className="text-xs text-slate-400">{filtered.length} registros</p>
+          <p className="text-xs text-slate-400">{filteredByTab.length} registros</p>
         </div>
         <div className="flex gap-1.5 shrink-0">
-          <CSVExport data={filtered} columns={csvColumns} filename="movimientos" />
+          <CSVExport data={filteredByTab} columns={csvColumns} filename="movimientos" />
           <Button
             variant="outline" size="sm"
             onClick={() => setShowFilters(!showFilters)}
@@ -133,7 +167,7 @@ export default function Movimientos() {
             <span className="hidden sm:inline">Filtros</span>
             {hasActiveFilters && <span className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" />}
           </Button>
-          {canWrite && (
+          {(canWrite || canRecargar) && (
             <Button size="sm" onClick={() => setShowNuevo(true)} className="gap-1 px-2.5 bg-sky-600 hover:bg-sky-700">
               <Plus className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Nuevo</span>
@@ -142,6 +176,41 @@ export default function Movimientos() {
         </div>
       </div>
 
+      {/* Tabs por combustible */}
+      {activeTabs.length > 1 && (
+        <div className="flex gap-0.5 flex-wrap border-b border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => setTabCombustible('all')}
+            className={`px-3 py-2 text-xs font-medium rounded-t border-b-2 transition-colors -mb-px ${
+              tabCombustible === 'all'
+                ? 'border-sky-500 text-sky-700 dark:text-sky-400 bg-white dark:bg-slate-900'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
+            }`}
+          >
+            Todos
+            <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full font-normal ${tabCombustible === 'all' ? 'bg-sky-100 dark:bg-sky-900/60 text-sky-600 dark:text-sky-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+              {filtered.length}
+            </span>
+          </button>
+          {activeTabs.map(c => (
+            <button
+              key={c.id}
+              onClick={() => setTabCombustible(c.id)}
+              className={`px-3 py-2 text-xs font-medium rounded-t border-b-2 transition-colors -mb-px ${
+                tabCombustible === c.id
+                  ? 'border-sky-500 text-sky-700 dark:text-sky-400 bg-white dark:bg-slate-900'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
+              }`}
+            >
+              {c.nombre}
+              <span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full font-normal ${tabCombustible === c.id ? 'bg-sky-100 dark:bg-sky-900/60 text-sky-600 dark:text-sky-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
+                {tabCounts[c.id] || 0}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Filters */}
       {showFilters && (
         <MovimientosFiltros
@@ -149,13 +218,12 @@ export default function Movimientos() {
           onChange={setFilters}
           consumidores={consumidores}
           tiposConsumidor={tiposConsumidor}
-          combustibles={combustibles}
           tarjetas={tarjetas}
         />
       )}
 
-      {/* Resumen rápido cuando hay filtros */}
-      {hasActiveFilters && filtered.length > 0 && (
+      {/* Resumen rápido cuando hay filtros activos o tab seleccionado */}
+      {(hasActiveFilters || tabCombustible !== 'all') && filteredByTab.length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {resumen.litros > 0 && (
             <div className="bg-orange-50 border border-orange-100 rounded-lg px-3 py-1.5 flex items-center gap-2">
@@ -181,10 +249,27 @@ export default function Movimientos() {
       {/* Table */}
       {isLoading ? (
         <div className="py-12 text-center text-sm text-slate-400">Cargando...</div>
-      ) : filtered.length === 0 ? (
+      ) : filteredByTab.length === 0 ? (
         <div className="py-12 text-center text-sm text-slate-400">No hay movimientos</div>
       ) : (
-        <div className="rounded-xl border border-slate-200 overflow-hidden bg-white shadow-sm">
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900 shadow-sm">
+          {/* Paginación superior */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/50">
+              <span className="text-xs text-slate-500">
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredByTab.length)} de {filteredByTab.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </Button>
+                <span className="px-2 text-xs text-slate-600 tabular-nums">{page} / {totalPages}</span>
+                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -202,10 +287,36 @@ export default function Movimientos() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map(m => {
-                  const cfg = TIPO_CONFIG[m.tipo] || TIPO_CONFIG.COMPRA;
-                  const Icon = cfg.icon;
-                  return (
+                {(() => {
+                  const rows = [];
+                  let lastFecha = null;
+                  paginated.forEach(m => {
+                    if (m.fecha !== lastFecha) {
+                      lastFecha = m.fecha;
+                      const d = new Date((m.fecha || '') + 'T00:00:00');
+                      const label = !Number.isNaN(d.getTime())
+                        ? d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+                        : m.fecha;
+                      const isCollapsed = collapsedDates.has(m.fecha);
+                      const countFecha = paginated.filter(x => x.fecha === m.fecha).length;
+                      rows.push(
+                        <tr key={`sep-${m.fecha}`} className="cursor-pointer select-none" onClick={() => toggleDate(m.fecha)}>
+                          <td colSpan={10} className="px-4 py-1.5 bg-slate-50 border-y border-slate-100">
+                            <div className="flex items-center gap-2">
+                              <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
+                              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{label}</span>
+                              {isCollapsed && (
+                                <span className="text-[10px] text-slate-400 font-normal normal-case tracking-normal">{countFecha} movimiento{countFecha !== 1 ? 's' : ''}</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    if (collapsedDates.has(m.fecha)) return;
+                    const cfg = TIPO_CONFIG[m.tipo] || TIPO_CONFIG.COMPRA;
+                    const Icon = cfg.icon;
+                    rows.push(
                     <tr key={m.id} className="hover:bg-slate-50/60 transition-colors group">
                       <td className="px-4 py-3 text-slate-700 whitespace-nowrap font-medium text-xs">{m.fecha}</td>
                       <td className="px-4 py-3">
@@ -218,8 +329,10 @@ export default function Movimientos() {
                           </Badge>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-slate-600 text-xs hidden md:table-cell">
-                        {m.combustible_nombre || '—'}
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        {m.combustible_nombre
+                          ? <CombustibleBadge nombre={m.combustible_nombre} />
+                          : <span className="text-slate-300 text-xs">—</span>}
                       </td>
                       <td className="px-4 py-3 text-slate-600 text-xs">
                         {m.tipo === 'DESPACHO'
@@ -229,11 +342,7 @@ export default function Movimientos() {
                       </td>
                       <td className="px-4 py-3 text-slate-600 text-xs">
                         {m.consumidor_nombre || m.vehiculo_chapa
-                          ? (
-                            <span className="font-medium">
-                              {m.consumidor_nombre || m.vehiculo_chapa}
-                            </span>
-                          )
+                          ? <span className="font-medium">{m.consumidor_nombre || m.vehiculo_chapa}</span>
                           : '—'
                         }
                       </td>
@@ -265,11 +374,31 @@ export default function Movimientos() {
                         />
                       </td>
                     </tr>
-                  );
-                })}
+                    );
+                  });
+                  return rows;
+                })()}
               </tbody>
             </table>
           </div>
+
+          {/* Paginación */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+              <span className="text-xs text-slate-500">
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredByTab.length)} de {filteredByTab.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </Button>
+                <span className="px-2 text-xs text-slate-600 tabular-nums">{page} / {totalPages}</span>
+                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -283,24 +412,20 @@ export default function Movimientos() {
         </DialogContent>
       </Dialog>
 
-      {/* Detalle movimiento */}
       <MovimientoDetalle movimiento={detalleMovimiento} onClose={() => setDetalleMovimiento(null)} />
 
-      {/* Log por consumidor */}
       <LogConsumidorModal
         movimiento={logMovimiento}
         todosMovimientos={movimientos}
         onClose={() => setLogMovimiento(null)}
       />
 
-      {/* Detalle consumidor */}
       <ConsumidorDetalleModal
         consumidorId={consumidorDetalleId}
         todosMovimientos={movimientos}
         onClose={() => setConsumidorDetalleId(null)}
       />
 
-      {/* Editar movimiento */}
       <EditarMovimientoModal
         movimiento={editarMovimiento}
         onClose={() => setEditarMovimiento(null)}
