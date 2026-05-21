@@ -342,16 +342,16 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
             );
           })}
 
-          {/* Trayectorias — naranja=hoy, morado=histórico */}
+          {/* Trayectorias — violeta=hoy, índigo=histórico */}
           {Object.entries(tracks).map(([deviceId, track]) =>
             track.points.length > 1 && (
               <Polyline
                 key={`track-${deviceId}`}
                 positions={track.points}
-                color={track.fecha === hoy ? '#f97316' : '#8b5cf6'}
-                weight={3}
-                opacity={0.8}
-                dashArray="6 4"
+                color={track.fecha === hoy ? '#7c3aed' : '#4338ca'}
+                weight={4}
+                opacity={0.85}
+                dashArray="8 4"
               />
             )
           )}
@@ -426,10 +426,10 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
                           onClick={() => track ? clearTrack(pos.deviceId) : fetchTrack(pos.deviceId, fechaSel)}
                           style={{
                             marginTop: 4, width: '100%', padding: '5px 8px',
-                            background: track ? '#fff7ed' : '#f0f9ff',
-                            border: `1px solid ${track ? '#fb923c' : '#7dd3fc'}`,
+                            background: track ? '#f5f3ff' : '#f0f9ff',
+                            border: `1px solid ${track ? '#8b5cf6' : '#7dd3fc'}`,
                             borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600,
-                            color: track ? '#c2410c' : '#0369a1',
+                            color: track ? '#6d28d9' : '#0369a1',
                           }}
                         >
                           {track?.loading
@@ -502,13 +502,13 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
         )}
         {Object.values(tracks).some(t => t.points?.length > 1 && t.fecha === hoy) && (
           <span className="flex items-center gap-1.5">
-            <span className="inline-block w-5 border-t-2 border-dashed border-orange-400"></span>
+            <span className="inline-block w-5 border-t-2 border-dashed" style={{ borderColor: '#7c3aed' }}></span>
             Recorrido de hoy
           </span>
         )}
         {Object.values(tracks).some(t => t.points?.length > 1 && t.fecha !== hoy) && (
           <span className="flex items-center gap-1.5">
-            <span className="inline-block w-5 border-t-2 border-dashed border-violet-500"></span>
+            <span className="inline-block w-5 border-t-2 border-dashed" style={{ borderColor: '#4338ca' }}></span>
             Recorrido histórico
           </span>
         )}
