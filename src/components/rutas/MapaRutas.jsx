@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from '
 import L from 'leaflet';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { gpsApi, metersToKm } from '@/api/gpsClient';
 import BackfillGpsDialog from '@/components/rutas/BackfillGpsDialog';
 
@@ -138,6 +139,20 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
     setSavingTrack(prev => ({ ...prev, [deviceId]: true }));
     try {
       const today = fecha ?? hoy;
+
+      // Guard against duplicates before inserting
+      const { data: existing } = await supabase
+        .from('asignacion_ruta')
+        .select('id')
+        .eq('consumidor_id', consumidor.id)
+        .eq('fecha', today)
+        .eq('tipo_viaje', 'recorrido_gps')
+        .maybeSingle();
+
+      if (existing) {
+        toast.info(`El recorrido del ${today} ya está guardado para ${consumidor.nombre}`);
+        return;
+      }
       const from  = new Date(today + 'T00:00:00');
       const to    = new Date(today + 'T23:59:59');
 

@@ -953,5 +953,27 @@ DO $$ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────
+--  22. Índice único parcial — un recorrido GPS por vehículo/día
+--      Evita duplicados en asignacion_ruta para tipo_viaje = 'recorrido_gps'.
+--      Antes de crear el índice, se eliminan duplicados existentes
+--      conservando el registro más antiguo (id menor en orden natural).
+-- ─────────────────────────────────────────────────────────────
+
+-- 22.1  Eliminar duplicados existentes (conserva el primer id = MIN por group)
+DELETE FROM asignacion_ruta
+WHERE tipo_viaje = 'recorrido_gps'
+  AND id NOT IN (
+    SELECT MIN(id)
+    FROM   asignacion_ruta
+    WHERE  tipo_viaje = 'recorrido_gps'
+    GROUP  BY consumidor_id, fecha
+  );
+
+-- 22.2  Índice único parcial: un registro por (consumidor, fecha) cuando es recorrido_gps
+CREATE UNIQUE INDEX IF NOT EXISTS uq_asignacion_ruta_gps_por_dia
+  ON asignacion_ruta (consumidor_id, fecha)
+  WHERE tipo_viaje = 'recorrido_gps';
+
+-- ─────────────────────────────────────────────────────────────
 --  FIN DE MIGRACIÓN
 -- ─────────────────────────────────────────────────────────────
