@@ -414,6 +414,7 @@ export default function Movimientos() {
                           movimiento={m}
                           canDelete={canDelete}
                           canWrite={canWrite}
+                          onVerDetalle={setDetalleMovimiento}
                           onLog={setLogMovimiento}
                           onDetalle={mov => setConsumidorDetalleId(mov.consumidor_id)}
                           onEditar={setEditarMovimiento}

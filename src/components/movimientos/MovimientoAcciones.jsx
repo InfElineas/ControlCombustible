@@ -4,9 +4,9 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, List, User, Pencil, Trash2 } from 'lucide-react';
+import { MoreHorizontal, List, User, Pencil, Trash2, FileText } from 'lucide-react';
 
-export default function MovimientoAcciones({ movimiento, onLog, onDetalle, onEditar, onEliminar, canDelete, canWrite }) {
+export default function MovimientoAcciones({ movimiento, onLog, onDetalle, onVerDetalle, onEditar, onEliminar, canDelete, canWrite }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -19,6 +19,11 @@ export default function MovimientoAcciones({ movimiento, onLog, onDetalle, onEdi
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem onClick={() => onVerDetalle(movimiento)} className="gap-2 cursor-pointer">
+          <FileText className="w-3.5 h-3.5 text-sky-500" />
+          Ver detalle del movimiento
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => onLog(movimiento)} className="gap-2 cursor-pointer">
           <List className="w-3.5 h-3.5 text-slate-500" />
           Log del consumidor

@@ -19,6 +19,7 @@ import {
   ChevronUp, ChevronDown, Satellite, Loader2,
 } from 'lucide-react';
 import ImportarChatPanel from '@/components/rutas/ImportarChatPanel';
+import CombustibleBadge from '@/components/ui-helpers/CombustibleBadge';
 import { MapaRutas } from '@/components/rutas/MapaRutas';
 import MarcadoresPanel from '@/components/rutas/MarcadoresPanel';
 import { gpsApi, metersToKm } from '@/api/gpsClient';
@@ -1139,6 +1140,12 @@ function VehiculoStatsCard({ grupo }) {
         <Car className="w-4 h-4 text-slate-400 shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{grupo.name}</p>
+          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+            {grupo.chapa && (
+              <span className="text-[11px] text-slate-400 font-mono bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">{grupo.chapa}</span>
+            )}
+            {grupo.combustible && <CombustibleBadge nombre={grupo.combustible} />}
+          </div>
         </div>
         <div className="hidden sm:flex items-center gap-4 shrink-0">
           <div className="text-center">
@@ -1148,13 +1155,19 @@ function VehiculoStatsCard({ grupo }) {
           {grupo.kmTotal > 0 && (
             <div className="text-center">
               <p className="text-[10px] text-slate-400">km totales</p>
-              <p className="text-sm font-bold text-slate-700 dark:text-slate-200 tabular-nums">{grupo.kmTotal.toFixed(0)}</p>
+              <p className="text-sm font-bold text-sky-600 tabular-nums">{grupo.kmTotal.toFixed(0)}</p>
             </div>
           )}
           {grupo.litrosTotal > 0 && (
             <div className="text-center">
               <p className="text-[10px] text-emerald-500">litros est.</p>
               <p className="text-sm font-bold text-emerald-600 tabular-nums">{grupo.litrosTotal.toFixed(1)}</p>
+            </div>
+          )}
+          {grupo.kmPerLitro != null && (
+            <div className="text-center">
+              <p className="text-[10px] text-slate-400">consumo</p>
+              <p className="text-sm font-bold text-violet-600 tabular-nums">{grupo.kmPerLitro.toFixed(1)} km/L</p>
             </div>
           )}
         </div>
@@ -1271,11 +1284,19 @@ export default function Rutas() {
 
   const vehicleStatsData = useMemo(() => {
     const byVehicle = {};
+    const conById   = Object.fromEntries(consumidores.map(c => [c.id, c]));
 
     asigStatMes.forEach(a => {
       const key  = a.consumidor_id || `no_${a.id}`;
       const name = a.consumidor_nombre || '—';
-      if (!byVehicle[key]) byVehicle[key] = { key, name, trips: [], kmTotal: 0, litrosTotal: 0 };
+      if (!byVehicle[key]) {
+        const con = conById[a.consumidor_id];
+        byVehicle[key] = {
+          key, name, trips: [], kmTotal: 0, litrosTotal: 0,
+          chapa:       con?.codigo_interno || null,
+          combustible: con?.combustible_nombre || null,
+        };
+      }
       byVehicle[key].trips.push({
         fecha:       a.fecha,
         descripcion: rutaById[a.ruta_id]?.nombre || a.descripcion_emergencia || '—',
@@ -1289,10 +1310,13 @@ export default function Rutas() {
 
     Object.values(byVehicle).forEach(v => {
       v.trips.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+      v.kmPerLitro = (v.kmTotal > 0 && v.litrosTotal > 0)
+        ? v.kmTotal / v.litrosTotal
+        : null;
     });
 
     return Object.values(byVehicle).sort((a, b) => b.trips.length - a.trips.length);
-  }, [asigStatMes, rutaById]);
+  }, [asigStatMes, rutaById, consumidores]);
 
   const navegarMesStat = (meses) => {
     const d = new Date(mesStat + '-01T12:00:00');
