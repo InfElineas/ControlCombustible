@@ -36,8 +36,8 @@ function fuelColor(nombre) {
 
 function abbrFuel(nombre) {
   const n = (nombre || '').toLowerCase();
-  if (n.includes('gasolina') && n.includes('especial')) return 'G. Esp.';
-  if (n.includes('gasolina')) return 'Gasolina';
+  if (n.includes('gasolina') && n.includes('especial')) return 'G. Especial';
+  if (n.includes('gasolina') && n.includes('regular'))  return 'G. Regular';
   return nombre;
 }
 
@@ -1056,6 +1056,12 @@ export default function ConsumidoresPorTipo({ consumidores, tiposConsumidor, mov
               <Badge variant="outline" className="text-[10px] py-0 px-1.5 shrink-0">{items.length}</Badge>
               {/* Mini-stats siempre visibles */}
               <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 shrink-0 flex-wrap">
+                {/* Etiqueta de período para que quede claro a qué mes corresponden las cifras */}
+                {(litrosMes > 0 || gastoMes > 0 || kmMes > 0) && (
+                  <span className="text-[10px] bg-slate-100 text-slate-400 rounded px-1.5 py-0.5 font-medium shrink-0">
+                    {new Date(periodo + '-02').toLocaleDateString('es', { month: 'short', year: '2-digit' })}
+                  </span>
+                )}
                 {Object.entries(litrosPorCombustible).map(([nombre, litros], i) => (
                   <span key={nombre} className="flex items-center gap-1">
                     {i > 0 && <span className="text-slate-300">·</span>}
@@ -1064,7 +1070,7 @@ export default function ConsumidoresPorTipo({ consumidores, tiposConsumidor, mov
                   </span>
                 ))}
                 {Object.keys(litrosPorCombustible).length === 0 && litrosMes > 0 && (
-                  <span><b className="text-slate-600">{litrosMes.toFixed(1)} L</b> mes</span>
+                  <span><b className="text-slate-600">{litrosMes.toFixed(1)} L</b></span>
                 )}
                 {gastoMes > 0 && <span className="text-slate-300 ml-1">·</span>}
                 {gastoMes > 0 && <span><b className="text-slate-600">{formatMonto(gastoMes)}</b></span>}
