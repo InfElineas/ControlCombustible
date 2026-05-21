@@ -6,6 +6,7 @@ import { AlertTriangle, TrendingDown, TrendingUp, Users, CalendarDays, User, Che
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
+import { supabase } from '@/api/supabaseClient';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import GastosMensualesChart from '@/components/dashboard/GastosMensualesChart';
@@ -427,6 +428,55 @@ export default function Dashboard() {
     [mesFiltro, movimientos, conductores],
   );
 
+  // Km recorridos según GPS backfill (asignacion_ruta tipo recorrido_gps), filtrado por período
+  const { data: kmGps = [] } = useQuery({
+    queryKey: ['km-gps', mesFiltro],
+    queryFn: async () => {
+      let q = supabase
+        .from('asignacion_ruta')
+        .select('consumidor_id, consumidor_nombre, km_reales, fecha')
+        .eq('tipo_viaje', 'recorrido_gps')
+        .not('km_reales', 'is', null)
+        .gt('km_reales', 0);
+      if (mesFiltro !== 'ALL') {
+        const [y, m] = mesFiltro.split('-');
+        q = q.gte('fecha', `${y}-${m}-01`)
+             .lte('fecha', new Date(+y, +m, 0).toISOString().slice(0, 10));
+      }
+      const { data, error } = await q;
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 5 * 60_000,
+    throwOnError: false,
+  });
+
+  const kmStats = useMemo(() => {
+    const totalKm = kmGps.reduce((s, r) => s + (r.km_reales || 0), 0);
+    const byVehiculo = {};
+    kmGps.forEach(r => {
+      const id = r.consumidor_id;
+      byVehiculo[id] = (byVehiculo[id] || 0) + (r.km_reales || 0);
+    });
+    const vehiculosConKm = Object.keys(byVehiculo).length;
+    const promedio = vehiculosConKm > 0 ? totalKm / vehiculosConKm : 0;
+    return { totalKm, vehiculosConKm, promedio, byVehiculo };
+  }, [kmGps]);
+
+  const litrosConsumosPorTipo = useMemo(() =>
+    resumenPorCombustible
+      .filter(r => r.litrosConsumo > 0)
+      .sort((a, b) => b.litrosConsumo - a.litrosConsumo),
+    [resumenPorCombustible]
+  );
+
+  const disponiblePorTipo = useMemo(() =>
+    resumenPorCombustible
+      .filter(r => r.litrosEnTanqueEstimado > 0)
+      .sort((a, b) => b.litrosEnTanqueEstimado - a.litrosEnTanqueEstimado),
+    [resumenPorCombustible]
+  );
+
 
   const modalDataPorCard = useMemo(() => {
     const agruparPorCombustible = (rows) => {
@@ -441,11 +491,10 @@ export default function Dashboard() {
         .sort((a, b) => b.movimientos.length - a.movimientos.length);
     };
 
-    if (statModal.tipo === 'gasto') {
-      return agruparPorCombustible(movimientosFiltradosOrdenados.filter(m => m.tipo === 'COMPRA' && (m.monto || 0) > 0));
-    }
-    if (statModal.tipo === 'litros') {
-      return agruparPorCombustible(movimientosFiltradosOrdenados.filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DESPACHO') && (m.litros || 0) > 0));
+    if (statModal.tipo === 'consumo') {
+      return agruparPorCombustible(
+        movimientosFiltradosOrdenados.filter(m => m.tipo === 'DESPACHO' && !consumidoresSurtidorIds.has(m.consumidor_id) && (m.litros || 0) > 0)
+      );
     }
     if (statModal.tipo === 'consumidores') {
       return agruparPorCombustible(movimientosFiltradosOrdenados.filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DESPACHO') && m.consumidor_id));
@@ -490,34 +539,77 @@ export default function Dashboard() {
           </div>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card className="border-0 shadow-sm cursor-pointer hover:ring-1 hover:ring-sky-200 transition" onClick={() => setStatModal({ open: true, tipo: 'gasto' })}>
+          {/* Litros consumidos por tipo */}
+          <Card className="border-0 shadow-sm cursor-pointer hover:ring-1 hover:ring-sky-200 transition" onClick={() => setStatModal({ open: true, tipo: 'consumo' })}>
             <CardContent className="p-4">
-              <p className="text-[11px] text-slate-400 uppercase tracking-wide">Gasto combustible</p>
-              <p className="text-lg font-bold text-slate-800 mt-1 leading-tight">{formatMonto(gastoMes)}</p>
-              <p className="text-xs text-slate-400 mt-1">{comprasMes.length} compras</p>
-            </CardContent>
-          </Card>
-          <Card className="border-0 shadow-sm cursor-pointer hover:ring-1 hover:ring-sky-200 transition" onClick={() => setStatModal({ open: true, tipo: 'litros' })}>
-            <CardContent className="p-4">
-              <p className="text-[11px] text-slate-400 uppercase tracking-wide">Litros comprados</p>
-              <p className="text-lg font-bold text-orange-600 mt-1 leading-tight inline-flex items-baseline gap-1.5">
-                <span>{litrosMes.toFixed(1)}</span>
-                <span className="text-base font-semibold">L</span>
+              <p className="text-[11px] text-slate-400 uppercase tracking-wide">Litros consumidos</p>
+              {litrosConsumosPorTipo.length === 0 ? (
+                <p className="text-sm text-slate-300 mt-2">Sin despachos</p>
+              ) : (
+                <div className="mt-1.5 space-y-0.5">
+                  {litrosConsumosPorTipo.map(r => (
+                    <div key={r.nombreCombustible} className="flex items-baseline gap-1">
+                      <span className="text-base font-bold text-orange-600 leading-tight tabular-nums">
+                        {r.litrosConsumo.toFixed(0)}
+                      </span>
+                      <span className="text-xs font-semibold text-orange-500">L</span>
+                      <span className="text-xs text-slate-400 truncate">{r.nombreCombustible}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-slate-400 mt-1.5">
+                {movimientosFiltrados.filter(m => m.tipo === 'DESPACHO').length} despachos
               </p>
-              <p className="text-xs text-slate-400 mt-1 inline-flex items-baseline gap-1">
-                <span>•</span>
-                <span>{litrosDespachadosMes.toFixed(1)}</span>
-                <span>L despachados</span>
-              </p>
             </CardContent>
           </Card>
-          <Card className="border-0 shadow-sm cursor-pointer hover:ring-1 hover:ring-sky-200 transition" onClick={() => setStatModal({ open: true, tipo: 'consumidores' })}>
+
+          {/* Disponible en reserva por tipo */}
+          <Card className="border-0 shadow-sm hover:ring-1 hover:ring-sky-200 transition">
             <CardContent className="p-4">
-              <p className="text-[11px] text-slate-400 uppercase tracking-wide">Consumidores activos</p>
-              <p className="text-lg font-bold text-emerald-600 mt-1 leading-tight">{consumidoresActivos.length}</p>
-              <p className="text-xs text-slate-400 mt-1">{tiposConsumidor.filter(t => t.activo !== false).length} tipos</p>
+              <p className="text-[11px] text-slate-400 uppercase tracking-wide">Disponible</p>
+              {disponiblePorTipo.length === 0 ? (
+                <p className="text-sm text-slate-300 mt-2">Sin stock</p>
+              ) : (
+                <div className="mt-1.5 space-y-0.5">
+                  {disponiblePorTipo.map(r => (
+                    <div key={r.nombreCombustible} className="flex items-baseline gap-1">
+                      <span className="text-base font-bold text-emerald-600 leading-tight tabular-nums">
+                        {r.litrosEnTanqueEstimado.toFixed(0)}
+                      </span>
+                      <span className="text-xs font-semibold text-emerald-500">L</span>
+                      <span className="text-xs text-slate-400 truncate">{r.nombreCombustible}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-slate-400 mt-1.5">en tanques · stock actual</p>
             </CardContent>
           </Card>
+
+          {/* Km recorridos GPS */}
+          <Card className="border-0 shadow-sm hover:ring-1 hover:ring-sky-200 transition">
+            <CardContent className="p-4">
+              <p className="text-[11px] text-slate-400 uppercase tracking-wide">Km recorridos</p>
+              {kmStats.totalKm > 0 ? (
+                <>
+                  <p className="text-lg font-bold text-sky-700 mt-1 leading-tight tabular-nums">
+                    {Math.round(kmStats.totalKm).toLocaleString('es-CU')} km
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    {kmStats.vehiculosConKm} veh · prom. {Math.round(kmStats.promedio).toLocaleString('es-CU')} km
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-lg font-bold text-slate-300 mt-1 leading-tight">— km</p>
+                  <p className="text-xs text-slate-400 mt-1">sin registros GPS</p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Nivel bajo */}
           <Card className={`border-0 shadow-sm cursor-pointer transition hover:ring-1 hover:ring-sky-200 ${alertasConsumo.length > 0 ? 'ring-1 ring-red-200 bg-red-50/20' : ''}`} onClick={() => setStatModal({ open: true, tipo: 'alertas' })}>
             <CardContent className="p-4">
               <p className="text-[11px] text-slate-400 uppercase tracking-wide">Nivel bajo</p>
@@ -867,8 +959,7 @@ export default function Dashboard() {
         <DialogContent className="max-w-2xl p-0 overflow-hidden">
           <DialogHeader className="px-5 pt-5 pb-3 border-b border-slate-100">
             <DialogTitle className="text-base">
-              {statModal.tipo === 'gasto' && 'Detalle de gasto por combustible'}
-              {statModal.tipo === 'litros' && 'Detalle de litros por combustible'}
+              {statModal.tipo === 'consumo' && 'Despachos por combustible'}
               {statModal.tipo === 'consumidores' && 'Consumidores por combustible'}
               {statModal.tipo === 'alertas' && 'Alertas críticas por combustible'}
             </DialogTitle>
