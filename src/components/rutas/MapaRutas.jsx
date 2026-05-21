@@ -5,6 +5,7 @@ import L from 'leaflet';
 import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { gpsApi, metersToKm } from '@/api/gpsClient';
+import BackfillGpsDialog from '@/components/rutas/BackfillGpsDialog';
 
 // Fix Leaflet default icons when bundled with Vite
 delete L.Icon.Default.prototype._getIconUrl;
@@ -195,6 +196,7 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
   );
 
   const [vehiculoFiltro, setVehiculoFiltro] = useState('');
+  const [showBackfill, setShowBackfill] = useState(false);
 
   const posicionesFiltradas = vehiculoFiltro.trim()
     ? posicionesValidas.filter(pos => {
@@ -210,10 +212,11 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
 
   return (
     <div className="space-y-2">
-      {/* Filtro de vehículo */}
-      {posicionesValidas.length > 0 && (
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 max-w-xs">
+      {/* Filtro de vehículo + botón backfill */}
+      <div className="flex items-center gap-2">
+        {posicionesValidas.length > 0 && (
+          <>
+            <div className="relative flex-1 max-w-xs">
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input
               type="text"
@@ -229,11 +232,18 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
               >×</button>
             )}
           </div>
-          <span className="text-xs text-slate-400 shrink-0">
-            {posicionesFiltradas.length} / {posicionesValidas.length} vehículo{posicionesValidas.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-      )}
+            <span className="text-xs text-slate-400 shrink-0">
+              {posicionesFiltradas.length} / {posicionesValidas.length} vehículo{posicionesValidas.length !== 1 ? 's' : ''}
+            </span>
+          </>
+        )}
+        <button
+          onClick={() => setShowBackfill(true)}
+          className="ml-auto shrink-0 flex items-center gap-1.5 h-8 px-3 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+        >
+          📥 Cargar historial GPS
+        </button>
+      </div>
 
       <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm" style={{ height: 480 }}>
         <MapContainer
@@ -498,6 +508,11 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
           </span>
         )}
       </div>
+      <BackfillGpsDialog
+        open={showBackfill}
+        onClose={() => setShowBackfill(false)}
+        vehiculos={consumidores}
+      />
     </div>
   );
 }
