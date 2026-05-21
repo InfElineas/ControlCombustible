@@ -190,12 +190,47 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
     p => p.latitude != null && p.longitude != null
   );
 
+  const [vehiculoFiltro, setVehiculoFiltro] = useState('');
+
+  const posicionesFiltradas = vehiculoFiltro.trim()
+    ? posicionesValidas.filter(pos => {
+        const c = consumidores.find(c => Number(c.gps_device_id) === Number(pos.deviceId));
+        const nombre = c?.nombre ?? `GPS #${pos.deviceId}`;
+        return nombre.toLowerCase().includes(vehiculoFiltro.toLowerCase());
+      })
+    : posicionesValidas;
+
   const updatedAt = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString('es-CU', { hour: '2-digit', minute: '2-digit' })
     : null;
 
   return (
     <div className="space-y-2">
+      {/* Filtro de vehículo */}
+      {posicionesValidas.length > 0 && (
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-xs">
+            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input
+              type="text"
+              value={vehiculoFiltro}
+              onChange={e => setVehiculoFiltro(e.target.value)}
+              placeholder="Filtrar vehículo en mapa…"
+              className="w-full pl-8 pr-8 h-8 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-400"
+            />
+            {vehiculoFiltro && (
+              <button
+                onClick={() => setVehiculoFiltro('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-base leading-none"
+              >×</button>
+            )}
+          </div>
+          <span className="text-xs text-slate-400 shrink-0">
+            {posicionesFiltradas.length} / {posicionesValidas.length} vehículo{posicionesValidas.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+      )}
+
       <div className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 shadow-sm" style={{ height: 480 }}>
         <MapContainer
           center={HABANA}
@@ -293,7 +328,7 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
           )}
 
           {/* Marcadores de posición GPS en vivo */}
-          {posicionesValidas.map(pos => {
+          {posicionesFiltradas.map(pos => {
             const consumidor  = consumidores.find(c => Number(c.gps_device_id) === Number(pos.deviceId));
             const nombre      = consumidor?.nombre ?? `GPS #${pos.deviceId}`;
             const moving      = (pos.speed ?? 0) > 2;
@@ -348,6 +383,23 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
                           ? 'Ocultar recorrido'
                           : 'Ver recorrido de hoy'}
                     </button>
+
+                    {/* Botón guardar — solo visible cuando el recorrido está cargado y tiene puntos */}
+                    {tracks[pos.deviceId] && !tracks[pos.deviceId].loading && tracks[pos.deviceId].points.length > 1 && (
+                      <button
+                        onClick={() => saveTrack(pos.deviceId, consumidor, tracks[pos.deviceId].points)}
+                        disabled={savingTrack[pos.deviceId]}
+                        style={{
+                          marginTop: 4, width: '100%', padding: '5px 8px',
+                          background: savingTrack[pos.deviceId] ? '#f1f5f9' : '#f0fdf4',
+                          border: '1px solid #86efac',
+                          borderRadius: 6, cursor: savingTrack[pos.deviceId] ? 'default' : 'pointer',
+                          fontSize: 11, fontWeight: 600, color: '#15803d',
+                        }}
+                      >
+                        {savingTrack[pos.deviceId] ? 'Guardando…' : '💾 Guardar recorrido de hoy'}
+                      </button>
+                    )}
                   </div>
                 </Popup>
               </Marker>
@@ -385,7 +437,7 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
         {posicionesValidas.length > 0 && (
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-3.5 h-3.5 rounded-full bg-green-600 border-2 border-white shadow"></span>
-            Vehículo en vivo
+            {vehiculoFiltro ? `${posicionesFiltradas.length} de ${posicionesValidas.length}` : posicionesValidas.length} vehículo{posicionesValidas.length !== 1 ? 's' : ''} en vivo
             {updatedAt && <span className="text-slate-400">({updatedAt})</span>}
           </span>
         )}
