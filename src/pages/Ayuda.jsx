@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -6,7 +7,7 @@ import {
   Navigation, BookOpen, Settings, Shield, HelpCircle, Search,
   ChevronRight, Fuel, ArrowRightLeft, AlertTriangle, CheckCircle2,
   Calculator, Info, Lightbulb, FileText, Gauge, Car,
-  CreditCard, TrendingUp, Clock, Route, User2, Database,
+  CreditCard, TrendingUp, Clock, Route, User2, Database, ClipboardList,
 } from 'lucide-react';
 
 // ── Primitivos de layout ──────────────────────────────────────────────────────
@@ -120,12 +121,17 @@ const sections = [
         <SubTitle>Flujo general del sistema</SubTitle>
         <Callout type="info" title="Cómo fluye el combustible en el sistema">
           <ol className="list-decimal ml-4 space-y-1 mt-1">
-            <li><strong>Compra externa:</strong> se registra una COMPRA (surtidor externo o reserva). El combustible entra al sistema.</li>
-            <li><strong>Almacenamiento:</strong> puede guardarse en una reserva/tanque interno de la empresa.</li>
-            <li><strong>Despacho interno:</strong> la reserva transfiere combustible a un vehículo o equipo (DESPACHO).</li>
-            <li><strong>Consumo:</strong> el vehículo recorre km y consume. El odómetro y el consumo real se registran en cada carga.</li>
-            <li><strong>Análisis:</strong> el sistema calcula km/L, detecta desviaciones y genera alertas automáticas.</li>
+            <li><strong>DEPÓSITO (entrada al sistema):</strong> el proveedor externo (cisterna, CUPET central) entrega combustible al <em>Iso Tanque</em> de la empresa. Se registra como DEPÓSITO — el origen es el Iso Tanque seleccionado del catálogo.</li>
+            <li><strong>DESPACHO Iso Tanque → Cupet:</strong> del Iso Tanque se transfiere al Cupet interno (punto de distribución). Se registra como DESPACHO: origen = Iso Tanque, destino = Cupet.</li>
+            <li><strong>COMPRA (vehículo en surtidor):</strong> el vehículo carga en el Cupet con su tarjeta corporativa vinculada. Se registra como COMPRA: tarjeta + consumidor + litros + odómetro.</li>
+            <li><strong>DESPACHO directo (alternativo):</strong> para equipos o vehículos sin tarjeta, la reserva puede despachar directamente sin pasar por Cupet.</li>
+            <li><strong>Análisis:</strong> el sistema calcula km/L por vehículo, detecta desviaciones respecto al índice de referencia y genera alertas automáticas.</li>
           </ol>
+        </Callout>
+        <Callout type="tip" title="Vehículos sin control de odómetro (autorizos / directivos)">
+          Los vehículos de dirección o autorizos pueden marcarse con el flag <strong>"Sin control de odómetro"</strong>
+          en la ficha del consumidor. En ese caso el sistema <strong>no pide km ni nivel de tanque</strong>
+          al registrar cargas — se registra solo la fecha, tarjeta y litros. No generan alertas de km/L.
         </Callout>
 
         <SubTitle>Roles de usuario</SubTitle>
@@ -138,6 +144,176 @@ const sections = [
             [<Tag color="amber">Económico</Tag>, 'Accede a Dashboard, Movimientos, Finanzas y Reportes. Perfil contable/financiero.'],
           ]}
         />
+      </>
+    ),
+  },
+  {
+    id: 'guia',
+    label: 'Guía de inicio',
+    icon: ClipboardList,
+    color: 'text-emerald-600',
+    content: () => (
+      <>
+        <P>
+          Esta guía te lleva desde la configuración inicial del sistema hasta la operación diaria.
+          Síguela en orden la primera vez; luego usa la barra lateral para profundizar en cualquier módulo.
+        </P>
+
+        <SectionTitle id="guia-configuracion">Fase 1 — Configuración inicial (una sola vez)</SectionTitle>
+
+        <Callout type="info" title="Orden recomendado de configuración">
+          Respeta este orden porque cada paso depende del anterior:
+          <ol className="list-decimal ml-4 space-y-1 mt-1">
+            <li><strong>Catálogos → Tipos de combustible</strong> — define los combustibles disponibles (Gasolina Regular, Diésel, etc.).</li>
+            <li><strong>Catálogos → Tipos de consumidor</strong> — crea los tipos y activa los comportamientos clave por nombre.</li>
+            <li><strong>Catálogos → Consumidores</strong> — registra los consumidores en este orden: ISO TANQUE → tanques/reservas → vehículos.</li>
+            <li><strong>Catálogos → Conductores</strong> — carga el personal que opera los vehículos.</li>
+            <li><strong>Finanzas → Tarjetas</strong> — registra las tarjetas corporativas usadas en surtidores.</li>
+            <li><strong>Rutas → Catálogo de rutas</strong> — crea las rutas habituales de la flota.</li>
+            <li><strong>(Opcional) Configuración → GPS</strong> — vincula los vehículos con sus dispositivos GPS para lectura automática de odómetro y km recorridos.</li>
+          </ol>
+        </Callout>
+
+        <SubTitle>Paso 1 — Tipos de combustible</SubTitle>
+        <P>
+          Ve a <strong>Catálogos</strong> y agrega cada tipo de combustible que usa la flota
+          (Gasolina Regular, Gasolina Especial, Diésel, etc.). Sin este paso no podrás registrar movimientos.
+        </P>
+
+        <SubTitle>Paso 2 — Tipos de consumidor</SubTitle>
+        <P>
+          El <em>nombre</em> del tipo controla el comportamiento automático del sistema.
+          Crea al menos estos tipos:
+        </P>
+        <TableDoc
+          headers={['Tipo que debes crear', 'Nombre sugerido', 'Por qué']}
+          rows={[
+            ['ISO TANQUE', '"ISO TANQUE" o "Iso Tanque"', 'El nombre debe contener "ISO". Solo así aparecerá en el selector de DEPÓSITO.'],
+            ['Vehículo', '"Vehículo" o "Camión"', 'El nombre debe contener "veh". Activa odómetro, km/L, conductor y alertas.'],
+            ['Reserva / Cupet', '"Reserva" o "Cupet"', 'El nombre debe contener "tanque" o "reserva". Permite usarla como origen de DESPACHO.'],
+            ['Equipo eléctrico', '"Equipo" o "Generador"', 'El nombre debe contener "equipo", "planta" o "grupo". Activa horómetro.'],
+          ]}
+        />
+
+        <SubTitle>Paso 3 — Consumidores</SubTitle>
+        <P>
+          Crea los consumidores en el orden indicado. Para vehículos configura el índice de consumo de
+          referencia (km/L fabricante) para que funcionen las alertas:
+        </P>
+        <TableDoc
+          headers={['En este orden', 'Qué configurar']}
+          rows={[
+            ['1. ISO TANQUE (ej: ISOTANQUE-001)', 'Tipo: ISO TANQUE. Litros iniciales: 0 si vas a registrar todos los ingresos como DEPÓSITO. Combustible: el principal de la flota.'],
+            ['2. Tanques / Reservas (ej: Cupet Central)', 'Tipo: Reserva. Litros iniciales: stock actual. Combustible correspondiente.'],
+            ['3. Vehículos (uno por unidad)', 'Tipo: Vehículo. Chapa, conductor principal, ayudante, capacidad del tanque, km/L fabricante. Activa "Sin odómetro" solo para autorizos/directivos.'],
+          ]}
+        />
+        <Callout type="warning" title="Litros iniciales del ISO TANQUE">
+          El campo <strong>Litros iniciales</strong> del ISO TANQUE representa el combustible
+          físico al momento de empezar a usar el sistema. Si ya existen movimientos de DEPÓSITO
+          que cubren ese stock, ponlo en <strong>0</strong> para evitar doble conteo.
+        </Callout>
+
+        <SubTitle>Paso 4 — Conductores</SubTitle>
+        <P>
+          Ve a <strong>Conductores</strong> y registra el personal operativo. Luego vuelve
+          a cada vehículo en Consumidores y asigna el conductor principal (y ayudante si aplica).
+        </P>
+
+        <SubTitle>Paso 5 — Tarjetas corporativas</SubTitle>
+        <P>
+          En <strong>Finanzas → Tarjetas</strong>, registra cada tarjeta de pago usada en
+          surtidores externos. Las tarjetas son obligatorias para registrar un movimiento de tipo COMPRA.
+        </P>
+
+        <SubTitle>Paso 6 — Catálogo de rutas</SubTitle>
+        <P>
+          En <strong>Rutas → Catálogo de rutas</strong>, crea las rutas habituales con nombre,
+          distancia de referencia y vehículo por defecto. Los viajes ocasionales (viajes extra)
+          no requieren ruta previa en el catálogo.
+        </P>
+
+        <SectionTitle id="guia-diaria">Fase 2 — Operación diaria</SectionTitle>
+
+        <Callout type="tip" title="Secuencia típica de un día operativo">
+          <ol className="list-decimal ml-4 space-y-1 mt-1">
+            <li><strong>¿Llegó cisterna?</strong> → registra un <Tag color="emerald">DEPÓSITO</Tag> al ISO TANQUE.</li>
+            <li><strong>¿Se transfirió al Cupet?</strong> → registra un <Tag color="violet">DESPACHO</Tag> (ISO TANQUE → Cupet).</li>
+            <li><strong>¿Vehículo cargó en surtidor?</strong> → registra una <Tag color="orange">COMPRA</Tag> con la tarjeta corporativa.</li>
+            <li><strong>Rutas del día</strong> → en Rutas → Programa diario, marca cada ruta o usa <strong>"Importar del chat"</strong>.</li>
+          </ol>
+        </Callout>
+
+        <SubTitle>A — Registrar entrada de combustible (DEPÓSITO)</SubTitle>
+        <P>
+          Cuando la cisterna entrega combustible al ISO TANQUE, ve a <strong>Movimientos → Nuevo</strong>
+          y selecciona tipo <strong>DEPÓSITO</strong>. El formulario solo muestra ISO TANQUEs como destino.
+          El origen puede ser un ISO TANQUE del catálogo (referencia interna) o texto libre
+          (número de remisión del proveedor).
+        </P>
+
+        <SubTitle>B — Transferir del ISO TANQUE al punto de distribución (DESPACHO)</SubTitle>
+        <P>
+          Cuando se bombea combustible del ISO TANQUE al Cupet, registra un <strong>DESPACHO</strong>:
+          origen = ISO TANQUE, destino = Cupet. Esto descuenta del ISO TANQUE y acredita al Cupet.
+        </P>
+
+        <SubTitle>C — Vehículo carga en surtidor o recibe despacho (COMPRA / DESPACHO)</SubTitle>
+        <P>
+          Si el vehículo usa una tarjeta en el surtidor externo: registra una <strong>COMPRA</strong>
+          con la tarjeta, el odómetro actual y los litros.<br />
+          Si el vehículo recibe combustible directamente de la reserva interna: registra un{' '}
+          <strong>DESPACHO</strong> (origen = Cupet, destino = vehículo).
+        </P>
+        <Callout type="tip">
+          El sistema calcula automáticamente el km/L de la carga anterior al registrar el odómetro actual.
+          El consumo real se actualiza en la tarjeta del consumidor al guardar.
+        </Callout>
+
+        <SubTitle>D — Programa diario de rutas</SubTitle>
+        <P>
+          Al final del día ve a <strong>Rutas → Programa diario</strong>.
+          Hay dos formas de registrar los viajes:
+        </P>
+        <TableDoc
+          headers={['Método', 'Cuándo usarlo', 'Cómo']}
+          rows={[
+            ['Manual', 'Tienes los datos disponibles directamente', 'Clic en cada ruta → rellena estado, vehículo, km reales y conductor.'],
+            ['Importar del chat', 'Los conductores reportaron el día por WhatsApp', 'Botón "Importar del chat" → pega el texto del grupo o sube el .txt exportado → revisa y confirma.'],
+          ]}
+        />
+        <Callout type="info" title="Barra resumen del día">
+          Sobre el listado de rutas hay una barra que muestra en tiempo real:
+          <ul className="mt-1.5 space-y-0.5 list-none">
+            <li>✅ <strong>Completadas</strong> — rutas con estado "completada" ese día.</li>
+            <li>❌ <strong>Canceladas</strong> — rutas canceladas ese día.</li>
+            <li>📏 <strong>Km totales</strong> — suma de km reales registrados (rutas + viajes extra).</li>
+            <li>⛽ <strong>Litros estimados</strong> — suma de litros estimados (disponibles al importar del chat).</li>
+            <li>📊 <strong>Cumplimiento %</strong> — completadas ÷ (completadas + canceladas) × 100.</li>
+          </ul>
+        </Callout>
+
+        <SectionTitle id="guia-revision">Fase 3 — Revisión periódica</SectionTitle>
+
+        <TableDoc
+          headers={['Frecuencia', 'Qué revisar', 'Dónde']}
+          rows={[
+            ['Diaria', 'Barra resumen del programa diario: completadas, km, litros, cumplimiento.', 'Rutas → Programa diario'],
+            ['Semanal', 'Alertas de consumo: vehículos con km/L bajo el umbral. Revisar odómetros sospechosos.', 'Dashboard → Alertas críticas / Módulo Alertas'],
+            ['Mensual', 'Estadísticas de rutas: km totales, canceladas, sustituciones, litros. Reporte de consumo por vehículo.', 'Rutas → Estadísticas / Módulo Reportes'],
+            ['Cuando sea necesario', 'Stock de ISO TANQUE y Cupet. Si hay desvío, revisar si falta algún DEPÓSITO o DESPACHO.', 'Dashboard → sección de combustible'],
+          ]}
+        />
+
+        <Callout type="tip" title="Primeros pasos después de la configuración">
+          Una vez creados los consumidores y el catálogo de rutas, el flujo mínimo para empezar es:
+          <ol className="list-decimal ml-4 space-y-1 mt-1">
+            <li>Registra el primer DEPÓSITO para establecer el stock del ISO TANQUE.</li>
+            <li>Registra un DESPACHO del ISO TANQUE al Cupet si aplica.</li>
+            <li>Registra la primera COMPRA de un vehículo con su odómetro actual.</li>
+            <li>Registra la segunda COMPRA del mismo vehículo — a partir de aquí el sistema ya calculará km/L.</li>
+          </ol>
+        </Callout>
       </>
     ),
   },
@@ -159,23 +335,37 @@ const sections = [
           rows={[
             [
               <Tag color="orange">COMPRA</Tag>,
-              'El consumidor adquiere combustible directamente en un surtidor o bomba externa usando una tarjeta corporativa.',
-              'Surtidor externo → Vehículo / Reserva',
-              'Suma litros al consumidor destino. Si el destino es una reserva, aumenta el stock de esa reserva.',
+              'El consumidor adquiere combustible en un surtidor o Cupet usando una tarjeta corporativa.',
+              'Surtidor / Cupet → Vehículo / Equipo',
+              'Suma litros al consumidor destino.',
             ],
             [
               <Tag color="violet">DESPACHO</Tag>,
-              'La empresa transfiere combustible desde una reserva interna hacia un vehículo u otro consumidor.',
-              'Reserva interna → Vehículo / Equipo',
-              'Resta litros de la reserva origen. Suma litros al consumidor destino.',
+              'Transferencia interna desde una reserva o Iso Tanque hacia otro consumidor.',
+              'Iso Tanque / Reserva → Cupet / Vehículo / Equipo',
+              'Resta litros del origen. Suma litros al destino.',
+            ],
+            [
+              <Tag color="emerald">DEPÓSITO</Tag>,
+              'Entrada de combustible desde fuente externa al Iso Tanque de la empresa. El origen se selecciona del catálogo de Iso Tanques registrados (o se escribe una referencia libre para origen externo).',
+              'Proveedor externo → Iso Tanque',
+              'Suma litros al Iso Tanque destino. No descuenta ningún origen interno.',
             ],
           ]}
         />
 
-        <Callout type="warning" title="Diferencia clave">
-          Un vehículo puede abastecerse por COMPRA (va al surtidor) o por DESPACHO (recibe de la reserva
-          de la empresa). Ambos suman al consumo real del vehículo, pero se contabilizan por separado
-          en los reportes financieros.
+        <Callout type="info" title="Flujo operativo típico">
+          <strong>DEPÓSITO</strong> (cisterna → Iso Tanque) →{' '}
+          <strong>DESPACHO</strong> (Iso Tanque → Cupet) →{' '}
+          <strong>COMPRA</strong> (vehículo retira del Cupet con tarjeta).<br />
+          El DEPÓSITO solo acepta <em>Iso Tanques</em> como destino. El origen puede ser un Iso Tanque
+          registrado en el catálogo o una referencia libre (número de remisión, proveedor externo).
+        </Callout>
+
+        <Callout type="warning" title="Diferencia clave COMPRA vs DESPACHO">
+          Un vehículo puede abastecerse por COMPRA (va al surtidor con tarjeta) o por DESPACHO (recibe
+          combustible directamente de la reserva). Ambos suman al consumo real del vehículo, pero solo
+          la COMPRA genera gasto financiero con tarjeta corporativa.
         </Callout>
 
         <SubTitle>Campos de un movimiento</SubTitle>
@@ -192,6 +382,7 @@ const sections = [
             ['Monto total', 'Auto', 'Se calcula automáticamente: Litros × Precio.'],
             ['Tarjeta', 'Sí en COMPRA', 'Tarjeta corporativa utilizada para el pago.'],
             ['Odómetro', 'Condicional', 'Lectura actual del cuentakilómetros. Obligatorio para vehículos, opcional para equipos/tanques.'],
+            ['Nivel en tanque (L)', 'No', 'Litros físicos en el tanque del consumidor ANTES de recibir el combustible. Disponible en COMPRA, DESPACHO y DEPÓSITO. Permite verificar el stock real y calcular el consumo entre cargas.'],
             ['Consumo real (km/L)', 'Auto', 'Se calcula automáticamente al registrar dos odómetros consecutivos.'],
             ['Observaciones', 'No', 'Notas libres sobre la operación.'],
           ]}
@@ -321,11 +512,56 @@ Si Desviación < Umbral alerta                    → NORMAL   (verde)`}
         <TableDoc
           headers={['Tipo', 'Ejemplos', 'Particularidades']}
           rows={[
-            ['Vehículo', 'Camiones, autos, camionetas, motos', 'Tiene odómetro, capacidad de tanque, índice de consumo km/L. Genera alertas de consumo.'],
-            ['Equipo / Generador', 'Plantas eléctricas, grupos electrógenos', 'No requiere odómetro. Consume en horas o litros/día. Sin alertas de km/L.'],
-            ['Tanque / Reserva', 'Depósito principal, reserva gasolina', 'Actúa como fuente en movimientos DESPACHO. Su stock se calcula por entradas menos salidas.'],
+            ['Vehículo', 'Camiones, autos, camionetas, motos', 'Tiene odómetro, capacidad de tanque, índice km/L y conductor asignado. Genera alertas de consumo. Puede marcarse "sin odómetro" para autorizos/directivos.'],
+            ['Equipo / Generador', 'Plantas eléctricas, grupos electrógenos', 'No requiere odómetro. Registra horas de uso (horómetro). Sin alertas de km/L.'],
+            ['Tanque / Reserva / Cupet', 'Depósito principal, reserva gasolina, Cupet', 'Actúa como fuente en DESPACHO. Su stock = litros iniciales + COMPRA recibidas − DESPACHO salidos.'],
+            ['ISO TANQUE', 'ISOTANQUE-001, Cisterna Norte', 'Primer punto de entrada al sistema. Solo los ISO TANQUEs aparecen como destino en un DEPÓSITO y como origen en el selector de DEPÓSITO. Tipo creado con nombre que contenga "ISO" en Catálogos.'],
           ]}
         />
+        <Callout type="tip" title="Cómo crear un Iso Tanque">
+          Ve a <strong>Catálogos → Tipos de consumidor</strong> y crea un tipo cuyo nombre contenga
+          la palabra <strong>"ISO"</strong> (ej: "ISO TANQUE", "Iso Tanque"). Luego en <strong>Consumidores</strong>
+          crea un consumidor de ese tipo. Solo esos consumidores aparecerán en el selector de origen
+          y destino del formulario de DEPÓSITO.
+        </Callout>
+
+        <SubTitle>Vehículos sin control de odómetro</SubTitle>
+        <P>
+          Algunos vehículos (autorizos, carros de dirección) no requieren registrar kilómetros.
+          Para ellos existe el flag <strong>"Sin control de odómetro"</strong> en la ficha del vehículo
+          (sección "Datos del Vehículo" al editar el consumidor).
+        </P>
+        <TableDoc
+          headers={['Con odómetro', 'Sin odómetro (flag activado)']}
+          rows={[
+            ['Pide km actual al registrar COMPRA/DESPACHO', 'No pide km ni nivel de tanque'],
+            ['Calcula km recorridos y km/L automáticamente', 'No calcula km/L (sin datos de distancia)'],
+            ['Genera alertas de consumo', 'No aparece en alertas de km/L'],
+            ['Muestra historial de odómetro en la ficha', 'Muestra solo litros y fechas'],
+          ]}
+        />
+        <Callout type="tip">
+          Para activar: edita el consumidor → despliega "Datos del Vehículo" → activa el interruptor
+          <strong> "Sin control de odómetro"</strong> al final de esa sección.
+        </Callout>
+
+        <SubTitle>Conductor y ayudante asignados al vehículo</SubTitle>
+        <P>
+          Cada vehículo puede tener un <strong>conductor principal</strong> y un <strong>ayudante</strong>
+          asignados desde el catálogo de conductores. Estos campos aparecen en la ficha del consumidor
+          cuando el tipo es "Vehículo".
+        </P>
+        <TableDoc
+          headers={['Campo', 'Descripción']}
+          rows={[
+            ['Conductor principal', 'Conductor habitual asignado al vehículo. Aparece en reportes y asignaciones de ruta.'],
+            ['Ayudante', 'Segundo operador del vehículo. No puede ser el mismo que el conductor principal.'],
+          ]}
+        />
+        <Callout type="info">
+          El conductor y ayudante también se pueden especificar en cada <strong>viaje del programa diario</strong>
+          (módulo Rutas), independientemente de la asignación fija del consumidor.
+        </Callout>
 
         <SubTitle>Cálculo de stock de una reserva</SubTitle>
         <Callout type="formula" title="Stock actual de una reserva">
@@ -630,61 +866,253 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
     content: () => (
       <>
         <P>
-          El módulo de Rutas lleva un registro operativo de los viajes realizados por
-          los vehículos cada día, independientemente de las cargas de combustible.
+          El módulo de Rutas documenta el historial operativo de viajes de los vehículos.
+          Es independiente del combustible: registra <em>quién fue, a dónde, cuándo y cuántos km</em>,
+          sin importar si hubo o no una carga asociada.
         </P>
 
-        <Callout type="info" title="Relación con el combustible">
-          Rutas y Movimientos son registros <strong>paralelos e independientes</strong>. Rutas
-          documenta los trayectos operativos; Movimientos documenta el combustible consumido.
-          No existe un enlace automático entre ambos módulos actualmente.
+        <Callout type="info" title="Relación con Movimientos">
+          Rutas y Movimientos son registros <strong>paralelos</strong>: Movimientos registra el combustible,
+          Rutas registra la operación. Los reportes del grupo de WhatsApp se importan directamente
+          desde el botón <strong>"Importar del chat"</strong> en el programa diario, sin procesamiento externo.
         </Callout>
 
-        <SubTitle>Catálogo de rutas</SubTitle>
+        <SectionTitle id="rutas-flujo">Flujo completo paso a paso</SectionTitle>
+
+        <SubTitle>Paso 1 — Definir el catálogo de rutas</SubTitle>
         <P>
-          Antes de registrar viajes, define las rutas habituales de tu operación. Cada ruta tiene:
+          Antes de registrar viajes, crea las rutas habituales en la pestaña <strong>Catálogo de rutas</strong>.
+          Una ruta es una plantilla reutilizable: define el trayecto y su distancia de referencia.
+          Los viajes del día se crean a partir de esa plantilla.
+        </P>
+        <TableDoc
+          headers={['Campo', 'Obligatorio', 'Para qué sirve']}
+          rows={[
+            ['Nombre', 'Sí', 'Identifica la ruta en los selectores (ej: "Polígono Norte").'],
+            ['Punto inicio / fin', 'No', 'Referencia geográfica de partida y llegada.'],
+            ['Distancia (km)', 'No', 'Referencia para comparar con los km reales del viaje.'],
+            ['Frecuencia', 'No', 'Indica si es diaria, semanal, etc. Solo informativo.'],
+            ['Vehículo / Conductor por defecto', 'No', 'Prellenado sugerido al crear el viaje del día.'],
+            ['Activa', 'Sí', 'Las rutas inactivas no aparecen en el selector del programa diario.'],
+          ]}
+        />
+        <Callout type="tip">
+          No es necesario tener todas las rutas antes de empezar. Los viajes que no corresponden
+          a una ruta del catálogo se registran como <strong>Viaje extra</strong> con descripción libre.
+        </Callout>
+
+        <SubTitle>Paso 2 — Registrar viajes en el programa diario</SubTitle>
+        <P>
+          En la pestaña <strong>Programa diario</strong>, navega al día que quieres registrar
+          con las flechas de fecha. Verás dos secciones:
+        </P>
+        <TableDoc
+          headers={['Sección', 'Qué muestra', 'Qué puedes hacer']}
+          rows={[
+            ['Rutas del catálogo', 'Todas las rutas activas con el estado del día (sin novedad / completada / cancelada / sustitución)', 'Clic en el botón de la ruta para registrar la novedad del día'],
+            ['Viajes extra', 'Viajes que no corresponden a ninguna ruta del catálogo', 'Botón "+ Viaje extra" para registrar un trayecto libre'],
+          ]}
+        />
+        <Callout type="tip" title="Herramientas del programa diario">
+          Junto a las flechas de navegación de fecha encontrarás dos elementos adicionales:
+          <ul className="mt-1.5 space-y-0.5 list-none">
+            <li>📥 <strong>"Importar del chat"</strong> — importa viajes directamente desde el grupo de WhatsApp (ver Paso 6).</li>
+            <li>📊 <strong>Barra resumen</strong> — muestra en tiempo real: completadas, canceladas, km totales, litros estimados y cumplimiento % del día.</li>
+          </ul>
+        </Callout>
+
+        <SubTitle>Paso 3 — Completar una ruta del catálogo</SubTitle>
+        <P>
+          Al hacer clic sobre una ruta del catálogo en el programa diario, se abre el formulario
+          de novedad. Rellena estos campos:
         </P>
         <TableDoc
           headers={['Campo', 'Descripción']}
           rows={[
-            ['Nombre', 'Identificador de la ruta (ej: "Polígono Norte").'],
-            ['Punto de inicio / fin', 'Lugares de partida y llegada.'],
-            ['Municipio', 'Área geográfica de referencia.'],
-            ['Distancia (km)', 'Kilómetros de referencia para comparar con km reales.'],
-            ['Tiempo estimado', 'Duración esperada del trayecto.'],
-            ['Frecuencia', 'Con qué periodicidad se hace esta ruta (Diario, Semanal, etc.).'],
-            ['Activa', 'Las rutas inactivas no aparecen en el selector de viajes.'],
+            ['Estado', '"Completada" si el viaje se realizó normalmente. "Cancelada" si no se realizó. "Pendiente" si aún no ha salido.'],
+            ['Vehículo', 'Puede ser el mismo de la ruta (normal) o uno diferente (sustitución automática).'],
+            ['Conductor / Ayudante', 'Quién realizó el viaje. Opcional pero recomendado para trazabilidad.'],
+            ['km reales', 'Kilómetros efectivamente recorridos. Permite comparar con la distancia de referencia de la ruta.'],
+            ['Observaciones', 'Cualquier incidencia, retraso o nota relevante.'],
           ]}
         />
+        <Callout type="tip" title="¿Cómo sé que una ruta quedó correctamente registrada?">
+          El registro es correcto cuando la fila de la ruta en el programa diario muestra
+          el badge <Tag color="emerald">Completada</Tag> y, si registraste km reales,
+          el valor aparece junto al nombre del vehículo. Si el vehículo era diferente al
+          asignado por defecto, el sistema lo marca automáticamente como sustitución.
+        </Callout>
 
-        <SubTitle>Tipos de viaje</SubTitle>
+        <SubTitle>Paso 4 — Registrar un viaje extra</SubTitle>
+        <P>
+          Para viajes fuera del catálogo (entregas, comisiones, contingencias), usa el
+          botón <strong>"+ Viaje extra"</strong>. Elige el tipo según la naturaleza del viaje:
+        </P>
         <TableDoc
-          headers={['Tipo', 'Descripción', 'Requiere ruta del catálogo']}
+          headers={['Tipo', 'Cuándo usarlo']}
           rows={[
-            [<Tag color="sky">Regular</Tag>, 'Ruta planificada y conocida, seleccionada del catálogo.', 'Sí'],
-            [<Tag color="violet">Carga de mercancías</Tag>, 'Viajes de los comerciales con mercancía. Llevan descripción libre del destino.', 'No'],
-            [<Tag color="amber">Mensajería</Tag>, 'Entregas de documentos u objetos. Llevan descripción libre.', 'No'],
-            [<Tag color="orange">Viaje extra</Tag>, 'Cualquier salida imprevista o de contingencia.', 'No'],
+            [<Tag color="sky">Regular</Tag>, 'Ruta planificada del catálogo. Se selecciona de la lista de rutas activas.'],
+            [<Tag color="violet">Carga de mercancías</Tag>, 'Comerciales que salen con mercancía. Describe libremente el destino.'],
+            [<Tag color="amber">Mensajería</Tag>, 'Entrega de documentos u objetos puntuales.'],
+            [<Tag color="orange">Viaje extra</Tag>, 'Cualquier salida imprevista, contingencia o comisión no planificada.'],
           ]}
         />
 
-        <SubTitle>Registro diario de viajes</SubTitle>
+        <SubTitle>Paso 5 — Verificar el historial en Estadísticas</SubTitle>
         <P>
-          Cada viaje registrado incluye: fecha, tipo, vehículo, conductor (opcional),
-          km reales recorridos (opcional, para comparar con la distancia de referencia),
-          estado (Completado / Pendiente / Cancelado) y observaciones.
+          La pestaña <strong>Estadísticas</strong> consolida el mes actual con los siguientes indicadores:
         </P>
+        <TableDoc
+          headers={['Indicador', 'Qué mide']}
+          rows={[
+            ['Completadas', 'Rutas del catálogo marcadas como completadas en el mes.'],
+            ['Canceladas', 'Rutas del catálogo canceladas en el mes.'],
+            ['Sustituciones', 'Viajes donde el vehículo que realizó la ruta difiere del asignado por defecto.'],
+            ['Km totales', 'Suma de km reales registrados en rutas + viajes extra del mes.'],
+            ['Litros estimados', 'Suma de litros_estimados en registros del mes (disponibles al importar del chat).'],
+            ['Cumplimiento (%)', 'Completadas ÷ (Completadas + Canceladas) × 100.'],
+          ]}
+        />
+        <Callout type="tip">
+          Úsala al cierre del mes para verificar que todos los viajes del catálogo quedaron registrados
+          y para obtener los KPIs operativos del período.
+        </Callout>
 
-        <SubTitle>Estadísticas del mes</SubTitle>
+        <SubTitle>Paso 6 — Importar viajes del chat de WhatsApp</SubTitle>
         <P>
-          La pestaña Estadísticas muestra para el mes en curso: rutas más frecuentes (con barra
-          de uso relativo), actividad por vehículo (viajes + km acumulados) y desglose porcentual
-          de los 4 tipos de viaje.
+          En vez de registrar cada viaje manualmente, los conductores que reportan en el grupo
+          de WhatsApp pueden importarse directamente desde el programa diario.
         </P>
+        <Callout type="info" title="Flujo de importación del chat">
+          <ol className="list-decimal ml-4 space-y-1 mt-1">
+            <li>En el programa diario del día que quieras importar, pulsa <strong>"Importar del chat"</strong>.</li>
+            <li>Pega el texto copiado del grupo de WhatsApp o sube el archivo <code>.txt</code> exportado desde la app.</li>
+            <li>El sistema detecta automáticamente: chapa del vehículo, conductor, km totales, litros y rutas mencionadas.</li>
+            <li>Revisa la tabla de previsualización: ajusta el vehículo, km o litros en cualquier fila si es necesario.</li>
+            <li>Marca ✓ los conductores que quieres importar y pulsa <strong>"Importar seleccionados"</strong>.</li>
+          </ol>
+        </Callout>
+        <TableDoc
+          headers={['Elemento detectado', 'Cómo se extrae', 'Qué hacer si falla']}
+          rows={[
+            ['Chapa del vehículo', 'Busca patrones tipo "C-XXXX", "P-XXXX" o la chapa directamente en el mensaje.', 'Selecciona el vehículo manualmente en el desplegable de la fila.'],
+            ['Km totales', 'Detecta frases como "total: 120 km", "recorridos 120", "120 kilómetros".', 'Ingresa el valor manualmente en el campo km de la fila.'],
+            ['Litros', 'Detecta frases como "cargó 40 L", "40 litros", "40L".', 'Ingresa el valor manualmente en el campo litros de la fila.'],
+            ['Rutas mencionadas', 'Compara el texto del mensaje con los nombres del catálogo de rutas (similitud de palabras).', 'Las rutas no reconocidas se crean como viajes extra con la descripción original.'],
+          ]}
+        />
+        <Callout type="tip" title="Formato del archivo .txt de WhatsApp">
+          Exporta el chat desde WhatsApp: <em>Menú del chat → Más → Exportar chat → Sin archivos multimedia</em>.
+          El archivo contiene un mensaje por línea con el formato:<br />
+          <code className="text-xs">DD/MM/AAAA, HH:MM a. m. - Nombre: mensaje del conductor</code><br />
+          El importador filtra automáticamente los mensajes del día seleccionado.
+        </Callout>
+        <Callout type="warning" title="Los registros importados del chat son viajes reales">
+          A diferencia de flujos de análisis anteriores, los datos importados del chat crean
+          registros reales en el programa diario con estado <strong>"completada"</strong> y
+          fuente <strong>"chat"</strong>. Son parte del historial oficial, igual que los registros manuales.
+        </Callout>
 
         <Callout type="tip">
           Solo los vehículos aparecen en el selector de asignación de viajes.
           Los tanques, reservas y equipos/generadores quedan excluidos automáticamente.
+        </Callout>
+
+        <SubTitle>Paso 7 — Km reales automáticos desde GPS</SubTitle>
+        <P>
+          Si el vehículo tiene un dispositivo GPS vinculado (ver <strong>Configuración → GPS</strong>),
+          al abrir el formulario de novedad o viaje extra aparece un botón de satélite junto al campo <em>Km reales</em>.
+        </P>
+        <TableDoc
+          headers={['Acción', 'Resultado']}
+          rows={[
+            ['Pulsar el botón 🛰 en "Km reales"', 'Consulta AsTrack y obtiene los km recorridos por ese vehículo en la fecha del registro. Rellena el campo automáticamente.'],
+            ['Km = 0 o sin datos', 'Se muestra una advertencia; el campo queda editable para ingreso manual.'],
+            ['Sin GPS vinculado', 'El botón no aparece. El flujo es idéntico al registro manual.'],
+          ]}
+        />
+
+        <SubTitle>Paso 8 — Mapa GPS en vivo y trayectoria del día</SubTitle>
+        <P>
+          La pestaña <strong>Mapa</strong> del módulo de Rutas combina las rutas del catálogo
+          con la telemetría GPS en tiempo real de los vehículos vinculados.
+        </P>
+        <TableDoc
+          headers={['Elemento', 'Qué representa']}
+          rows={[
+            ['Punto verde', 'Vehículo en movimiento (velocidad > 2 km/h). Posición actualizada cada 30 s.'],
+            ['Punto gris', 'Vehículo detenido o con motor apagado.'],
+            ['Popup del vehículo', 'Muestra nombre, chapa, tipo, combustible, velocidad actual, km recorridos hoy y estado del motor.'],
+            ['Km hoy (popup)', 'Kilómetros acumulados desde 00:00 hasta el momento. Se actualiza cada 5 minutos.'],
+            ['Botón "Ver recorrido de hoy"', 'Dibuja en el mapa la trayectoria GPS del día como línea naranja discontinua.'],
+            ['Botón "Ocultar recorrido"', 'Quita la trayectoria del mapa.'],
+          ]}
+        />
+        <Callout type="info" title="Sobre la trayectoria (línea naranja)">
+          La línea muestra los puntos GPS reales registrados por Traccar a lo largo del día,
+          conectados en orden cronológico. Si la línea parece recta o tiene pocos puntos,
+          significa que el dispositivo GPS está configurado con baja frecuencia de actualización
+          en AsTrack (p. ej. solo registra posición cada 30 minutos). Esto es normal y no indica
+          un fallo — la precisión de la trayectoria depende de la configuración del dispositivo en la plataforma GPS.
+        </Callout>
+
+        <SubTitle>Paso 9 — Histórico GPS automático al final del día</SubTitle>
+        <P>
+          El sistema guarda automáticamente el recorrido diario de cada vehículo GPS a las <strong>23:55</strong> mediante
+          una tarea programada (Edge Function <code>gps-daily-save</code>). El registro incluye km recorridos,
+          odómetro y velocidad máxima del día.
+        </P>
+        <TableDoc
+          headers={['Campo guardado', 'Fuente']}
+          rows={[
+            ['Km recorridos', 'Resumen de actividad Traccar (0:00 – 23:59)'],
+            ['Odómetro', 'Lectura actual del totalizador del GPS'],
+            ['Velocidad máxima', 'Vel. máxima registrada por Traccar en el día'],
+            ['Tipo de viaje', '"Recorrido GPS" — aparece en la pestaña Estadísticas con etiqueta teal'],
+          ]}
+        />
+        <Callout type="warning" title="Requisito para el auto-guardado">
+          La Edge Function <code>gps-daily-save</code> debe estar desplegada y el cron
+          programado (sección §18 de la migración). Si el cron no está activo, los recorridos
+          se pueden guardar manualmente desde el Mapa abriendo el popup de cualquier vehículo.
+        </Callout>
+
+        <SubTitle>Paso 10 — Marcadores de mapa</SubTitle>
+        <P>
+          Los <strong>Marcadores</strong> son puntos de interés nombrados que colocas directamente sobre
+          el mapa. Sirven como bloques de construcción para definir rutas con paradas múltiples.
+          Se gestionan en la pestaña <strong>Rutas → Marcadores</strong>.
+        </P>
+        <TableDoc
+          headers={['Acción', 'Cómo hacerlo']}
+          rows={[
+            ['Crear marcador', 'Pulsa "Añadir marcador", haz clic en el punto del mapa y asígnale nombre, descripción y color.'],
+            ['Buscar ubicación', 'Usa el buscador del mapa (esquina superior izquierda) para navegar a cualquier dirección o lugar en Cuba.'],
+            ['Editar / Eliminar', 'Botones de lápiz y papelera en la lista lateral, o directamente desde el popup del marcador en el mapa.'],
+            ['Color', '7 colores disponibles para distinguir tipos de punto (almacén, destino, parada intermedia…).'],
+          ]}
+        />
+
+        <SubTitle>Paso 11 — Rutas con paradas (waypoints)</SubTitle>
+        <P>
+          Una ruta puede definirse como una <strong>secuencia ordenada de marcadores</strong>.
+          Al añadir 2 o más paradas a una ruta, el sistema calcula automáticamente la distancia
+          total (fórmula Haversine) y en el mapa la ruta se dibuja pasando por todos los puntos en orden.
+        </P>
+        <TableDoc
+          headers={['Paso', 'Detalle']}
+          rows={[
+            ['1. Crea los marcadores', 'Ve a Rutas → Marcadores y coloca en el mapa todos los puntos que forman la ruta (ej: Almacén Cerro, CD Polígono, La Timba).'],
+            ['2. Abre el catálogo de rutas', 'Rutas → Catálogo de rutas → Nueva ruta (o edita una existente).'],
+            ['3. Añade paradas', 'En la sección "Paradas" del formulario, pulsa "+ Añadir parada" y selecciona los marcadores en el orden correcto.'],
+            ['4. Reordena si es necesario', 'Usa las flechas ↑↓ para cambiar el orden. El botón × elimina una parada.'],
+            ['5. Guarda', 'Las coordenadas de inicio/fin y la distancia se rellenan solas. Pulsa "Crear ruta".'],
+            ['6. Ver en el mapa', 'La ruta aparece en Rutas → Mapa como polilínea azul que pasa por todas las paradas. El popup muestra la secuencia completa.'],
+          ]}
+        />
+        <Callout type="tip" title="Rutas sin marcadores">
+          Las rutas tradicionales (solo coordenadas de inicio y fin) siguen funcionando exactamente igual.
+          Los marcadores/paradas son opcionales y complementan, no reemplazan, el flujo anterior.
         </Callout>
       </>
     ),
@@ -698,26 +1126,36 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
       <>
         <P>
           El catálogo de conductores almacena los datos de los operadores de vehículos.
-          Cada conductor puede estar asignado a un vehículo específico.
+          Un conductor puede actuar como <strong>conductor principal</strong> o como <strong>ayudante</strong>
+          según el vehículo o el viaje registrado.
         </P>
         <TableDoc
           headers={['Campo', 'Descripción']}
           rows={[
-            ['Nombre', 'Nombre completo del conductor.'],
-            ['Vehículo asignado', 'Chapa o código del vehículo que habitualmente conduce.'],
-            ['Teléfono / Email', 'Datos de contacto para notificaciones.'],
-            ['Activo', 'Los conductores inactivos no aparecen en los selectores.'],
+            ['Nombre', 'Nombre completo del conductor / operador.'],
+            ['Teléfono / Email', 'Datos de contacto para notificaciones y registro.'],
+            ['Activo', 'Los conductores inactivos no aparecen en los selectores de vehículo ni de rutas.'],
           ]}
         />
+
+        <SubTitle>Dónde se usa un conductor</SubTitle>
+        <TableDoc
+          headers={['Contexto', 'Rol disponible', 'Cómo asignarlo']}
+          rows={[
+            ['Ficha del consumidor (vehículo)', 'Conductor principal + Ayudante', 'Editar consumidor → selector "Conductor principal" y "Ayudante" en la sección de datos del vehículo.'],
+            ['Programa diario (Rutas)', 'Conductor + Ayudante del viaje', 'Al registrar la novedad de una ruta o un viaje extra, se puede cambiar el conductor y ayudante para ese viaje puntual.'],
+          ]}
+        />
+
         <Callout type="info" title="Conductor del mes (Dashboard)">
-          El Dashboard calcula automáticamente el "conductor del mes": el conductor cuyo
-          vehículo asignado registró más litros en el período seleccionado (COMPRA + DESPACHO).
-          Se basa en la chapa del vehículo asignado al conductor.
+          El Dashboard calcula el "conductor del mes": el conductor cuyo vehículo asignado registró
+          más litros en el período (COMPRA + DESPACHO). Se basa en la asignación del consumidor,
+          no en los viajes individuales.
         </Callout>
-        <P>
-          En el módulo de Rutas, puedes registrar qué conductor realizó cada viaje del día,
-          lo que permite cruzar actividad operativa con historial de cargas de combustible.
-        </P>
+        <Callout type="tip">
+          El <strong>ayudante</strong> no puede ser el mismo que el conductor principal en el mismo
+          vehículo. El selector lo filtra automáticamente.
+        </Callout>
       </>
     ),
   },
@@ -735,10 +1173,23 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
 
         <SubTitle>Tipos de consumidor</SubTitle>
         <P>
-          Define las categorías de consumidores (Vehículo, Tanque, Equipo, etc.).
-          El tipo del consumidor determina qué campos son obligatorios (odómetro, capacidad)
-          y si genera alertas de consumo.
+          Define las categorías de consumidores. El nombre del tipo controla qué campos
+          y comportamientos se activan automáticamente:
         </P>
+        <TableDoc
+          headers={['Nombre contiene…', 'Comportamiento activado']}
+          rows={[
+            ['"veh" (vehículo)', 'Muestra campos de odómetro, capacidad de tanque, km/L, conductor/ayudante, sin_odómetro. Genera alertas de consumo.'],
+            ['"tanque" o "reserva"', 'Actúa como fuente en DESPACHO. Aparece en el selector de origen de DESPACHO.'],
+            ['"iso" (ISO TANQUE)', 'Aparece exclusivamente en el selector de origen/destino del formulario de DEPÓSITO. Primer punto de entrada al sistema.'],
+            ['"equipo", "planta" o "grupo"', 'Muestra campo de horómetro (horas de uso) en lugar de odómetro. Sin alertas de km/L.'],
+          ]}
+        />
+        <Callout type="warning">
+          El nombre del tipo es case-insensitive pero debe contener exactamente la palabra clave
+          indicada. Por ejemplo "ISO TANQUE", "Iso Tanque" o "isotanque" son todos válidos.
+          Un tipo llamado solo "Almacenamiento" no activará el comportamiento ISO.
+        </Callout>
 
         <SubTitle>Tipos de combustible</SubTitle>
         <P>
@@ -794,11 +1245,11 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
     content: () => (
       <>
         <P>
-          La pantalla de Configuración permite ajustar parámetros operativos del sistema
-          y gestionar la importación de datos históricos.
+          La pantalla de Configuración permite ajustar parámetros operativos del sistema,
+          gestionar la importación de datos históricos y vincular los dispositivos GPS.
         </P>
 
-        <SubTitle>Gestión de precios</SubTitle>
+        <SectionTitle id="conf-precios">Gestión de precios</SectionTitle>
         <P>
           Puedes agregar, editar o eliminar precios vigentes por tipo de combustible.
           Los cambios de precio afectan el cálculo del monto en los nuevos movimientos
@@ -810,18 +1261,72 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
           con fecha de vigencia en lugar de editar el existente.
         </Callout>
 
-        <SubTitle>Importación de datos</SubTitle>
+        <SectionTitle id="conf-importacion">Importación de datos</SectionTitle>
         <P>
           La guía de importación explica el formato de archivo CSV/Excel aceptado para
           cargar datos históricos de movimientos de forma masiva. Úsala cuando se migra
           al sistema desde registros en papel u hojas de cálculo.
         </P>
 
-        <SubTitle>Alertas globales</SubTitle>
+        <SectionTitle id="conf-alertas">Alertas globales</SectionTitle>
         <P>
           Umbrales por defecto aplicables a todos los consumidores que no tienen
           configuración propia de alerta.
         </P>
+
+        <SectionTitle id="conf-gps">Vinculación GPS (AsTrack / Traccar)</SectionTitle>
+        <P>
+          La pestaña <strong>GPS — Vinculación</strong> conecta cada vehículo del catálogo
+          con su dispositivo GPS registrado en AsTrack Cuba (plataforma Traccar).
+          Una vez vinculados, el sistema puede leer el odómetro y los km recorridos
+          directamente desde el GPS.
+        </P>
+
+        <SubTitle>Requisitos previos</SubTitle>
+        <Callout type="warning" title="Antes de usar la vinculación GPS">
+          <ol className="list-decimal ml-4 space-y-1 mt-1">
+            <li>La <strong>Edge Function</strong> <code>gps-proxy</code> debe estar desplegada en Supabase.</li>
+            <li>Los secrets <code>TRACCAR_EMAIL</code> y <code>TRACCAR_PASSWORD</code> deben estar configurados en el panel de Supabase → Functions → Secrets.</li>
+            <li>La tabla <code>gps_session_cache</code> debe existir en la base de datos (incluida en la migración global).</li>
+          </ol>
+        </Callout>
+
+        <SubTitle>Cómo vincular un vehículo con su GPS</SubTitle>
+        <TableDoc
+          headers={['Paso', 'Acción']}
+          rows={[
+            ['1', 'Abre Configuración → pestaña "GPS — Vinculación".'],
+            ['2', 'Pulsa "Cargar dispositivos GPS". El panel se conectará a AsTrack y listará todos los dispositivos disponibles.'],
+            ['3', 'Para cada vehículo, selecciona su dispositivo GPS en el desplegable de la derecha.'],
+            ['4', 'El vínculo se guarda automáticamente al seleccionar.'],
+          ]}
+        />
+
+        <SubTitle>Funciones que se activan tras vincular</SubTitle>
+        <TableDoc
+          headers={['Función', 'Dónde aparece', 'Qué hace']}
+          rows={[
+            ['Leer odómetro GPS', 'Movimientos → COMPRA / DESPACHO', 'Botón 🛰 junto al campo Odómetro. Rellena con el odómetro acumulado actual del GPS.'],
+            ['Leer km del día GPS', 'Rutas → Novedad / Viaje extra', 'Botón 🛰 junto al campo "Km reales". Obtiene los km recorridos en la fecha del registro.'],
+            ['Posición en vivo', 'Rutas → Mapa', 'Punto verde/gris actualizado cada 30 s con velocidad y estado del motor.'],
+            ['Km recorridos hoy', 'Rutas → Mapa (popup)', 'Contador diario actualizado cada 5 minutos desde 00:00.'],
+            ['Trayectoria del día', 'Rutas → Mapa (popup → "Ver recorrido")', 'Línea naranja sobre el mapa con los puntos GPS registrados desde 00:00 hasta ahora.'],
+            ['Auto-guardado al cierre del día', 'Rutas → Estadísticas (tipo "Recorrido GPS")', 'La tarea programada guarda km, odómetro y vel. máx a las 23:55 sin intervención del usuario.'],
+          ]}
+        />
+
+        <Callout type="info" title="Sobre la trayectoria en el mapa">
+          La línea naranja en el mapa conecta los puntos GPS registrados por Traccar en orden cronológico.
+          Si aparece casi recta o con pocos segmentos, el dispositivo GPS está configurado con baja
+          frecuencia de reporte en AsTrack (normal para dispositivos en modo económico).
+          La precisión de la trayectoria depende enteramente de la configuración del dispositivo,
+          no del sistema de combustible.
+        </Callout>
+
+        <Callout type="tip" title="Sin GPS vinculado">
+          Los botones de lectura GPS solo aparecen cuando el consumidor tiene un dispositivo GPS
+          asociado. Para vehículos sin GPS el flujo es exactamente igual que antes.
+        </Callout>
       </>
     ),
   },
@@ -905,8 +1410,18 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
             ['Litros iniciales', 'Stock de apertura configurado para una reserva (combustible ya existente antes del primer registro).'],
             ['Período', 'Intervalo de tiempo seleccionado para filtrar datos (mes específico o historial completo).'],
             ['km/L', 'Kilómetros por litro. Medida de eficiencia de combustible. Mayor es mejor.'],
+            ['DEPÓSITO', 'Movimiento de entrada de combustible desde fuente externa hacia un Iso Tanque registrado. El origen se selecciona del catálogo de Iso Tanques o se escribe como referencia libre. No descuenta ningún origen interno.'],
+            ['ISO TANQUE', 'Tipo de consumidor especial que representa el primer punto de almacenamiento físico de la empresa (cisterna estacionaria o móvil). Solo aparece en el formulario de DEPÓSITO. Se crea con un tipo cuyo nombre contenga "ISO".'],
+            ['Nivel en tanque (nivel_tanque)', 'Litros físicos medidos en el depósito del consumidor ANTES de recibir el combustible. Campo opcional disponible en COMPRA, DESPACHO y DEPÓSITO. Permite verificar consistencia del stock real.'],
+            ['Sin odómetro (sin_odometro)', 'Flag de un consumidor vehículo que desactiva el registro de km y nivel de tanque. Usado para autorizos y vehículos de dirección. Se activa en la ficha del consumidor → Datos del Vehículo.'],
+            ['Autorizo / Directivo', 'Vehículo de uso ejecutivo o autorizado que no requiere control de odómetro. Se configura activando el flag "Sin control de odómetro" en el consumidor correspondiente.'],
+            ['Conductor principal', 'Conductor habitual asignado a un vehículo en su ficha de consumidor. Se selecciona del catálogo de conductores.'],
+            ['Ayudante', 'Segundo operador asignado a un vehículo o viaje. No puede coincidir con el conductor principal. Seleccionable en la ficha del consumidor y en cada viaje del programa diario.'],
             ['Ruta regular', 'Trayecto preestablecido en el catálogo de rutas, con distancia y puntos definidos.'],
             ['Viaje extra', 'Desplazamiento fuera de las rutas planificadas: imprevistos, contingencias o viajes especiales.'],
+            ['Importar del chat (WhatsApp)', 'Función del programa diario de Rutas que analiza el texto exportado de un grupo de WhatsApp y crea automáticamente los registros de viaje del día a partir de los mensajes de los conductores.'],
+            ['Litros estimados (rutas)', 'Campo litros_estimados en un registro de asignación de ruta. Se completa al importar del chat o se puede ingresar manualmente. Aparece en la barra resumen del día y en las estadísticas del mes.'],
+            ['Fuente del registro (fuente)', 'Indica el origen de un registro de ruta: "manual" si fue registrado por el operador directamente, "chat" si fue importado desde WhatsApp. Visible en las estadísticas por vehículo.'],
             ['Audit log', 'Registro inmutable de cada acción realizada en el sistema con usuario, fecha y datos completos.'],
           ]}
         />
@@ -917,10 +1432,34 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
+const PAGE_TO_SECTION = {
+  Dashboard:     'dashboard',
+  Movimientos:   'movimientos',
+  Consumidores:  'consumidores',
+  Finanzas:      'finanzas',
+  Alertas:       'alertas',
+  Reportes:      'reportes',
+  Rutas:         'rutas',
+  Conductores:   'conductores',
+  Catalogos:     'catalogos',
+  Configuracion: 'configuracion',
+  AdminPanel:    'administracion',
+  Guia:          'guia',
+};
+
 export default function Ayuda() {
-  const [activeId, setActiveId] = useState('introduccion');
+  const [searchParams] = useSearchParams();
+  const fromPage = searchParams.get('from');
+  const initialSection = PAGE_TO_SECTION[fromPage] || 'introduccion';
+
+  const [activeId, setActiveId] = useState(initialSection);
   const [query, setQuery] = useState('');
   const contentRef = useRef(null);
+
+  useEffect(() => {
+    const section = PAGE_TO_SECTION[searchParams.get('from')];
+    if (section) setActiveId(section);
+  }, [searchParams]);
 
   const activeSection = sections.find(s => s.id === activeId);
 

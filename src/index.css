@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Leaflet's internal panes use z-index 200–700.
+   Without isolation they "escape" the map container and render above
+   Radix UI modals / dialogs that use z-50. */
+.leaflet-container {
+  isolation: isolate;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

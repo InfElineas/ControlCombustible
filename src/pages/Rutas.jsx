@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,10 +13,15 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import {
-  Plus, Navigation, BookOpen, BarChart3,
+  Plus, Navigation, BookOpen, BarChart3, Upload, Map, MapPin,
   Pencil, Trash2, Car, User2, ArrowRight, AlertTriangle,
   CheckCircle2, Clock, XCircle, ChevronLeft, ChevronRight,
+  ChevronUp, ChevronDown, Satellite, Loader2,
 } from 'lucide-react';
+import ImportarChatPanel from '@/components/rutas/ImportarChatPanel';
+import { MapaRutas } from '@/components/rutas/MapaRutas';
+import MarcadoresPanel from '@/components/rutas/MarcadoresPanel';
+import { gpsApi, metersToKm } from '@/api/gpsClient';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
 
@@ -32,6 +38,7 @@ const TIPO_VIAJE_CFG = {
   carga_mercancias: { label: 'Carga mercancías', cls: 'bg-violet-50 text-violet-700 border-violet-200' },
   mensajeria:       { label: 'Mensajería',       cls: 'bg-amber-50 text-amber-700 border-amber-200'    },
   viaje_extra:      { label: 'Viaje extra',      cls: 'bg-orange-50 text-orange-700 border-orange-200' },
+  recorrido_gps:    { label: 'Recorrido GPS',    cls: 'bg-teal-50 text-teal-700 border-teal-200'       },
 };
 
 function getTipoViaje(asig) {
@@ -50,6 +57,7 @@ function esNoVehiculo(c) {
 
 function DialogNovedad({ ruta, novedad, consumidores, conductores, onClose, onSave }) {
   const vehiculos = consumidores.filter(c => c.activo && !esNoVehiculo(c));
+  const [gpsKmLoading, setGpsKmLoading] = useState(false);
   const [form, setForm] = useState(() => {
     const vehId = novedad?.consumidor_id || ruta.consumidor_id || '';
     const veh   = consumidores.find(x => x.id === vehId);
@@ -71,6 +79,24 @@ function DialogNovedad({ ruta, novedad, consumidores, conductores, onClose, onSa
 
   const esSustitucion = form.consumidor_id && ruta.consumidor_id &&
                         form.consumidor_id !== ruta.consumidor_id;
+
+  const vehGpsId = consumidores.find(c => c.id === form.consumidor_id)?.gps_device_id ?? null;
+
+  const fetchGpsKm = async () => {
+    if (!vehGpsId) return;
+    setGpsKmLoading(true);
+    try {
+      const fecha = ruta.fecha_hoy ?? new Date().toISOString().slice(0, 10);
+      const from  = new Date(fecha + 'T00:00:00');
+      const to    = new Date(fecha + 'T23:59:59');
+      const summary = await gpsApi.summary(vehGpsId, from, to);
+      const dist = summary?.[0]?.distance ?? 0;
+      const km   = metersToKm(dist);
+      if (km > 0) { set('km_reales', String(km)); toast.success(`GPS: ${km} km registrados`); }
+      else toast.warning('El GPS no reporta km para esta fecha');
+    } catch (err) { toast.error(`GPS: ${err.message}`); }
+    finally { setGpsKmLoading(false); }
+  };
 
   const handleSave = () => {
     if (form.estado !== 'cancelada' && !form.consumidor_id) {
@@ -234,13 +260,21 @@ function DialogNovedad({ ruta, novedad, consumidores, conductores, onClose, onSa
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-slate-500">Km reales <span className="text-slate-300">(opcional)</span></Label>
-              <Input
-                type="number" step="0.1" min="0"
-                value={form.km_reales}
-                onChange={e => set('km_reales', e.target.value)}
-                placeholder={ruta.distancia_km ? `Ref: ${ruta.distancia_km}` : 'Ej: 17.5'}
-                className="mt-1"
-              />
+              <div className="flex gap-1.5 mt-1">
+                <Input
+                  type="number" step="0.1" min="0"
+                  value={form.km_reales}
+                  onChange={e => set('km_reales', e.target.value)}
+                  placeholder={ruta.distancia_km ? `Ref: ${ruta.distancia_km}` : 'Ej: 17.5'}
+                />
+                {vehGpsId != null && (
+                  <Button type="button" size="sm" variant="outline"
+                    className="shrink-0 px-2 border-sky-200 text-sky-600 hover:bg-sky-50"
+                    onClick={fetchGpsKm} disabled={gpsKmLoading} title="Leer km desde GPS">
+                    {gpsKmLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Satellite className="w-3.5 h-3.5" />}
+                  </Button>
+                )}
+              </div>
             </div>
             <div>
               <Label className="text-xs text-slate-500">
@@ -284,6 +318,7 @@ const EMPTY_ASIG = {
 };
 
 function DialogAsignacion({ asignacion, consumidores, conductores, onClose, onSave }) {
+  const [gpsKmLoading, setGpsKmLoading] = useState(false);
   const [form, setForm] = useState(() => asignacion ? {
     fecha:                  asignacion.fecha || hoy(),
     tipo_viaje:             getTipoViaje(asignacion) === 'regular' ? 'viaje_extra' : getTipoViaje(asignacion),
@@ -303,6 +338,23 @@ function DialogAsignacion({ asignacion, consumidores, conductores, onClose, onSa
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
   const vehiculos = consumidores.filter(c => c.activo && !esNoVehiculo(c));
+
+  const vehGpsId = consumidores.find(c => c.id === form.consumidor_id)?.gps_device_id ?? null;
+
+  const fetchGpsKm = async () => {
+    if (!vehGpsId) return;
+    setGpsKmLoading(true);
+    try {
+      const from = new Date(form.fecha + 'T00:00:00');
+      const to   = new Date(form.fecha + 'T23:59:59');
+      const summary = await gpsApi.summary(vehGpsId, from, to);
+      const dist = summary?.[0]?.distance ?? 0;
+      const km   = metersToKm(dist);
+      if (km > 0) { set('km_reales', String(km)); toast.success(`GPS: ${km} km registrados`); }
+      else toast.warning('El GPS no reporta km para esta fecha');
+    } catch (err) { toast.error(`GPS: ${err.message}`); }
+    finally { setGpsKmLoading(false); }
+  };
 
   const handleSave = () => {
     if (!form.consumidor_id)                         { toast.error('Selecciona un vehículo'); return; }
@@ -455,13 +507,21 @@ function DialogAsignacion({ asignacion, consumidores, conductores, onClose, onSa
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-slate-500">Km reales <span className="text-slate-300">(opcional)</span></Label>
-              <Input
-                type="number" step="0.1" min="0"
-                value={form.km_reales}
-                onChange={e => set('km_reales', e.target.value)}
-                placeholder="Ej: 17.5"
-                className="mt-1"
-              />
+              <div className="flex gap-1.5 mt-1">
+                <Input
+                  type="number" step="0.1" min="0"
+                  value={form.km_reales}
+                  onChange={e => set('km_reales', e.target.value)}
+                  placeholder="Ej: 17.5"
+                />
+                {vehGpsId != null && (
+                  <Button type="button" size="sm" variant="outline"
+                    className="shrink-0 px-2 border-orange-200 text-orange-600 hover:bg-orange-50"
+                    onClick={fetchGpsKm} disabled={gpsKmLoading} title="Leer km desde GPS">
+                    {gpsKmLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Satellite className="w-3.5 h-3.5" />}
+                  </Button>
+                )}
+              </div>
             </div>
             <div>
               <Label className="text-xs text-slate-500">Observaciones</Label>
@@ -490,42 +550,180 @@ function DialogAsignacion({ asignacion, consumidores, conductores, onClose, onSa
 
 const EMPTY_RUTA = {
   nombre: '', punto_inicio: '', punto_fin: '', municipio: '',
-  distancia_km: '', tiempo_estimado: '', frecuencia: 'Diario', activa: true,
+  distancia_km: '', frecuencia: 'Diario', activa: true,
   consumidor_id: '', consumidor_nombre: '',
   conductor_id: '', conductor_nombre: '',
+  grupo: '', coord_inicio: '', coord_fin: '',
 };
+
+function parseCoord(s) {
+  if (!s?.trim()) return [null, null];
+  const parts = s.split(',').map(x => parseFloat(x.trim()));
+  return (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) ? parts : [null, null];
+}
+
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function calcDistParadas(paradas) {
+  let total = 0;
+  for (let i = 0; i < paradas.length - 1; i++) {
+    total += haversineKm(paradas[i].lat, paradas[i].lng, paradas[i + 1].lat, paradas[i + 1].lng);
+  }
+  return Math.round(total * 10) / 10;
+}
 
 function DialogRuta({ ruta, consumidores, conductores, onClose, onSave }) {
   const vehiculos = consumidores.filter(c => c.activo && !esNoVehiculo(c));
-  const [form, setForm] = useState(() => ruta ? {
-    nombre:            ruta.nombre           || '',
-    punto_inicio:      ruta.punto_inicio     || '',
-    punto_fin:         ruta.punto_fin        || '',
-    municipio:         ruta.municipio        || '',
-    distancia_km:      ruta.distancia_km     ?? '',
-    tiempo_estimado:   ruta.tiempo_estimado  || '',
-    frecuencia:        ruta.frecuencia       || 'Diario',
-    activa:            ruta.activa           ?? true,
-    consumidor_id:     ruta.consumidor_id    || '',
-    consumidor_nombre: ruta.consumidor_nombre || '',
-    conductor_id:      ruta.conductor_id     || '',
-    conductor_nombre:  ruta.conductor_nombre  || '',
-  } : EMPTY_RUTA);
 
+  const [form, setForm] = useState(() => {
+    const b = ruta ?? {};
+    return {
+      nombre:            b.nombre            || '',
+      frecuencia:        b.frecuencia        || 'Diario',
+      municipio:         b.municipio         || '',
+      punto_inicio:      b.punto_inicio      || '',
+      punto_fin:         b.punto_fin         || '',
+      distancia_km:      b.distancia_km      ?? '',
+      activa:            b.activa            ?? true,
+      consumidor_id:     b.consumidor_id     || '',
+      consumidor_nombre: b.consumidor_nombre || '',
+      conductor_id:      b.conductor_id      || '',
+      conductor_nombre:  b.conductor_nombre  || '',
+      grupo:             b.grupo             || '',
+      coord_inicio:      b.lat_inicio != null && b.lng_inicio != null
+                           ? `${b.lat_inicio}, ${b.lng_inicio}` : '',
+      coord_fin:         b.lat_fin != null && b.lng_fin != null
+                           ? `${b.lat_fin}, ${b.lng_fin}` : '',
+    };
+  });
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  // ── Paradas (waypoints) ─────────────────────────────────────
+  const { data: marcadores = [] } = useQuery({
+    queryKey: ['marcadores'],
+    queryFn:  () => base44.entities.Marcador.list(),
+    staleTime: 60_000,
+  });
+  const activeMarcadores = marcadores.filter(m => m.activo !== false);
+
+  const [paradas, setParadas]         = useState([]);
+  const [paradasLoaded, setParadasLoaded] = useState(!ruta);
+  const [addingParada, setAddingParada]   = useState(false);
+
+  // Carga waypoints existentes al editar
+  useEffect(() => {
+    if (!ruta?.id) return;
+    supabase
+      .from('ruta_marcador')
+      .select('orden, marcador_id, marcador(id,nombre,lat,lng,color)')
+      .eq('ruta_id', ruta.id)
+      .order('orden')
+      .then(({ data }) => {
+        if (data) {
+          setParadas(data.map(rm => ({
+            marcador_id: rm.marcador_id,
+            nombre: rm.marcador.nombre,
+            lat:    Number(rm.marcador.lat),
+            lng:    Number(rm.marcador.lng),
+            color:  rm.marcador.color,
+          })));
+        }
+        setParadasLoaded(true);
+      });
+  }, [ruta?.id]);
+
+  // Cuando hay 2+ paradas: auto-rellenar coordenadas, puntos y distancia
+  useEffect(() => {
+    if (paradas.length < 2) return;
+    const first = paradas[0];
+    const last  = paradas[paradas.length - 1];
+    setForm(prev => ({
+      ...prev,
+      punto_inicio: first.nombre,
+      punto_fin:    last.nombre,
+      coord_inicio: `${first.lat}, ${first.lng}`,
+      coord_fin:    `${last.lat}, ${last.lng}`,
+      distancia_km: calcDistParadas(paradas),
+    }));
+  }, [paradas]);
+
+  const addParada = (marcadorId) => {
+    const m = activeMarcadores.find(x => x.id === marcadorId);
+    if (!m) return;
+    setParadas(prev => [...prev, { marcador_id: m.id, nombre: m.nombre, lat: Number(m.lat), lng: Number(m.lng), color: m.color }]);
+    setAddingParada(false);
+  };
+
+  const removeParada = (idx) => setParadas(prev => prev.filter((_, i) => i !== idx));
+
+  const moveParada = (idx, dir) => {
+    setParadas(prev => {
+      const next = [...prev];
+      const swap = idx + dir;
+      if (swap < 0 || swap >= next.length) return prev;
+      [next[idx], next[swap]] = [next[swap], next[idx]];
+      return next;
+    });
+  };
+
+  const paradasUsadas = new Set(paradas.map(p => p.marcador_id));
+  const marcadoresDisponibles = activeMarcadores.filter(m => !paradasUsadas.has(m.id));
+
+  // ── Guardar ─────────────────────────────────────────────────
+  const handleSave = () => {
+    if (!form.nombre.trim()) { toast.error('El nombre es requerido'); return; }
+    const [lat_inicio, lng_inicio] = parseCoord(form.coord_inicio);
+    const [lat_fin,    lng_fin]    = parseCoord(form.coord_fin);
+    if (form.coord_inicio.trim() && lat_inicio === null) {
+      toast.error('Coordenada de inicio inválida — usa el formato: 23.1136, -82.3666'); return;
+    }
+    if (form.coord_fin.trim() && lat_fin === null) {
+      toast.error('Coordenada de fin inválida — usa el formato: 23.1136, -82.3666'); return;
+    }
+    onSave({
+      nombre:            form.nombre.trim(),
+      frecuencia:        form.frecuencia,
+      municipio:         form.municipio.trim() || null,
+      punto_inicio:      form.punto_inicio.trim() || null,
+      punto_fin:         form.punto_fin.trim() || null,
+      distancia_km:      form.distancia_km !== '' ? Number(form.distancia_km) : null,
+      activa:            form.activa,
+      consumidor_id:     form.consumidor_id  || null,
+      consumidor_nombre: form.consumidor_nombre || null,
+      conductor_id:      form.conductor_id   || null,
+      conductor_nombre:  form.conductor_nombre || null,
+      grupo:             form.grupo.trim()   || null,
+      lat_inicio, lng_inicio, lat_fin, lng_fin,
+      tiempo_estimado:   ruta?.tiempo_estimado ?? null,
+      _paradas: paradas.map((p, i) => ({ marcador_id: p.marcador_id, orden: i })),
+    });
+  };
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle className="text-base">{ruta ? 'Editar ruta' : 'Nueva ruta'}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3 pt-1">
+
+        <div className="overflow-y-auto flex-1 pr-1 space-y-4 pt-1 pb-2">
+
+          {/* Nombre */}
+          <div>
+            <Label className="text-xs text-slate-500">Nombre *</Label>
+            <Input value={form.nombre} onChange={e => set('nombre', e.target.value)}
+              placeholder="CD Polígono" className="mt-1" autoFocus />
+          </div>
+
+          {/* Frecuencia + Municipio */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <Label className="text-xs text-slate-500">Nombre *</Label>
-              <Input value={form.nombre} onChange={e => set('nombre', e.target.value)} placeholder="CD Polígono" className="mt-1" />
-            </div>
             <div>
               <Label className="text-xs text-slate-500">Frecuencia</Label>
               <Select value={form.frecuencia} onValueChange={v => set('frecuencia', v)}>
@@ -537,95 +735,198 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave }) {
             </div>
             <div>
               <Label className="text-xs text-slate-500">Municipio</Label>
-              <Input value={form.municipio} onChange={e => set('municipio', e.target.value)} placeholder="Arroyo Naranjo" className="mt-1" />
+              <Input value={form.municipio} onChange={e => set('municipio', e.target.value)}
+                placeholder="Arroyo Naranjo" className="mt-1" />
             </div>
+          </div>
+
+          {/* ── Paradas (waypoints) ── */}
+          <div className="border-t border-slate-100 dark:border-slate-700 pt-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                Paradas
+                {paradas.length >= 2 && (
+                  <span className="ml-2 font-normal normal-case text-sky-500">
+                    {calcDistParadas(paradas)} km calculados
+                  </span>
+                )}
+              </p>
+              {!addingParada && marcadoresDisponibles.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setAddingParada(true)}
+                  className="text-[11px] text-sky-600 hover:text-sky-800 flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" /> Añadir parada
+                </button>
+              )}
+            </div>
+
+            {!paradasLoaded ? (
+              <p className="text-xs text-slate-400">Cargando…</p>
+            ) : paradas.length === 0 && !addingParada ? (
+              <p className="text-xs text-slate-400 italic">
+                Sin paradas — puedes añadir marcadores como puntos de la ruta, o usar coordenadas manuales abajo.
+              </p>
+            ) : (
+              <ul className="space-y-1 mb-2">
+                {paradas.map((p, i) => (
+                  <li key={p.marcador_id + i}
+                    className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2.5 py-1.5"
+                  >
+                    <span className="text-[10px] text-slate-400 w-4 text-right shrink-0">{i + 1}</span>
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: p.color || '#3b82f6' }} />
+                    <span className="flex-1 text-xs font-medium text-slate-700 dark:text-slate-200 truncate">{p.nombre}</span>
+                    <div className="flex gap-0.5 shrink-0">
+                      <button type="button" onClick={() => moveParada(i, -1)} disabled={i === 0}
+                        className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20">
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" onClick={() => moveParada(i, 1)} disabled={i === paradas.length - 1}
+                        className="p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-20">
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" onClick={() => removeParada(i)}
+                        className="p-0.5 text-slate-400 hover:text-red-500 ml-1">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {addingParada && (
+              <div className="flex gap-2 items-center mt-1">
+                <Select onValueChange={addParada}>
+                  <SelectTrigger className="flex-1 h-8 text-xs"><SelectValue placeholder="Selecciona un marcador…" /></SelectTrigger>
+                  <SelectContent>
+                    {marcadoresDisponibles.map(m => (
+                      <SelectItem key={m.id} value={m.id}>
+                        <span className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full inline-block" style={{ background: m.color || '#3b82f6' }} />
+                          {m.nombre}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button type="button" variant="outline" size="sm" className="h-8 text-xs"
+                  onClick={() => setAddingParada(false)}>Cancelar</Button>
+              </div>
+            )}
+          </div>
+
+          {/* Puntos + Distancia + Grupo */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-slate-500">Punto de inicio</Label>
-              <Input value={form.punto_inicio} onChange={e => set('punto_inicio', e.target.value)} placeholder="Cerro" className="mt-1" />
+              <Input value={form.punto_inicio} onChange={e => set('punto_inicio', e.target.value)}
+                placeholder="Cerro" className="mt-1" />
             </div>
             <div>
               <Label className="text-xs text-slate-500">Punto de fin</Label>
-              <Input value={form.punto_fin} onChange={e => set('punto_fin', e.target.value)} placeholder="Polígono" className="mt-1" />
+              <Input value={form.punto_fin} onChange={e => set('punto_fin', e.target.value)}
+                placeholder="Polígono" className="mt-1" />
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Distancia (km)</Label>
-              <Input type="number" step="0.1" min="0" value={form.distancia_km} onChange={e => set('distancia_km', e.target.value)} placeholder="17" className="mt-1" />
+              <Label className="text-xs text-slate-500">Distancia ref. (km)</Label>
+              <Input type="number" step="0.1" min="0" value={form.distancia_km}
+                onChange={e => set('distancia_km', e.target.value)}
+                placeholder="17" className="mt-1" />
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Tiempo estimado</Label>
-              <Input value={form.tiempo_estimado} onChange={e => set('tiempo_estimado', e.target.value)} placeholder="25 min" className="mt-1" />
+              <Label className="text-xs text-slate-500">Grupo <span className="text-slate-300">(opc.)</span></Label>
+              <Input value={form.grupo} onChange={e => set('grupo', e.target.value)}
+                placeholder="Habitual, Reducido…" className="mt-1" />
             </div>
           </div>
 
           {/* Asignación habitual */}
-          <div className="border-t border-slate-100 dark:border-slate-700 pt-3 space-y-3">
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Asignación habitual</p>
-            <div>
-              <Label className="text-xs text-slate-500">Vehículo habitual</Label>
-              <Select
-                value={form.consumidor_id || '_none'}
-                onValueChange={v => {
+          <div className="border-t border-slate-100 dark:border-slate-700 pt-3">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Asignación habitual</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-slate-500">Vehículo habitual</Label>
+                <Select value={form.consumidor_id || '_none'} onValueChange={v => {
                   if (v === '_none') { set('consumidor_id', ''); set('consumidor_nombre', ''); return; }
                   const c = consumidores.find(x => x.id === v);
-                  set('consumidor_id', v);
-                  set('consumidor_nombre', c?.nombre || '');
-                }}
-              >
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Sin vehículo habitual" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">Sin vehículo habitual</SelectItem>
-                  {vehiculos.map(c => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.nombre}{c.codigo_interno ? ` · ${c.codigo_interno}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs text-slate-500">Conductor habitual <span className="text-slate-300">(opcional)</span></Label>
-              <Select
-                value={form.conductor_id || '_none'}
-                onValueChange={v => {
+                  set('consumidor_id', v); set('consumidor_nombre', c?.nombre || '');
+                }}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Sin vehículo" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Sin vehículo habitual</SelectItem>
+                    {vehiculos.map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.nombre}{c.codigo_interno ? ` · ${c.codigo_interno}` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs text-slate-500">Conductor <span className="text-slate-300">(opc.)</span></Label>
+                <Select value={form.conductor_id || '_none'} onValueChange={v => {
                   if (v === '_none') { set('conductor_id', ''); set('conductor_nombre', ''); return; }
                   const c = conductores.find(x => x.id === v);
-                  set('conductor_id', v);
-                  set('conductor_nombre', c?.nombre || '');
-                }}
-              >
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Sin conductor habitual" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">Sin conductor</SelectItem>
-                  {conductores.filter(c => c.activo !== false).map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  set('conductor_id', v); set('conductor_nombre', c?.nombre || '');
+                }}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Sin conductor" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Sin conductor</SelectItem>
+                    {conductores.filter(c => c.activo !== false).map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/50 rounded-xl px-3 py-2">
-            <Label className="text-sm">Ruta activa</Label>
-            <Switch checked={form.activa} onCheckedChange={v => set('activa', v)} />
+          {/* Coordenadas manuales (se auto-rellenan si hay paradas) */}
+          <div className="border-t border-slate-100 dark:border-slate-700 pt-3">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+              Coordenadas <span className="font-normal normal-case text-slate-300">
+                {paradas.length >= 2 ? '(calculadas desde paradas)' : '(opcionales — para visualizar en el mapa)'}
+              </span>
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-[11px] text-slate-500">Inicio <span className="text-slate-400">(lat, lng)</span></Label>
+                <Input value={form.coord_inicio} onChange={e => set('coord_inicio', e.target.value)}
+                  placeholder="23.136736, -82.358820"
+                  className="mt-1 font-mono text-xs"
+                  readOnly={paradas.length >= 2} />
+              </div>
+              <div>
+                <Label className="text-[11px] text-slate-500">Fin <span className="text-slate-400">(lat, lng)</span></Label>
+                <Input value={form.coord_fin} onChange={e => set('coord_fin', e.target.value)}
+                  placeholder="23.250000, -82.500000"
+                  className="mt-1 font-mono text-xs"
+                  readOnly={paradas.length >= 2} />
+              </div>
+            </div>
+            {paradas.length < 2 && (
+              <p className="text-[10px] text-slate-400 mt-1.5">
+                Abre la pestaña <b>Marcadores</b>, coloca puntos y añádelos como paradas arriba — o pega coordenadas manualmente.
+              </p>
+            )}
           </div>
 
-          <div className="flex gap-2 justify-end pt-1">
-            <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
-            <Button
-              size="sm" className="bg-sky-600 hover:bg-sky-700"
-              onClick={() => {
-                if (!form.nombre.trim()) { toast.error('El nombre es requerido'); return; }
-                onSave({
-                  ...form,
-                  distancia_km:  form.distancia_km !== '' ? Number(form.distancia_km) : null,
-                  consumidor_id: form.consumidor_id || null,
-                  conductor_id:  form.conductor_id  || null,
-                });
-              }}
-            >
-              {ruta ? 'Guardar' : 'Crear ruta'}
-            </Button>
+          {/* Activa + botones */}
+          <div className="border-t border-slate-100 dark:border-slate-700 pt-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Switch id="ruta-activa" checked={form.activa} onCheckedChange={v => set('activa', v)} />
+              <Label htmlFor="ruta-activa" className="text-sm cursor-pointer">Ruta activa</Label>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
+              <Button size="sm" className="bg-sky-600 hover:bg-sky-700" onClick={handleSave}>
+                {ruta ? 'Guardar cambios' : 'Crear ruta'}
+              </Button>
+            </div>
           </div>
+
         </div>
       </DialogContent>
     </Dialog>
@@ -635,6 +936,7 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave }) {
 // ── Fila de ruta en vista diaria ─────────────────────────────────────────────
 
 function RutaDiaRow({ ruta, novedad, canWrite, onRegistrar, onEditar, onEliminar }) {
+  const esAuto        = novedad?.auto_generado === true;
   const esSustitucion = novedad && ruta.consumidor_id && novedad.consumidor_id &&
                         novedad.consumidor_id !== ruta.consumidor_id;
   const esCancelada   = novedad?.estado === 'cancelada';
@@ -661,9 +963,9 @@ function RutaDiaRow({ ruta, novedad, canWrite, onRegistrar, onEditar, onEliminar
                 <AlertTriangle className="w-2.5 h-2.5 mr-1" />Sustitución
               </Badge>
             )}
-            {tieneNovedad && !esCancelada && !esSustitucion && (
+            {tieneNovedad && !esCancelada && !esSustitucion && !esAuto && (
               <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-200">
-                Novedad registrada
+                Editado
               </Badge>
             )}
           </div>
@@ -702,9 +1004,12 @@ function RutaDiaRow({ ruta, novedad, canWrite, onRegistrar, onEditar, onEliminar
               <span className="text-red-500 font-medium text-[11px]">No operó</span>
             )}
 
-            {!tieneNovedad && ruta.consumidor_id && (
-              <span className="text-emerald-600 text-[10px] bg-emerald-50 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded-full">Normal</span>
-            )}
+            {esAuto && !esCancelada && !esSustitucion
+              ? <span className="text-slate-400 text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full">Auto</span>
+              : (!tieneNovedad && ruta.consumidor_id)
+                ? <span className="text-emerald-600 text-[10px] bg-emerald-50 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded-full">Normal</span>
+                : null
+            }
           </div>
 
           {/* Detalles de la novedad */}
@@ -738,6 +1043,14 @@ function RutaDiaRow({ ruta, novedad, canWrite, onRegistrar, onEditar, onEliminar
                 onClick={onRegistrar}
               >
                 Registrar novedad
+              </Button>
+            ) : esAuto && !esCancelada && !esSustitucion ? (
+              <Button
+                size="sm" variant="ghost"
+                className="text-xs h-7 text-slate-400 hover:text-sky-700 dark:hover:text-sky-400"
+                onClick={onEditar}
+              >
+                Registrar excepción
               </Button>
             ) : (
               <>
@@ -799,6 +1112,103 @@ function AsignacionCard({ asig, canWrite, onEdit, onDelete }) {
   );
 }
 
+// ── Tags de origen para estadísticas ─────────────────────────────────────────
+
+const SOURCE_CFG = {
+  auto:    { label: 'Auto',    cls: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-600' },
+  oficial: { label: 'Oficial', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-700' },
+  extra:   { label: 'Extra',   cls: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-700' },
+  chat:    { label: 'Chat',    cls: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-700' },
+};
+
+const TRIPS_PER_VEH_PAGE = 20;
+
+function VehiculoStatsCard({ grupo }) {
+  const [open, setOpen]   = useState(false);
+  const [page, setPage]   = useState(0);
+  const trips             = grupo.trips;
+  const tripsPag          = trips.slice(page * TRIPS_PER_VEH_PAGE, (page + 1) * TRIPS_PER_VEH_PAGE);
+  const totalPages        = Math.ceil(trips.length / TRIPS_PER_VEH_PAGE);
+
+  return (
+    <Card className="border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div
+        className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50"
+        onClick={() => setOpen(o => !o)}
+      >
+        <Car className="w-4 h-4 text-slate-400 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{grupo.name}</p>
+        </div>
+        <div className="hidden sm:flex items-center gap-4 shrink-0">
+          <div className="text-center">
+            <p className="text-[10px] text-slate-400">Viajes</p>
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-200 tabular-nums">{trips.length}</p>
+          </div>
+          {grupo.kmTotal > 0 && (
+            <div className="text-center">
+              <p className="text-[10px] text-slate-400">km totales</p>
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-200 tabular-nums">{grupo.kmTotal.toFixed(0)}</p>
+            </div>
+          )}
+          {grupo.litrosTotal > 0 && (
+            <div className="text-center">
+              <p className="text-[10px] text-emerald-500">litros est.</p>
+              <p className="text-sm font-bold text-emerald-600 tabular-nums">{grupo.litrosTotal.toFixed(1)}</p>
+            </div>
+          )}
+        </div>
+        {open
+          ? <ChevronUp   className="w-4 h-4 text-slate-400 shrink-0" />
+          : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+        }
+      </div>
+
+      {open && (
+        <div className="border-t border-slate-100 dark:border-slate-700">
+          <div className="divide-y divide-slate-50 dark:divide-slate-800">
+            {tripsPag.map((t, i) => {
+              const srcCfg = SOURCE_CFG[t.source] ?? SOURCE_CFG.oficial;
+              return (
+                <div key={i} className="flex items-center gap-2 px-4 py-2">
+                  <span className="text-xs text-slate-500 w-24 shrink-0">{t.fecha}</span>
+                  <span className="text-xs text-slate-500 flex-1 truncate italic">{t.descripcion}</span>
+                  {t.km != null && (
+                    <span className="text-xs text-slate-600 dark:text-slate-300 tabular-nums shrink-0 w-14 text-right">{Number(t.km).toFixed(1)} km</span>
+                  )}
+                  {t.litros != null && (
+                    <span className="text-xs text-emerald-600 tabular-nums shrink-0 w-12 text-right">{Number(t.litros).toFixed(1)} L</span>
+                  )}
+                  <Badge variant="outline" className={`text-[10px] shrink-0 ${srcCfg.cls}`}>{srcCfg.label}</Badge>
+                </div>
+              );
+            })}
+          </div>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-2 border-t border-slate-50 dark:border-slate-800">
+              <span className="text-[10px] text-slate-400">
+                {page * TRIPS_PER_VEH_PAGE + 1}–{Math.min((page + 1) * TRIPS_PER_VEH_PAGE, trips.length)} de {trips.length}
+              </span>
+              <div className="flex gap-1">
+                <button
+                  onClick={e => { e.stopPropagation(); setPage(p => p - 1); }}
+                  disabled={page === 0}
+                  className="px-2 py-0.5 text-[10px] rounded border border-slate-200 dark:border-slate-600 disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-700"
+                >‹</button>
+                <button
+                  onClick={e => { e.stopPropagation(); setPage(p => p + 1); }}
+                  disabled={page >= totalPages - 1}
+                  className="px-2 py-0.5 text-[10px] rounded border border-slate-200 dark:border-slate-600 disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-700"
+                >›</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ── Componente principal ─────────────────────────────────────────────────────
 
 export default function Rutas() {
@@ -806,6 +1216,8 @@ export default function Rutas() {
   const queryClient  = useQueryClient();
   const [tab, setTab]                     = useState('viajes');
   const [fechaVista, setFechaVista]       = useState(hoy());
+  const [showImportChat, setShowImportChat] = useState(false);
+  const [mesStat, setMesStat]             = useState(hoy().slice(0, 7));
   const [rutaParaNovedad, setRutaParaNovedad] = useState(null);
   const [editingNovedad, setEditingNovedad]   = useState(null);
   const [showDialogAsig, setShowDialogAsig]   = useState(false);
@@ -815,14 +1227,23 @@ export default function Rutas() {
   const [editingRuta, setEditingRuta]         = useState(null);
   const [deleteRutaId, setDeleteRutaId]       = useState(null);
   const [filtroTipo, setFiltroTipo]           = useState('all');
+  const [filtroGrupo, setFiltroGrupo]         = useState('');
 
   const { data: rutas = [] }       = useQuery({ queryKey: ['rutas'],            queryFn: () => base44.entities.Ruta.list() });
-  const { data: asignaciones = [], isLoading } = useQuery({ queryKey: ['asignaciones_ruta'], queryFn: () => base44.entities.AsignacionRuta.list('-fecha', 500) });
+  const { data: asignaciones = [], isLoading } = useQuery({ queryKey: ['asignaciones_ruta'], queryFn: () => base44.entities.AsignacionRuta.list('-fecha', 2000) });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'],     queryFn: () => base44.entities.Consumidor.list() });
   const { data: conductores = [] }  = useQuery({ queryKey: ['conductores'],      queryFn: () => base44.entities.Conductor.list() });
 
   const rutaById     = useMemo(() => Object.fromEntries(rutas.map(r => [r.id, r])), [rutas]);
   const rutasActivas = useMemo(() => rutas.filter(r => r.activa), [rutas]);
+
+  // Conjuntos / grupos de rutas disponibles
+  const grupos = useMemo(() => [...new Set(rutas.map(r => r.grupo).filter(Boolean))].sort(), [rutas]);
+
+  // Rutas activas filtradas por grupo (para el programa diario)
+  const rutasActivasFiltradas = useMemo(() =>
+    filtroGrupo ? rutasActivas.filter(r => r.grupo === filtroGrupo) : rutasActivas,
+  [rutasActivas, filtroGrupo]);
 
   const mesActual    = hoy().slice(0, 7);
   const asigMes      = useMemo(() => asignaciones.filter(a => a.fecha?.startsWith(mesActual)), [asignaciones, mesActual]);
@@ -839,6 +1260,45 @@ export default function Rutas() {
     filtroTipo === 'inactiva' ? rutas.filter(r => !r.activa) :
     rutas
   , [rutas, filtroTipo]);
+
+  // ── Estadísticas unificadas por mes ──────────────────────────────────────
+  const asigStatMes = useMemo(() => asignaciones.filter(a => a.fecha?.startsWith(mesStat)), [asignaciones, mesStat]);
+
+  const canceladasMesStat     = useMemo(() => asigStatMes.filter(a => a.estado === 'cancelada' && a.ruta_id).length,                  [asigStatMes]);
+  const sustitMesStat         = useMemo(() => asigStatMes.filter(a => a.ruta_id && a.consumidor_id && a.consumidor_id !== rutaById[a.ruta_id]?.consumidor_id).length, [asigStatMes, rutaById]);
+  const kmMesStat             = useMemo(() => asigStatMes.reduce((s, a) => s + (Number(a.km_reales) || 0), 0),                        [asigStatMes]);
+  const litrosMesStat         = useMemo(() => asigStatMes.reduce((s, a) => s + (Number(a.litros_estimados) || 0), 0),                 [asigStatMes]);
+
+  const vehicleStatsData = useMemo(() => {
+    const byVehicle = {};
+
+    asigStatMes.forEach(a => {
+      const key  = a.consumidor_id || `no_${a.id}`;
+      const name = a.consumidor_nombre || '—';
+      if (!byVehicle[key]) byVehicle[key] = { key, name, trips: [], kmTotal: 0, litrosTotal: 0 };
+      byVehicle[key].trips.push({
+        fecha:       a.fecha,
+        descripcion: rutaById[a.ruta_id]?.nombre || a.descripcion_emergencia || '—',
+        km:          a.km_reales,
+        litros:      a.litros_estimados,
+        source:      a.fuente === 'chat' ? 'chat' : (a.auto_generado ? 'auto' : (a.ruta_id ? 'oficial' : 'extra')),
+      });
+      byVehicle[key].kmTotal     += Number(a.km_reales) || 0;
+      byVehicle[key].litrosTotal += Number(a.litros_estimados) || 0;
+    });
+
+    Object.values(byVehicle).forEach(v => {
+      v.trips.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+    });
+
+    return Object.values(byVehicle).sort((a, b) => b.trips.length - a.trips.length);
+  }, [asigStatMes, rutaById]);
+
+  const navegarMesStat = (meses) => {
+    const d = new Date(mesStat + '-01T12:00:00');
+    d.setMonth(d.getMonth() + meses);
+    setMesStat(d.toISOString().slice(0, 7));
+  };
 
   const navegarFecha = (dias) => {
     const d = new Date(fechaVista + 'T12:00:00');
@@ -875,16 +1335,36 @@ export default function Rutas() {
   });
 
   // Mutations — catálogo
-  const createRutaMut = useMutation({
-    mutationFn: d => base44.entities.Ruta.create(d),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['rutas'] }); toast.success('Ruta creada'); setShowDialogRuta(false); },
-    onError: () => toast.error('Error al crear la ruta'),
-  });
-  const updateRutaMut = useMutation({
-    mutationFn: ({ id, d }) => base44.entities.Ruta.update(id, d),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['rutas'] }); toast.success('Ruta actualizada'); setEditingRuta(null); },
-    onError: () => toast.error('Error al actualizar'),
-  });
+  async function saveWaypoints(rutaId, paradas) {
+    await supabase.from('ruta_marcador').delete().eq('ruta_id', rutaId);
+    if (paradas.length > 0) {
+      await supabase.from('ruta_marcador').insert(
+        paradas.map(p => ({ ruta_id: rutaId, marcador_id: p.marcador_id, orden: p.orden }))
+      );
+    }
+    queryClient.invalidateQueries({ queryKey: ['ruta_marcadores'] });
+  }
+
+  async function handleSaveRuta(data) {
+    const { _paradas = [], ...rutaData } = data;
+    try {
+      let rutaId;
+      if (editingRuta) {
+        await base44.entities.Ruta.update(editingRuta.id, rutaData);
+        rutaId = editingRuta.id;
+      } else {
+        const created = await base44.entities.Ruta.create(rutaData);
+        rutaId = created.id;
+      }
+      await saveWaypoints(rutaId, _paradas);
+      queryClient.invalidateQueries({ queryKey: ['rutas'] });
+      toast.success(editingRuta ? 'Ruta actualizada' : 'Ruta creada');
+      setShowDialogRuta(false);
+      setEditingRuta(null);
+    } catch (err) {
+      toast.error(`Error: ${err.message}`);
+    }
+  }
   const deleteRutaMut = useMutation({
     mutationFn: async (id) => {
       // Eliminar primero las novedades/asignaciones asociadas para evitar FK orphan
@@ -903,19 +1383,42 @@ export default function Rutas() {
 
   // Guardar novedad (crea o actualiza la existente para ese ruta+día)
   const handleSaveNovedad = (formData) => {
+    const destino = editingNovedad ?? novedadesHoy.find(a => a.ruta_id === rutaParaNovedad.id);
     const payload = {
       ...formData,
-      ruta_id:    rutaParaNovedad.id,
-      fecha:      fechaVista,
-      tipo_viaje: 'regular',
+      ruta_id:       rutaParaNovedad.id,
+      fecha:         fechaVista,
+      tipo_viaje:    'regular',
+      auto_generado: false,
     };
-    const destino = editingNovedad ?? novedadesHoy.find(a => a.ruta_id === rutaParaNovedad.id);
     if (destino) {
       updateAsigMut.mutate({ id: destino.id, d: payload });
     } else {
       createAsigMut.mutate(payload);
     }
   };
+
+  // Resumen del día
+  const canceladasHoy = useMemo(() => novedadesHoy.filter(n => n.estado === 'cancelada').length, [novedadesHoy]);
+  const sustitHoy     = useMemo(() => novedadesHoy.filter(n => n.ruta_id && n.consumidor_id && n.consumidor_id !== rutaById[n.ruta_id]?.consumidor_id).length, [novedadesHoy, rutaById]);
+  const kmHoy         = useMemo(() => [...novedadesHoy, ...extrasHoy].reduce((s, a) => s + (Number(a.km_reales) || 0), 0), [novedadesHoy, extrasHoy]);
+  const litrosHoy     = useMemo(() => [...novedadesHoy, ...extrasHoy].reduce((s, a) => s + (Number(a.litros_estimados) || 0), 0), [novedadesHoy, extrasHoy]);
+
+  // Importar desde chat
+  const handleImportar = async (payload) => {
+    try {
+      await Promise.all(payload.map(d => base44.entities.AsignacionRuta.create(d)));
+      queryClient.invalidateQueries({ queryKey: ['asignaciones_ruta'] });
+      toast.success(`${payload.length} registro${payload.length !== 1 ? 's' : ''} importado${payload.length !== 1 ? 's' : ''}`);
+      setShowImportChat(false);
+    } catch {
+      toast.error('Error al importar registros');
+    }
+  };
+
+  // Computed before JSX return to avoid IIFE-in-JSX bundler issues
+  const rutaAEliminar      = rutas.find(r => r.id === deleteRutaId) ?? null;
+  const novedadesAsocCount = deleteRutaId ? asignaciones.filter(a => a.ruta_id === deleteRutaId).length : 0;
 
   return (
     <div className="space-y-5">
@@ -945,9 +1448,11 @@ export default function Rutas() {
       {/* Tabs */}
       <div className="flex gap-0.5 flex-wrap border-b border-slate-200 dark:border-slate-700">
         {[
-          { value: 'viajes',   label: 'Programa diario',  icon: <Navigation className="w-3.5 h-3.5" /> },
-          { value: 'catalogo', label: 'Catálogo de rutas', icon: <BookOpen   className="w-3.5 h-3.5" /> },
-          { value: 'stats',    label: 'Estadísticas',      icon: <BarChart3  className="w-3.5 h-3.5" /> },
+          { value: 'viajes',     label: 'Programa diario',  icon: <Navigation className="w-3.5 h-3.5" /> },
+          { value: 'catalogo',  label: 'Catálogo de rutas', icon: <BookOpen   className="w-3.5 h-3.5" /> },
+          { value: 'stats',     label: 'Estadísticas',      icon: <BarChart3  className="w-3.5 h-3.5" /> },
+          { value: 'mapa',      label: 'Mapa',              icon: <Map        className="w-3.5 h-3.5" /> },
+          { value: 'marcadores', label: 'Marcadores',        icon: <MapPin     className="w-3.5 h-3.5" /> },
         ].map(({ value, label, icon }) => (
           <button
             key={value}
@@ -974,7 +1479,7 @@ export default function Rutas() {
               </Button>
               <Input
                 type="date" value={fechaVista}
-                onChange={e => setFechaVista(e.target.value)}
+                onChange={e => { setFechaVista(e.target.value); setShowImportChat(false); }}
                 className="w-40 h-8 text-xs"
               />
               <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navegarFecha(1)}>
@@ -984,31 +1489,105 @@ export default function Rutas() {
             <span className="text-xs text-slate-400 capitalize">
               {new Date(fechaVista + 'T12:00:00').toLocaleDateString('es', { weekday: 'long', day: 'numeric', month: 'long' })}
             </span>
-            {isLoading && <span className="text-xs text-slate-300 ml-auto">Cargando...</span>}
+            {isLoading && <span className="text-xs text-slate-300">Cargando...</span>}
+            <div className="ml-auto">
+              {canWrite && (
+                <Button
+                  size="sm" variant="outline"
+                  className="gap-1.5 text-xs h-8 text-sky-600 border-sky-200 hover:bg-sky-50 dark:border-sky-800/50 dark:hover:bg-sky-900/20"
+                  onClick={() => setShowImportChat(v => !v)}
+                >
+                  <Upload className="w-3 h-3" />
+                  {showImportChat ? 'Cerrar importación' : 'Importar del chat'}
+                </Button>
+              )}
+            </div>
           </div>
 
-          {/* Rutas activas del día */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                Rutas activas · {rutasActivas.length}
-              </h3>
-              {rutasActivas.length > 0 && novedadesHoy.length > 0 && (
-                <span className="text-[10px] text-amber-600 font-medium">
-                  {novedadesHoy.length} novedad{novedadesHoy.length !== 1 ? 'es' : ''} hoy
+          {/* Resumen del día */}
+          {(novedadesHoy.length > 0 || extrasHoy.length > 0 || rutasActivas.length > 0) && (
+            <div className="flex flex-wrap gap-3 text-xs text-slate-500 bg-slate-50 dark:bg-slate-800/40 rounded-xl px-3 py-2">
+              {rutasActivas.length > 0 && (
+                <span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">{rutasActivas.length - canceladasHoy}</span>
+                  <span className="text-slate-400">/{rutasActivas.length} rutas</span>
+                </span>
+              )}
+              {canceladasHoy > 0 && (
+                <span className="text-red-500 font-medium">{canceladasHoy} cancelada{canceladasHoy !== 1 ? 's' : ''}</span>
+              )}
+              {sustitHoy > 0 && (
+                <span className="text-amber-600 font-medium">{sustitHoy} sustitución{sustitHoy !== 1 ? 'es' : ''}</span>
+              )}
+              {extrasHoy.length > 0 && (
+                <span className="text-orange-500">{extrasHoy.length} extra{extrasHoy.length !== 1 ? 's' : ''}</span>
+              )}
+              {kmHoy > 0 && (
+                <span className="text-sky-600 font-medium">{kmHoy.toFixed(0)} km</span>
+              )}
+              {litrosHoy > 0 && (
+                <span className="text-emerald-600 font-medium">{litrosHoy.toFixed(1)} L est.</span>
+              )}
+              {rutasActivas.length > 0 && (
+                <span className="ml-auto font-semibold text-slate-600 dark:text-slate-300">
+                  {Math.round((rutasActivas.length - canceladasHoy) / rutasActivas.length * 100)}% cumplimiento
                 </span>
               )}
             </div>
+          )}
 
-            {rutasActivas.length === 0 ? (
+          {/* Panel de importación desde chat */}
+          {showImportChat && (
+            <ImportarChatPanel
+              fechaVista={fechaVista}
+              consumidores={consumidores}
+              rutasCatalogo={rutasActivas}
+              onImportar={handleImportar}
+              onClose={() => setShowImportChat(false)}
+            />
+          )}
+
+          {/* Rutas activas del día */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                Rutas activas · {rutasActivasFiltradas.length}
+                {filtroGrupo && rutasActivas.length !== rutasActivasFiltradas.length && (
+                  <span className="font-normal normal-case ml-1 text-slate-400">de {rutasActivas.length}</span>
+                )}
+              </h3>
+              <div className="flex items-center gap-2 ml-auto">
+                {grupos.length > 0 && (
+                  <Select value={filtroGrupo || '_all'} onValueChange={v => setFiltroGrupo(v === '_all' ? '' : v)}>
+                    <SelectTrigger className="h-7 text-xs w-40">
+                      <SelectValue placeholder="Todos los grupos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_all">Todos los grupos</SelectItem>
+                      {grupos.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                )}
+                {novedadesHoy.length > 0 && (
+                  <span className="text-[10px] text-amber-600 font-medium shrink-0">
+                    {novedadesHoy.length} novedad{novedadesHoy.length !== 1 ? 'es' : ''} hoy
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {rutasActivasFiltradas.length === 0 ? (
               <div className="py-10 text-center space-y-2">
                 <Navigation className="w-8 h-8 text-slate-200 mx-auto" />
-                <p className="text-sm text-slate-400">No hay rutas activas en el catálogo.</p>
-                <Button size="sm" variant="outline" onClick={() => setTab('catalogo')}>Ir al catálogo</Button>
+                {rutasActivas.length === 0
+                  ? <><p className="text-sm text-slate-400">No hay rutas activas en el catálogo.</p>
+                      <Button size="sm" variant="outline" onClick={() => setTab('catalogo')}>Ir al catálogo</Button></>
+                  : <p className="text-sm text-slate-400">Sin rutas en el grupo seleccionado.</p>
+                }
               </div>
             ) : (
               <div className="space-y-2">
-                {rutasActivas.map(ruta => {
+                {rutasActivasFiltradas.map(ruta => {
                   const novedad = novedadesHoy.find(a => a.ruta_id === ruta.id) ?? null;
                   return (
                     <RutaDiaRow
@@ -1103,6 +1682,14 @@ export default function Rutas() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{r.nombre}</span>
                           {!r.activa && <Badge variant="outline" className="text-[10px] text-slate-400">Inactiva</Badge>}
+                          {r.grupo && (
+                            <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-600 border-violet-200 dark:bg-violet-900/20 dark:border-violet-700">
+                              {r.grupo}
+                            </Badge>
+                          )}
+                          {r.lat_inicio != null && (
+                            <Map className="w-3 h-3 text-emerald-500" title="Tiene coordenadas" />
+                          )}
                         </div>
                         <div className="flex flex-wrap gap-3 mt-1 text-[11px] text-slate-500">
                           {r.punto_inicio && r.punto_fin && <span>{r.punto_inicio} → {r.punto_fin}</span>}
@@ -1157,94 +1744,81 @@ export default function Rutas() {
       {/* ── Tab: Estadísticas ─────────────────────────────────────────────────── */}
       {tab === 'stats' && (
         <div className="space-y-4">
-          {asigMes.length === 0 ? (
-            <div className="py-14 text-center text-sm text-slate-400">Sin novedades ni viajes extra registrados este mes</div>
-          ) : (<>
-            {/* Rutas con más novedades */}
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="p-4 pb-2">
-                <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200">Novedades por ruta — mes actual</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="divide-y divide-slate-50 dark:divide-slate-800">
-                  {(() => {
-                    const counts = {};
-                    novedadesMes.forEach(a => {
-                      const nombre = rutaById[a.ruta_id]?.nombre || 'Ruta';
-                      counts[nombre] = (counts[nombre] || 0) + 1;
-                    });
-                    if (Object.keys(counts).length === 0)
-                      return <p className="text-xs text-slate-400 px-4 py-3">Sin novedades registradas</p>;
-                    const max = Math.max(...Object.values(counts), 1);
-                    return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([nombre, count]) => (
-                      <div key={nombre} className="flex items-center gap-3 px-4 py-2.5">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs text-slate-700 dark:text-slate-200 truncate">{nombre}</p>
-                          <div className="mt-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                            <div className="h-full bg-amber-400 rounded-full transition-all" style={{ width: `${(count / max) * 100}%` }} />
-                          </div>
-                        </div>
-                        <span className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums shrink-0">{count}</span>
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </CardContent>
-            </Card>
+          {/* Selector de mes */}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navegarMesStat(-1)}>
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 min-w-[150px] text-center capitalize">
+              {new Date(mesStat + '-01T12:00:00').toLocaleDateString('es', { month: 'long', year: 'numeric' })}
+            </span>
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navegarMesStat(1)}>
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
 
-            {/* Actividad por vehículo */}
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="p-4 pb-2">
-                <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200">Registros por vehículo — mes actual</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="divide-y divide-slate-50 dark:divide-slate-800">
-                  {(() => {
-                    const byVeh = {};
-                    asigMes.forEach(a => {
-                      const key = a.consumidor_nombre || '—';
-                      if (!byVeh[key]) byVeh[key] = { novedades: 0, extras: 0, km: 0 };
-                      if (a.ruta_id) byVeh[key].novedades++; else byVeh[key].extras++;
-                      byVeh[key].km += Number(a.km_reales) || 0;
-                    });
-                    return Object.entries(byVeh).sort((a, b) => (b[1].novedades + b[1].extras) - (a[1].novedades + a[1].extras)).map(([nombre, s]) => (
-                      <div key={nombre} className="flex items-center gap-3 px-4 py-2.5">
-                        <Car className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                        <p className="text-sm text-slate-700 dark:text-slate-200 flex-1 truncate">{nombre}</p>
-                        {s.novedades > 0 && <span className="text-xs text-amber-600 tabular-nums">{s.novedades} nov.</span>}
-                        {s.extras    > 0 && <span className="text-xs text-orange-600 tabular-nums">{s.extras} extra{s.extras !== 1 ? 's' : ''}</span>}
-                        {s.km        > 0 && <span className="text-xs font-semibold text-sky-600 tabular-nums">{s.km.toFixed(0)} km</span>}
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </CardContent>
-            </Card>
+          {/* KPIs del mes */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { label: 'Viajes registrados', value: asigStatMes.length,                                             cls: 'text-slate-700 dark:text-slate-200' },
+              { label: 'Cancelaciones',      value: canceladasMesStat,                                              cls: canceladasMesStat > 0 ? 'text-red-500' : 'text-slate-400' },
+              { label: 'km totales',         value: kmMesStat > 0 ? `${kmMesStat.toFixed(0)} km` : '—',            cls: 'text-sky-600' },
+              { label: 'Sustituciones',      value: sustitMesStat,                                                  cls: sustitMesStat > 0 ? 'text-amber-600' : 'text-slate-400' },
+            ].map(k => (
+              <Card key={k.label} className="border-0 shadow-sm">
+                <CardContent className="p-3">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">{k.label}</p>
+                  <p className={`text-lg font-bold mt-0.5 tabular-nums ${k.cls}`}>{k.value}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          {litrosMesStat > 0 && (
+            <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 dark:bg-slate-800/40 rounded-xl px-3 py-2">
+              <span className="text-emerald-600 font-semibold tabular-nums">{litrosMesStat.toFixed(1)} L</span>
+              <span>estimados este período (desde importaciones del chat)</span>
+            </div>
+          )}
 
-            {/* Desglose por tipo */}
-            <Card className="border-0 shadow-sm">
-              <CardHeader className="p-4 pb-2">
-                <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200">Viajes extra por tipo — mes actual</CardTitle>
-              </CardHeader>
-              <CardContent className="p-0 pb-3">
-                <div className="divide-y divide-slate-50 dark:divide-slate-800">
-                  {Object.entries(TIPO_VIAJE_CFG).filter(([k]) => k !== 'regular').map(([key, tcfg]) => {
-                    const count = extrasMes.filter(a => getTipoViaje(a) === key).length;
-                    const pct   = ((count / Math.max(extrasMes.length, 1)) * 100).toFixed(0);
-                    return (
-                      <div key={key} className="flex items-center gap-3 px-4 py-2.5">
-                        <Badge variant="outline" className={`text-[10px] shrink-0 ${tcfg.cls}`}>{tcfg.label}</Badge>
-                        <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                          <div className="h-full bg-orange-400 rounded-full transition-all" style={{ width: `${pct}%` }} />
-                        </div>
-                        <span className="text-sm font-bold text-slate-800 dark:text-slate-100 tabular-nums w-6 text-right">{count}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          </>)}
+          {/* Leyenda de tags */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {Object.entries(SOURCE_CFG).map(([key, cfg]) => (
+              <Badge key={key} variant="outline" className={`text-[10px] ${cfg.cls}`}>{cfg.label}</Badge>
+            ))}
+            <span className="text-[10px] text-slate-400">— origen del registro</span>
+          </div>
+
+          {/* Tarjetas por vehículo */}
+          {vehicleStatsData.length === 0 ? (
+            <div className="py-14 text-center text-sm text-slate-400">Sin registros para este mes</div>
+          ) : (
+            <div className="space-y-3">
+              {vehicleStatsData.map(grupo => (
+                <VehiculoStatsCard key={grupo.key} grupo={grupo} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Mapa ─────────────────────────────────────────────────────────── */}
+      {tab === 'mapa' && (
+        <div className="space-y-3">
+          <p className="text-xs text-slate-400">
+            Haz clic en cualquier punto del mapa para obtener sus coordenadas y
+            asignarlas a una ruta en el catálogo.
+          </p>
+          <MapaRutas rutas={rutas} novedadesHoy={novedadesHoy} />
+        </div>
+      )}
+
+      {/* ── Tab: Marcadores ───────────────────────────────────────────────────── */}
+      {tab === 'marcadores' && (
+        <div className="space-y-3">
+          <p className="text-xs text-slate-400">
+            Coloca puntos de interés en el mapa. Úsalos luego para definir rutas habituales.
+          </p>
+          <MarcadoresPanel canWrite={canWrite} />
         </div>
       )}
 
@@ -1276,9 +1850,7 @@ export default function Rutas() {
           consumidores={consumidores}
           conductores={conductores}
           onClose={() => { setShowDialogRuta(false); setEditingRuta(null); }}
-          onSave={d => editingRuta
-            ? updateRutaMut.mutate({ id: editingRuta.id, d })
-            : createRutaMut.mutate(d)}
+          onSave={handleSaveRuta}
         />
       )}
       <ConfirmDialog
@@ -1289,24 +1861,18 @@ export default function Rutas() {
         onConfirm={() => deleteAsigMut.mutate(deleteAsigId)}
         destructive
       />
-      {(() => {
-        const rutaAEliminar = rutas.find(r => r.id === deleteRutaId);
-        const novedadesAsociadas = asignaciones.filter(a => a.ruta_id === deleteRutaId).length;
-        return (
-          <ConfirmDialog
-            open={!!deleteRutaId}
-            onOpenChange={open => { if (!open) setDeleteRutaId(null); }}
-            title={`Eliminar ruta${rutaAEliminar ? ` "${rutaAEliminar.nombre}"` : ''}`}
-            description={
-              novedadesAsociadas > 0
-                ? `Esta ruta tiene ${novedadesAsociadas} registro${novedadesAsociadas !== 1 ? 's' : ''} de novedades asociados que también serán eliminados. Esta acción no se puede deshacer.`
-                : 'Se eliminará permanentemente del catálogo. Esta acción no se puede deshacer.'
-            }
-            onConfirm={() => deleteRutaMut.mutate(deleteRutaId)}
-            destructive
-          />
-        );
-      })()}
+      <ConfirmDialog
+        open={!!deleteRutaId}
+        onOpenChange={open => { if (!open) setDeleteRutaId(null); }}
+        title={`Eliminar ruta${rutaAEliminar ? ` "${rutaAEliminar.nombre}"` : ''}`}
+        description={
+          novedadesAsocCount > 0
+            ? `Esta ruta tiene ${novedadesAsocCount} registro${novedadesAsocCount !== 1 ? 's' : ''} de novedades asociados que también serán eliminados. Esta acción no se puede deshacer.`
+            : 'Se eliminará permanentemente del catálogo. Esta acción no se puede deshacer.'
+        }
+        onConfirm={() => deleteRutaMut.mutate(deleteRutaId)}
+        destructive
+      />
     </div>
   );
 }

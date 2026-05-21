@@ -28,6 +28,12 @@ export default function Reportes() {
   const [fechaDesde, setFechaDesde] = useState('');
   const [fechaHasta, setFechaHasta] = useState('');
 
+  const consumidoresVehiculos = useMemo(() => consumidores.filter(c => {
+    if (c.categoria) return c.categoria === 'consumidor';
+    const n = (c.tipo_consumidor_nombre || '').toLowerCase();
+    return !n.includes('tanque') && !n.includes('reserva') && !n.includes('surtidor');
+  }), [consumidores]);
+
   const movsFiltered = useMemo(() => {
     return movimientos.filter(m => {
       if (fechaDesde && m.fecha < fechaDesde) return false;
@@ -153,10 +159,10 @@ export default function Reportes() {
         </TabsContent>
 
         <TabsContent value="vehiculos" className="mt-0">
-          <ReporteVehiculos consumidores={consumidores} movimientos={movsFiltered} />
+          <ReporteVehiculos consumidores={consumidoresVehiculos} movimientos={movsFiltered} />
         </TabsContent>
         <TabsContent value="consumo" className="mt-0">
-          <ReporteConsumo consumidores={consumidores} movimientos={movsFiltered} />
+          <ReporteConsumo consumidores={consumidoresVehiculos} movimientos={movsFiltered} />
         </TabsContent>
       </Tabs>
     </div>

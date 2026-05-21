@@ -229,6 +229,10 @@ ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS datos_vehiculo         JSONB;
 ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS datos_tanque           JSONB;
 ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS datos_equipo           JSONB;
 ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS created_date           TIMESTAMPTZ NOT NULL DEFAULT NOW();
+-- Conductor y ayudante asignados (FK a catálogo conductor)
+ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS conductor_id           UUID REFERENCES conductor(id) ON DELETE SET NULL;
+ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS ayudante_id            UUID REFERENCES conductor(id) ON DELETE SET NULL;
+ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS ayudante               TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_consumidor_tipo_consumidor_id ON consumidor(tipo_consumidor_id);
 CREATE INDEX IF NOT EXISTS idx_consumidor_combustible_id     ON consumidor(combustible_id);
@@ -298,10 +302,17 @@ ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS monto                   NUMERIC(
 ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS odometro                NUMERIC(12,2);
 ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS km_recorridos           NUMERIC(12,2);
 ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS consumo_real            NUMERIC(10,4);
-ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS nivel_tanque            NUMERIC(10,2);
-ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS horas_uso              NUMERIC(10,2);
-ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS referencia              TEXT;
-ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS created_date            TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS nivel_tanque                  NUMERIC(10,2);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS horas_uso                    NUMERIC(10,2);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS referencia                   TEXT;
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS vehiculo_alias               TEXT;
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS vehiculo_origen_alias        TEXT;
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS odometro_anterior            NUMERIC(12,2);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS remanente_estimado_antes     NUMERIC(14,4);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS combustible_estimado_post    NUMERIC(14,4);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS capacidad_tanque             NUMERIC(14,4);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS auditoria_combustible_estado TEXT;
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS created_date                 TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- Índices de rendimiento (las columnas más filtradas en la app)
 CREATE INDEX IF NOT EXISTS idx_movimiento_fecha               ON movimiento(fecha);
@@ -431,9 +442,18 @@ ALTER TABLE ruta ADD COLUMN IF NOT EXISTS consumidor_nombre TEXT;
 ALTER TABLE ruta ADD COLUMN IF NOT EXISTS conductor_id      UUID REFERENCES conductor(id)  ON DELETE SET NULL;
 ALTER TABLE ruta ADD COLUMN IF NOT EXISTS conductor_nombre  TEXT;
 
+-- Coordenadas geográficas para visualización en mapa
+ALTER TABLE ruta ADD COLUMN IF NOT EXISTS lat_inicio NUMERIC(10,6);
+ALTER TABLE ruta ADD COLUMN IF NOT EXISTS lng_inicio NUMERIC(10,6);
+ALTER TABLE ruta ADD COLUMN IF NOT EXISTS lat_fin    NUMERIC(10,6);
+ALTER TABLE ruta ADD COLUMN IF NOT EXISTS lng_fin    NUMERIC(10,6);
+-- Agrupación en conjuntos / programas de ruta
+ALTER TABLE ruta ADD COLUMN IF NOT EXISTS grupo      TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_ruta_activa        ON ruta(activa);
 CREATE INDEX IF NOT EXISTS idx_ruta_consumidor_id ON ruta(consumidor_id);
 CREATE INDEX IF NOT EXISTS idx_ruta_conductor_id  ON ruta(conductor_id);
+CREATE INDEX IF NOT EXISTS idx_ruta_grupo         ON ruta(grupo) WHERE grupo IS NOT NULL;
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -471,6 +491,9 @@ ALTER TABLE asignacion_ruta ADD COLUMN IF NOT EXISTS km_reales               NUM
 ALTER TABLE asignacion_ruta ADD COLUMN IF NOT EXISTS observaciones           TEXT;
 ALTER TABLE asignacion_ruta ADD COLUMN IF NOT EXISTS estado                  TEXT NOT NULL DEFAULT 'pendiente';
 ALTER TABLE asignacion_ruta ADD COLUMN IF NOT EXISTS created_date            TIMESTAMPTZ NOT NULL DEFAULT NOW();
+-- Ayudante del viaje
+ALTER TABLE asignacion_ruta ADD COLUMN IF NOT EXISTS ayudante_id             UUID REFERENCES conductor(id) ON DELETE SET NULL;
+ALTER TABLE asignacion_ruta ADD COLUMN IF NOT EXISTS ayudante_nombre         TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_asignacion_ruta_fecha         ON asignacion_ruta(fecha);
 CREATE INDEX IF NOT EXISTS idx_asignacion_ruta_consumidor_id ON asignacion_ruta(consumidor_id);
@@ -597,6 +620,46 @@ COMMENT ON COLUMN movimiento.km_recorridos IS
 COMMENT ON COLUMN movimiento.consumidor_origen_id IS
   'Para movimientos tipo DESPACHO: ID del consumidor/tanque de reserva desde el que se despachó. Permite calcular el stock de reserva sin filtrar por combustible_nombre.';
 
+
+-- ─────────────────────────────────────────────────────────────
+--  16. REPORTES DE CHAT (análisis complementario de rutas)
+--      Almacena los registros extraídos del chat de WhatsApp.
+--      Se vinculan opcionalmente a asignacion_ruta y consumidor.
+-- ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS reporte_chat_transporte (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_message_id     TEXT,
+  reported_date         DATE NOT NULL,
+  sender                TEXT,
+  vehicle_plate_raw     TEXT,
+  vehicle_type          TEXT,
+  route_text            TEXT,
+  km_base               NUMERIC(10,2),
+  km_extra              NUMERIC(10,2),
+  km_total              NUMERIC(10,2),
+  fuel_liters           NUMERIC(10,3),
+  fuel_l_per_100km      NUMERIC(10,3),
+  extraction_confidence NUMERIC(4,3),
+  flags                 JSONB DEFAULT '[]',
+  raw_text              TEXT,
+  asignacion_ruta_id    UUID REFERENCES asignacion_ruta(id) ON DELETE SET NULL,
+  consumidor_id         UUID REFERENCES consumidor(id) ON DELETE SET NULL,
+  consumidor_nombre     TEXT,
+  created_date          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rct_reported_date    ON reporte_chat_transporte(reported_date);
+CREATE INDEX IF NOT EXISTS idx_rct_consumidor_id    ON reporte_chat_transporte(consumidor_id);
+CREATE INDEX IF NOT EXISTS idx_rct_asignacion_id    ON reporte_chat_transporte(asignacion_ruta_id);
+
+ALTER TABLE reporte_chat_transporte ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  DROP POLICY IF EXISTS "Authenticated full access" ON reporte_chat_transporte;
+  CREATE POLICY "Authenticated full access" ON reporte_chat_transporte
+    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+END $$;
+
 COMMENT ON COLUMN consumidor.datos_vehiculo IS
   'JSONB con propiedades específicas de vehículos: capacidad_tanque (L), indice_consumo_real (km/L), indice_consumo_fabricante (km/L), umbral_alerta_pct (%), umbral_critico_pct (%), estado_vehiculo.';
 
@@ -609,6 +672,285 @@ COMMENT ON COLUMN consumidor.datos_equipo IS
 COMMENT ON COLUMN consumidor.litros_iniciales IS
   'Saldo inicial de litros al momento de incorporar el consumidor al sistema. Incluido en todos los cálculos de stock y saldo.';
 
+
+-- ─────────────────────────────────────────────────────────────
+--  17. AUTO-REGISTRO DIARIO DE RUTAS
+--      Marca registros auto-generados y programa el cron diario.
+--      REQUISITO: habilitar pg_cron en
+--      Supabase Dashboard → Database → Extensions → pg_cron
+-- ─────────────────────────────────────────────────────────────
+
+-- 17.1 Columna que distingue registros automáticos de manuales
+ALTER TABLE asignacion_ruta ADD COLUMN IF NOT EXISTS auto_generado BOOLEAN DEFAULT FALSE;
+
+-- 17.2 Función que crea los registros del día anterior
+CREATE OR REPLACE FUNCTION auto_register_daily_routes()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  fecha_ayer DATE := CURRENT_DATE - INTERVAL '1 day';
+BEGIN
+  INSERT INTO asignacion_ruta (
+    fecha, ruta_id, tipo_viaje, estado, km_reales,
+    consumidor_id, consumidor_nombre, conductor_id, conductor_nombre,
+    auto_generado
+  )
+  SELECT
+    fecha_ayer,
+    r.id,
+    'regular',
+    'completada',
+    r.distancia_km,
+    r.consumidor_id,
+    r.consumidor_nombre,
+    r.conductor_id,
+    r.conductor_nombre,
+    true
+  FROM ruta r
+  WHERE r.activa = true
+    AND r.frecuencia = 'Diario'
+    AND r.consumidor_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM asignacion_ruta a
+      WHERE a.ruta_id = r.id AND a.fecha = fecha_ayer
+    );
+END;
+$$;
+
+-- 17.3 Backfill desde el 1 de enero del año en curso hasta ayer
+--      Ejecutar una sola vez. No duplica registros existentes.
+DO $$
+DECLARE
+  d         DATE := DATE_TRUNC('year', CURRENT_DATE)::DATE;
+  fecha_fin DATE := CURRENT_DATE - INTERVAL '1 day';
+BEGIN
+  WHILE d <= fecha_fin LOOP
+    INSERT INTO asignacion_ruta (
+      fecha, ruta_id, tipo_viaje, estado, km_reales,
+      consumidor_id, consumidor_nombre, conductor_id, conductor_nombre,
+      auto_generado
+    )
+    SELECT
+      d, r.id, 'regular', 'completada', r.distancia_km,
+      r.consumidor_id, r.consumidor_nombre, r.conductor_id, r.conductor_nombre, true
+    FROM ruta r
+    WHERE r.activa = true
+      AND r.frecuencia = 'Diario'
+      AND r.consumidor_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM asignacion_ruta a
+        WHERE a.ruta_id = r.id AND a.fecha = d
+      );
+    d := d + INTERVAL '1 day';
+  END LOOP;
+END $$;
+
+-- 17.4 Programar el cron a las 02:00 UTC (≈ medianoche Cuba)
+--      Genera el registro del día anterior cada madrugada.
+--      Ejecutar solo una vez (verificar primero: SELECT * FROM cron.job;)
+SELECT cron.schedule(
+  'auto-register-daily-routes',
+  '0 2 * * *',
+  'SELECT auto_register_daily_routes()'
+);
+
+
+-- ─────────────────────────────────────────────────────────────
+--  18. AUTO-GUARDADO GPS DIARIO (Edge Function gps-daily-save)
+--      Guarda el recorrido GPS de cada vehículo a las 23:55 hora Cuba.
+--      Requisitos previos:
+--        1. pg_cron habilitado  (Dashboard → Database → Extensions → pg_cron)
+--        2. pg_net  habilitado  (Dashboard → Database → Extensions → pg_net)
+--        3. Edge Function desplegada: supabase functions deploy gps-daily-save
+--        4. Reemplazar <SERVICE_ROLE_KEY> con el valor de
+--           Dashboard → Settings → API → service_role (secret)
+--  23:55 Cuba Standard Time = 04:55 UTC del día siguiente.
+-- ─────────────────────────────────────────────────────────────
+
+SELECT cron.schedule(
+  'gps-daily-save',
+  '55 4 * * *',
+  $$
+  SELECT net.http_post(
+    url     := 'https://okcvyuemcxzxvvyfkjzp.supabase.co/functions/v1/gps-daily-save',
+    headers := jsonb_build_object(
+      'Content-Type',  'application/json',
+      'Authorization', 'Bearer <SERVICE_ROLE_KEY>'
+    ),
+    body    := '{}'::jsonb
+  ) AS request_id;
+  $$
+);
+
+-- ─────────────────────────────────────────────────────────────
+--  18. PARCHE ACUMULADO — columnas faltantes en DB existente
+--      Seguro de ejecutar sobre cualquier DB (IF NOT EXISTS).
+--      Cubre todas las columnas que el frontend envía y que pueden
+--      faltar si la DB fue creada con una versión anterior del SQL.
+-- ─────────────────────────────────────────────────────────────
+
+-- 18.1 movimiento — columnas básicas que pueden faltar en DBs antiguas
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS nivel_tanque                  NUMERIC(10,2);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS horas_uso                     NUMERIC(10,2);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS referencia                    TEXT;
+
+-- 18.2 movimiento — columnas de auditoría de combustible (COMPRA/DESPACHO)
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS vehiculo_alias                TEXT;
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS vehiculo_origen_alias         TEXT;
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS odometro_anterior             NUMERIC(12,2);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS remanente_estimado_antes      NUMERIC(14,4);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS combustible_estimado_post     NUMERIC(14,4);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS capacidad_tanque              NUMERIC(14,4);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS auditoria_combustible_estado  TEXT;
+
+-- 18.3 consumidor — conductor y ayudante asignados al vehículo
+ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS conductor_id                  UUID REFERENCES conductor(id) ON DELETE SET NULL;
+ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS ayudante_id                   UUID REFERENCES conductor(id) ON DELETE SET NULL;
+ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS ayudante                      TEXT;
+
+-- 18.4 asignacion_ruta — ayudante del viaje
+ALTER TABLE asignacion_ruta ADD COLUMN IF NOT EXISTS ayudante_id              UUID REFERENCES conductor(id) ON DELETE SET NULL;
+ALTER TABLE asignacion_ruta ADD COLUMN IF NOT EXISTS ayudante_nombre          TEXT;
+
+-- 18.5 asignacion_ruta — columna de registros automáticos (si no se ejecutó Sección 17)
+ALTER TABLE asignacion_ruta ADD COLUMN IF NOT EXISTS auto_generado            BOOLEAN DEFAULT FALSE;
+
+-- 18.6 movimiento — ampliar CHECK constraint para incluir DEPOSITO y RECARGA
+--      La constraint original solo tenía COMPRA | DESPACHO | AJUSTE.
+ALTER TABLE movimiento DROP CONSTRAINT IF EXISTS movimiento_tipo_check;
+ALTER TABLE movimiento ADD CONSTRAINT movimiento_tipo_check
+  CHECK (tipo IN ('COMPRA', 'DESPACHO', 'DEPOSITO', 'RECARGA', 'AJUSTE', 'TRANSFERENCIA'));
+
+
+-- 18.7 asignacion_ruta — litros estimados e indicador de fuente para importaciones del chat
+ALTER TABLE asignacion_ruta ADD COLUMN IF NOT EXISTS litros_estimados NUMERIC(10,2);
+ALTER TABLE asignacion_ruta ADD COLUMN IF NOT EXISTS fuente           TEXT DEFAULT 'manual';
+
+-- 18.8 conductor.vehiculo_asignado_id — re-apuntar FK a consumidor
+--      Los vehículos se registran en la tabla consumidor (tipo "Vehículo"),
+--      no en la tabla vehiculo (legado). Se nullifican referencias huérfanas
+--      y se cambia la restricción de clave foránea.
+UPDATE conductor
+  SET vehiculo_asignado_id = NULL
+  WHERE vehiculo_asignado_id IS NOT NULL
+    AND vehiculo_asignado_id NOT IN (SELECT id FROM consumidor);
+
+ALTER TABLE conductor DROP CONSTRAINT IF EXISTS conductor_vehiculo_asignado_id_fkey;
+ALTER TABLE conductor ADD CONSTRAINT conductor_vehiculo_asignado_id_fkey
+  FOREIGN KEY (vehiculo_asignado_id) REFERENCES consumidor(id) ON DELETE SET NULL;
+
+-- ─────────────────────────────────────────────────────────────
+--  18.9 consumidor — columna categoria para separar conceptos
+--       Valores: 'consumidor' | 'deposito' | 'surtidor'
+-- ─────────────────────────────────────────────────────────────
+ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS categoria TEXT NOT NULL DEFAULT 'consumidor';
+
+-- Poblar a partir de detección por nombre del tipo guardado en el consumidor.
+-- Se usan patrones específicos para evitar falsos positivos con "Almacén de uso/Autorizo"
+-- que son consumidores de combustible, no depósitos de almacenamiento.
+UPDATE consumidor
+  SET categoria = 'deposito'
+  WHERE categoria = 'consumidor'
+    AND (
+      tipo_consumidor_nombre ILIKE '%tanque%'
+      OR tipo_consumidor_nombre ILIKE '%reserva%'
+      OR tipo_consumidor_nombre ILIKE 'almacenamiento%'
+      OR tipo_consumidor_nombre ILIKE '%almacenamiento'
+    );
+
+UPDATE consumidor
+  SET categoria = 'surtidor'
+  WHERE categoria = 'consumidor'
+    AND tipo_consumidor_nombre ILIKE '%surtidor%';
+
+-- También poblar cruzando con el catálogo de tipos (por si el nombre quedó desincronizado)
+UPDATE consumidor c
+  SET categoria = 'deposito'
+  FROM tipo_consumidor tc
+  WHERE c.tipo_consumidor_id = tc.id
+    AND c.categoria = 'consumidor'
+    AND (
+      tc.nombre ILIKE '%tanque%'
+      OR tc.nombre ILIKE '%reserva%'
+      OR tc.nombre ILIKE 'almacenamiento%'
+      OR tc.nombre ILIKE '%almacenamiento'
+    );
+
+UPDATE consumidor c
+  SET categoria = 'surtidor'
+  FROM tipo_consumidor tc
+  WHERE c.tipo_consumidor_id = tc.id
+    AND c.categoria = 'consumidor'
+    AND tc.nombre ILIKE '%surtidor%';
+
+CREATE INDEX IF NOT EXISTS idx_consumidor_categoria ON consumidor (categoria);
+
+-- ─────────────────────────────────────────────────────────────
+--  19. GPS — vinculación vehículo ↔ dispositivo Traccar
+-- ─────────────────────────────────────────────────────────────
+
+-- ID del dispositivo GPS en Traccar (campo "deviceId" de la API /positions)
+ALTER TABLE consumidor ADD COLUMN IF NOT EXISTS gps_device_id INTEGER;
+CREATE INDEX IF NOT EXISTS idx_consumidor_gps_device_id ON consumidor(gps_device_id)
+  WHERE gps_device_id IS NOT NULL;
+
+-- Caché de sesión Traccar (máximo 1 fila, se renueva automáticamente)
+CREATE TABLE IF NOT EXISTS gps_session_cache (
+  id          INTEGER PRIMARY KEY DEFAULT 1,
+  jsessionid  TEXT        NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT gps_session_cache_single CHECK (id = 1)
+);
+
+-- ─────────────────────────────────────────────────────────────
+--  20. Marcadores de mapa (waypoints)
+-- ─────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS marcador (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  nombre       TEXT        NOT NULL,
+  descripcion  TEXT,
+  lat          NUMERIC(10,7) NOT NULL,
+  lng          NUMERIC(10,7) NOT NULL,
+  color        TEXT        NOT NULL DEFAULT '#3b82f6',
+  activo       BOOLEAN     NOT NULL DEFAULT TRUE,
+  created_date TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_marcador_activo ON marcador (activo);
+
+ALTER TABLE marcador ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  DROP POLICY IF EXISTS "Authenticated full access" ON marcador;
+  CREATE POLICY "Authenticated full access" ON marcador
+    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+END $$;
+
+-- ─────────────────────────────────────────────────────────────
+--  21. Waypoints de ruta (relación ordenada ruta ↔ marcadores)
+-- ─────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS ruta_marcador (
+  id          UUID     PRIMARY KEY DEFAULT gen_random_uuid(),
+  ruta_id     UUID     NOT NULL REFERENCES ruta(id) ON DELETE CASCADE,
+  marcador_id UUID     NOT NULL REFERENCES marcador(id) ON DELETE CASCADE,
+  orden       SMALLINT NOT NULL DEFAULT 0,
+  UNIQUE (ruta_id, orden)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ruta_marcador_ruta_id ON ruta_marcador (ruta_id);
+
+ALTER TABLE ruta_marcador ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  DROP POLICY IF EXISTS "Authenticated full access" ON ruta_marcador;
+  CREATE POLICY "Authenticated full access" ON ruta_marcador
+    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+END $$;
 
 -- ─────────────────────────────────────────────────────────────
 --  FIN DE MIGRACIÓN

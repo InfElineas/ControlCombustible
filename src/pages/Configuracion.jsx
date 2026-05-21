@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Upload, FileJson, FileSpreadsheet, CheckCircle2, XCircle, AlertCircle, Loader2, ListTree } from 'lucide-react';
+import { Upload, FileJson, FileSpreadsheet, CheckCircle2, XCircle, AlertCircle, Loader2, Satellite } from 'lucide-react';
 import ImportResultsTable from '@/components/configuracion/ImportResultsTable';
 import ImportGuide from '@/components/configuracion/ImportGuide';
-import TiposConsumidorPanel from '@/components/configuracion/TiposConsumidorPanel';
+import GpsDevicePanel from '@/components/configuracion/GpsDevicePanel';
 
 function parseDate(raw) {
   if (!raw) return null;
@@ -329,7 +329,7 @@ export default function Configuracion() {
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-bold text-slate-800">Configuración</h1>
-        <p className="text-xs text-slate-400">Gestión de tipos, consumidores e importaciones</p>
+        <p className="text-xs text-slate-400">Importación masiva de movimientos y tarjetas</p>
       </div>
 
       <Tabs defaultValue="importacion">
@@ -340,18 +340,10 @@ export default function Configuracion() {
           <TabsTrigger value="tarjetas" className="gap-1.5 text-xs">
             <FileJson className="w-3.5 h-3.5" /> Importar tarjetas
           </TabsTrigger>
-          <TabsTrigger value="tipos" className="gap-1.5 text-xs">
-            <ListTree className="w-3.5 h-3.5" /> Tipos de consumidor
+          <TabsTrigger value="gps" className="gap-1.5 text-xs">
+            <Satellite className="w-3.5 h-3.5" /> GPS
           </TabsTrigger>
         </TabsList>
-
-        <TabsContent value="tipos" className="mt-4">
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-4">
-              <TiposConsumidorPanel />
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="importacion" className="mt-4 space-y-4">
 
@@ -542,6 +534,10 @@ export default function Configuracion() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="gps" className="mt-4">
+          <GpsDevicePanel />
         </TabsContent>
       </Tabs>
     </div>

@@ -10,17 +10,21 @@ export default defineConfig({
     },
   },
   build: {
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react':   ['react', 'react-dom', 'react-router-dom'],
-          'vendor-query':   ['@tanstack/react-query'],
-          'vendor-supabase':['@supabase/supabase-js'],
-          'vendor-ui':      ['@radix-ui/react-dialog', '@radix-ui/react-select', '@radix-ui/react-tabs', '@radix-ui/react-checkbox', '@radix-ui/react-switch'],
-          'vendor-charts':  ['recharts'],
-          'vendor-pdf':     ['jspdf', 'jspdf-autotable', 'html2canvas'],
-          'vendor-excel':   ['exceljs'],
+        manualChunks(id) {
+          // React ecosystem must stay together to avoid cross-chunk hook/context issues
+          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/react-router-dom/') || id.includes('/scheduler/')) {
+            return 'vendor-react';
+          }
+          if (id.includes('@tanstack/react-query')) return 'vendor-query';
+          if (id.includes('@supabase/')) return 'vendor-supabase';
+          if (id.includes('@radix-ui/')) return 'vendor-ui';
+          if (id.includes('recharts') || id.includes('d3-') || id.includes('victory-')) return 'vendor-charts';
+          if (id.includes('jspdf')) return 'vendor-pdf';
+          if (id.includes('html2canvas')) return 'vendor-canvas';
+          if (id.includes('exceljs')) return 'vendor-excel';
         },
       },
     },

@@ -85,8 +85,11 @@ export const base44 = {
     Conductor:         createEntity('conductor',           'Conductor'),
     Vehiculo:          createEntity('vehiculo',            'Vehiculo'),
     ConfigAlerta:      createEntity('config_alerta',       'ConfigAlerta'),
-    Ruta:              createEntity('ruta',                'Ruta'),
-    AsignacionRuta:    createEntity('asignacion_ruta',     'AsignacionRuta'),
+    Marcador:               createEntity('marcador',                  'Marcador'),
+    RutaMarcador:           createEntity('ruta_marcador',             'RutaMarcador'),
+    Ruta:                   createEntity('ruta',                     'Ruta'),
+    AsignacionRuta:         createEntity('asignacion_ruta',          'AsignacionRuta'),
+    ReporteChatTransporte:  createEntity('reporte_chat_transporte',  'ReporteChatTransporte'),
   },
 
   auth: {

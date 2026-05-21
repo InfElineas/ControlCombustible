@@ -5,8 +5,8 @@ import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import { useTheme } from '@/components/ui-helpers/useTheme';
 import {
   LayoutDashboard, List, Fuel, BarChart3, Menu, ChevronRight,
-  LogOut, Settings, ShieldCheck, Users, Bell, BookOpen, Shield,
-  Moon, Sun, WalletCards, Navigation, HelpCircle, UserCheck,
+  LogOut, Settings, ShieldCheck, Bell, BookOpen, Shield,
+  Moon, Sun, WalletCards, Navigation, HelpCircle,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -16,10 +16,8 @@ import { supabase } from '@/api/supabaseClient';
 const navItems = [
   { name: 'Dashboard',      page: 'Dashboard',     icon: LayoutDashboard, roles: ['superadmin', 'operador', 'auditor', 'economico'] },
   { name: 'Movimientos',    page: 'Movimientos',   icon: List,             roles: ['superadmin', 'operador', 'auditor', 'economico'] },
-  { name: 'Consumidores',   page: 'Consumidores',  icon: Users,            roles: ['superadmin', 'operador'] },
   { name: 'Finanzas',       page: 'Finanzas',      icon: WalletCards,      roles: ['superadmin', 'economico'] },
-  { name: 'Catálogos',      page: 'Catalogos',     icon: BookOpen,         roles: ['superadmin'] },
-  { name: 'Conductores',    page: 'Conductores',   icon: UserCheck,        roles: ['superadmin', 'operador'] },
+  { name: 'Catálogos',      page: 'Catalogos',     icon: BookOpen,         roles: ['superadmin', 'operador', 'economico'] },
   { name: 'Rutas',          page: 'Rutas',         icon: Navigation,       roles: ['superadmin', 'operador', 'auditor'] },
   { name: 'Alertas',        page: 'Alertas',       icon: Bell,             roles: ['superadmin', 'operador'] },
   { name: 'Reportes',       page: 'Reportes',      icon: BarChart3,        roles: ['superadmin', 'operador', 'auditor', 'economico'] },
@@ -38,12 +36,14 @@ const roleLabels = {
 const pageRoles = {
   Consumidores:  ['superadmin', 'operador'],
   Alertas:       ['superadmin', 'operador'],
-  Catalogos:     ['superadmin'],
+  Catalogos:     ['superadmin', 'operador', 'economico'],
   Conductores:   ['superadmin', 'operador'],
   Configuracion: ['superadmin', 'operador'],
   Finanzas:      ['superadmin', 'economico'],
   AdminPanel:    ['superadmin'],
 };
+// Nota: Consumidores y Conductores mantienen pageRoles para redireccionamiento
+// correcto si alguien navega a esas URLs directamente (ambas redirigen a Catalogos).
 
 function ThemeToggle({ isDark, toggle, className = '' }) {
   return (
@@ -226,7 +226,7 @@ export default function Layout() {
               {rl.label}
             </Badge>
             <Link
-              to={createPageUrl('Ayuda')}
+              to={`${createPageUrl('Ayuda')}?from=${currentPageName}`}
               className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 mb-1 transition-colors"
             >
               <HelpCircle className="w-3.5 h-3.5" /> Centro de ayuda
@@ -252,7 +252,7 @@ export default function Layout() {
       {/* Floating help button */}
       {currentPageName !== 'Ayuda' && (
         <Link
-          to={createPageUrl('Ayuda')}
+          to={`${createPageUrl('Ayuda')}?from=${currentPageName}`}
           title="Centro de ayuda"
           className="fixed bottom-5 right-5 z-50 w-11 h-11 rounded-full bg-sky-600 hover:bg-sky-700 shadow-lg flex items-center justify-center transition-all hover:scale-105 active:scale-95"
         >

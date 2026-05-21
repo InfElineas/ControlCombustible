@@ -377,7 +377,13 @@ export default function Movimientos() {
                         {m.tipo === 'DESPACHO'
                           ? <span className="text-purple-700 font-medium">{m.consumidor_origen_nombre || m.vehiculo_origen_chapa || 'Reserva'}</span>
                           : m.tipo === 'DEPOSITO'
-                          ? <span className="text-teal-600">{m.tarjeta_alias ? `Retiro: ${m.tarjeta_alias}` : '—'}</span>
+                          ? <span className="text-teal-600">
+                              {m.referencia
+                                ? m.referencia
+                                : m.tarjeta_alias
+                                ? <span className="text-slate-500">{m.tarjeta_alias}</span>
+                                : <span className="text-slate-300">—</span>}
+                            </span>
                           : <span>{m.tarjeta_alias || m.tarjeta_id || '—'}</span>
                         }
                       </td>

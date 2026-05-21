@@ -70,13 +70,32 @@ export default function Dashboard() {
   const consumidoresReservaIds = useMemo(() => {
     return new Set(
       consumidores
-        .filter((c) => {
-          const tipo = (c.tipo_consumidor_nombre || '').toLowerCase();
-          return tipo.includes('tanque') || tipo.includes('reserva');
-        })
+        .filter(c =>
+          c.categoria === 'deposito' ||
+          (!c.categoria && ((c.tipo_consumidor_nombre || '').toLowerCase().match(/tanque|reserva/)))
+        )
         .map(c => c.id)
     );
   }, [consumidores]);
+
+  const consumidoresSurtidorIds = useMemo(() => {
+    const surtidorTipoIds = new Set(
+      tiposConsumidor
+        .filter(t => (t.nombre || '').toLowerCase().includes('surtidor'))
+        .map(t => t.id)
+    );
+    return new Set(
+      consumidores
+        .filter(c =>
+          c.categoria === 'surtidor' ||
+          (!c.categoria && (
+            (c.tipo_consumidor_nombre || '').toLowerCase().includes('surtidor') ||
+            surtidorTipoIds.has(c.tipo_consumidor_id)
+          ))
+        )
+        .map(c => c.id)
+    );
+  }, [consumidores, tiposConsumidor]);
 
   const obtenerCapacidadConsumidor = (consumidor) => {
     const capacidadTanque = Number(consumidor?.datos_tanque?.capacidad_litros);
@@ -107,7 +126,8 @@ export default function Dashboard() {
       const combustibleRef = tipoCombustible.find(c => c.nombre === nombreCombustible) || null;
       const combustibleIdRef = combustibleRef?.id;
       const comprasHistoricas = movimientos.filter(m => m.tipo === 'COMPRA' && m.combustible_nombre === nombreCombustible);
-      const despachosHistoricos = movimientos.filter(m => m.tipo === 'DESPACHO' && m.combustible_nombre === nombreCombustible);
+      // despachosHistoricos excluye transferencias a surtidores (no son consumo final)
+      const despachosHistoricos = movimientos.filter(m => m.tipo === 'DESPACHO' && m.combustible_nombre === nombreCombustible && !consumidoresSurtidorIds.has(m.consumidor_id));
       const comprasPeriodo = movimientosFiltrados.filter(m => m.tipo === 'COMPRA' && m.combustible_nombre === nombreCombustible);
       const despachosPeriodo = movimientosFiltrados.filter(m => m.tipo === 'DESPACHO' && m.combustible_nombre === nombreCombustible);
       const comprasReservaHistoricas = comprasHistoricas.filter(m => consumidoresReservaIds.has(m.consumidor_id));
@@ -135,10 +155,12 @@ export default function Dashboard() {
 
       const litrosCompras = comprasPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
       const montoCompras = comprasPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
-      const litrosConsumo = despachosPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
-      const montoConsumo = despachosPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
+      // Excluir despachos a surtidores: son transferencias internas, no consumo final
+      const despachosPeriodoConsumo = despachosPeriodo.filter(m => !consumidoresSurtidorIds.has(m.consumidor_id));
+      const litrosConsumo = despachosPeriodoConsumo.reduce((s, m) => s + (m.litros || 0), 0);
+      const montoConsumo = despachosPeriodoConsumo.reduce((s, m) => s + (m.monto || 0), 0);
       const comprasOpsMes = comprasPeriodo.length;
-      const despachosOpsCombMes = despachosPeriodo.length;
+      const despachosOpsCombMes = despachosPeriodoConsumo.length;
       const recargasOpsMes = comprasReservaPeriodo.length;
       const recargasOpsTotal = comprasReservaHistoricas.length;
       const litrosComprasReservaMes = comprasReservaPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
@@ -162,8 +184,11 @@ export default function Dashboard() {
         .reduce((s, v) => s + (Number(v) || 0), 0);
       // Stock físico estimado: calculado por tanque (igual a ConsumidoresPorTipo.stockActual)
       // para evitar que despachos con combustible_nombre incorrecto/nulo inflen el stock.
+      // Incluye DEPOSITO como inflow para ISO TANQUEs (que reciben combustible vía DEPOSITO, no COMPRA)
+      const depositosReservaHistoricos = movimientos.filter(m => m.tipo === 'DEPOSITO' && m.combustible_nombre === nombreCombustible && consumidoresReservaIds.has(m.consumidor_id));
       const reservaTankIdsParaCombustible = new Set([
         ...comprasReservaHistoricas.map(m => m.consumidor_id).filter(Boolean),
+        ...depositosReservaHistoricos.map(m => m.consumidor_id).filter(Boolean),
         ...consumidores
           .filter(c => consumidoresReservaIds.has(c.id) && obtenerLitrosInicialesConsumidor(c, combustibleIdRef, nombreCombustible) > 0)
           .map(c => c.id),
@@ -172,7 +197,7 @@ export default function Dashboard() {
         [...reservaTankIdsParaCombustible].reduce((total, tankId) => {
           const tank = consumidores.find(c => c.id === tankId);
           const ini      = obtenerLitrosInicialesConsumidor(tank, combustibleIdRef, nombreCombustible);
-          const entradas = comprasReservaHistoricas.filter(m => m.consumidor_id === tankId).reduce((s, m) => s + (m.litros || 0), 0);
+          const entradas = movimientos.filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO') && m.consumidor_id === tankId && m.combustible_nombre === nombreCombustible).reduce((s, m) => s + (m.litros || 0), 0);
           const salidas  = movimientos.filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === tankId).reduce((s, m) => s + (m.litros || 0), 0);
           return total + ini + entradas - salidas;
         }, 0)
@@ -208,6 +233,8 @@ export default function Dashboard() {
 
       const detalleConsumoMap = {};
       despachosPeriodo.forEach(m => {
+        // Los surtidores externos no son consumidores finales — se muestran en su propia sección
+        if (consumidoresSurtidorIds.has(m.consumidor_id)) return;
         const key = m.consumidor_id || m.consumidor_nombre || 'Sin identificar';
         if (!detalleConsumoMap[key]) detalleConsumoMap[key] = {
           nombre: m.consumidor_nombre || 'Sin identificar',
@@ -262,11 +289,14 @@ export default function Dashboard() {
         ultimaCargaReservaFecha,
       };
     }).filter(r => r.litrosCompras > 0 || r.litrosConsumo > 0 || r.litrosInicio > 0 || r.litrosEnTanqueEstimado > 0);
-  }, [movimientos, movimientosFiltrados, mesFiltro, tipoCombustible, tarjetasById, consumidoresReservaIds, consumidores]);
+  }, [movimientos, movimientosFiltrados, mesFiltro, tipoCombustible, tarjetasById, consumidoresReservaIds, consumidoresSurtidorIds, consumidores, tiposConsumidor]);
 
   // Saldo en depósitos externos (DEPOSITO - COMPRAs asociadas, histórico acumulado)
+  // Los tanques/ISO TANQUEs NO se muestran aquí: su stock ya aparece en el bloque de consumidores por tipo.
   const saldoDepositos = useMemo(() => {
-    const deposits = movimientos.filter(m => m.tipo === 'DEPOSITO');
+    const deposits = movimientos.filter(m =>
+      m.tipo === 'DEPOSITO' && !consumidoresReservaIds.has(m.consumidor_id)
+    );
     if (deposits.length === 0) return [];
 
     const byConsumidor = {};
@@ -295,7 +325,53 @@ export default function Dashboard() {
         : null;
       return { ...dep, retirados, saldo: retirados != null ? dep.litros - retirados : null };
     });
-  }, [movimientos]);
+  }, [movimientos, consumidoresReservaIds]);
+
+  // Saldo de surtidores externos (depósitos tipo Cupet donde los vehículos cargan con tarjeta)
+  const saldoSurtidores = useMemo(() => {
+    const surtidores = consumidores.filter(c => consumidoresSurtidorIds.has(c.id) && c.activo !== false);
+    if (surtidores.length === 0) return [];
+    return surtidores.map(surt => {
+      const tarjetaVinculadaId = surt.datos_tanque?.tarjeta_vinculada_id;
+      const tarjeta = tarjetas.find(t => t.id === tarjetaVinculadaId);
+      const ini = Number(surt.litros_iniciales) || 0;
+      // Entradas: fuel que llegó al surtidor (COMPRA directa, DESPACHO desde isotanque, DEPOSITO externo)
+      const entradasCompra = movimientos
+        .filter(m => m.tipo === 'COMPRA' && m.consumidor_id === surt.id)
+        .reduce((s, m) => s + (m.litros || 0), 0);
+      const entradasDespacho = movimientos
+        .filter(m => m.tipo === 'DESPACHO' && m.consumidor_id === surt.id)
+        .reduce((s, m) => s + (m.litros || 0), 0);
+      const entradasDeposito = movimientos
+        .filter(m => m.tipo === 'DEPOSITO' && m.consumidor_id === surt.id)
+        .reduce((s, m) => s + (m.litros || 0), 0);
+      // Salidas: vehículos retiran con DESPACHO manual o COMPRA con la tarjeta vinculada
+      const salidasDespacho = movimientos
+        .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === surt.id)
+        .reduce((s, m) => s + (m.litros || 0), 0);
+      const salidasCompra = tarjetaVinculadaId
+        ? movimientos
+            .filter(m => m.tipo === 'COMPRA' && m.tarjeta_id === tarjetaVinculadaId)
+            .reduce((s, m) => s + (m.litros || 0), 0)
+        : null;
+      const totalEntradas = ini + entradasCompra + entradasDespacho + entradasDeposito;
+      const stockActual = Math.max(0, totalEntradas - salidasDespacho - (salidasCompra || 0));
+      return {
+        id: surt.id,
+        nombre: surt.nombre,
+        combustibleNombre: surt.combustible_nombre,
+        tarjetaAlias: tarjeta?.alias || tarjeta?.id_tarjeta || null,
+        tarjetaVinculadaId,
+        ini,
+        totalEntradas,
+        entradasCompra,
+        entradasDespacho,
+        salidasDespacho,
+        salidasCompra,
+        stockActual,
+      };
+    });
+  }, [consumidores, consumidoresSurtidorIds, movimientos, tarjetas]);
 
   // Resumen del mes
   const comprasMes = movimientosFiltrados.filter(m => m.tipo === 'COMPRA');
@@ -307,25 +383,38 @@ export default function Dashboard() {
   // Consumidores activos
   const consumidoresActivos = consumidores.filter(c => c.activo);
 
-  // Alertas de consumo crítico — computed from odo sequence (not stale DB consumo_real field)
-  const alertasConsumo = useMemo(() => consumidoresActivos.filter(c => {
-    const consumoRef = c.datos_vehiculo?.indice_consumo_real || c.datos_vehiculo?.indice_consumo_fabricante;
-    if (!consumoRef) return false;
-    const movsConOdo = movimientos
-      .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DESPACHO') && m.consumidor_id === c.id && m.odometro != null
-        && (mesFiltro === 'ALL' || m.fecha?.startsWith(mesFiltro)))
-      .sort((a, b) => (a.odometro || 0) - (b.odometro || 0));
-    if (movsConOdo.length < 2) return false;
-    const last = movsConOdo[movsConOdo.length - 1];
-    const prev = movsConOdo[movsConOdo.length - 2];
-    const km  = (last.odometro || 0) - (prev.odometro || 0);
-    const lit = last.litros || 0;
-    if (km <= 0 || lit <= 0) return false;
-    const consumoReal = km / lit;
-    const umbralCritico = c.datos_vehiculo?.umbral_critico_pct ?? 30;
-    const desviacion = ((consumoRef - consumoReal) / consumoRef) * 100;
-    return desviacion >= umbralCritico;
-  }), [consumidoresActivos, movimientos, mesFiltro]);
+  // Alertas de nivel bajo de combustible — basado en nivel estimado del tanque
+  const alertasNivel = useMemo(() => {
+    return consumidoresActivos
+      .filter(c => {
+        if (c.categoria) return c.categoria === 'consumidor';
+        const n = (c.tipo_consumidor_nombre || '').toLowerCase();
+        return !n.includes('tanque') && !n.includes('reserva') && !n.includes('surtidor');
+      })
+      .map(c => {
+        const capacidad = c.datos_vehiculo?.capacidad_tanque;
+        if (!capacidad) return null;
+        const fills = movimientos
+          .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DESPACHO') && m.consumidor_id === c.id)
+          .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+        if (fills.length === 0) return null;
+        const last = fills[0];
+        let nivel = (last.nivel_tanque || 0) + (last.litros || 0);
+        const consumoRef = c.datos_vehiculo?.indice_consumo_real || c.datos_vehiculo?.indice_consumo_fabricante;
+        if (last.odometro != null && consumoRef) {
+          const post = movimientos
+            .filter(m => m.consumidor_id === c.id && m.odometro != null && m.odometro > last.odometro)
+            .sort((a, b) => b.odometro - a.odometro);
+          if (post.length > 0) nivel = Math.max(0, nivel - (post[0].odometro - last.odometro) / consumoRef);
+        }
+        const pct = (nivel / capacidad) * 100;
+        return pct <= 20 ? { ...c, _nivelEstimado: nivel, _pct: pct, _capacidad: capacidad } : null;
+      })
+      .filter(Boolean);
+  }, [consumidoresActivos, movimientos]);
+
+  // alias para compatibilidad con referencias en modalDataPorCard
+  const alertasConsumo = alertasNivel;
 
 
   const movimientosFiltradosOrdenados = useMemo(
@@ -431,11 +520,11 @@ export default function Dashboard() {
           </Card>
           <Card className={`border-0 shadow-sm cursor-pointer transition hover:ring-1 hover:ring-sky-200 ${alertasConsumo.length > 0 ? 'ring-1 ring-red-200 bg-red-50/20' : ''}`} onClick={() => setStatModal({ open: true, tipo: 'alertas' })}>
             <CardContent className="p-4">
-              <p className="text-[11px] text-slate-400 uppercase tracking-wide">Consumo crítico</p>
-              <p className={`text-lg font-bold mt-1 leading-tight ${alertasConsumo.length > 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                {alertasConsumo.length}
+              <p className="text-[11px] text-slate-400 uppercase tracking-wide">Nivel bajo</p>
+              <p className={`text-lg font-bold mt-1 leading-tight ${alertasNivel.length > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                {alertasNivel.length}
               </p>
-              <p className="text-xs text-slate-400 mt-1">unidades con alerta</p>
+              <p className="text-xs text-slate-400 mt-1">tanques por recargar</p>
             </CardContent>
           </Card>
         </div>
@@ -668,6 +757,64 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* Surtidores externos — Cupet y similares donde los vehículos cargan con tarjeta */}
+      {saldoSurtidores.length > 0 && (
+        <div>
+          <SectionTitle icon={Warehouse} title="Surtidores / Depósitos Externos" iconColor="text-orange-500" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {saldoSurtidores.map(surt => (
+              <Card key={surt.id} className="border-0 shadow-sm ring-1 ring-orange-100">
+                <CardContent className="p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+                      <Warehouse className="w-4 h-4 text-orange-500 shrink-0" />
+                      {surt.nombre}
+                    </p>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {surt.combustibleNombre && (
+                        <Badge variant="outline" className="text-[10px] px-1.5">{surt.combustibleNombre}</Badge>
+                      )}
+                      {surt.tarjetaAlias && (
+                        <Badge variant="outline" className="text-[10px] shrink-0 border-orange-200 text-orange-700">🪙 {surt.tarjetaAlias}</Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-xs space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Recibido (desde isotanque)</span>
+                      <span className="font-medium text-slate-700">{surt.entradasDespacho.toFixed(1)} L</span>
+                    </div>
+                    {surt.salidasDespacho > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Despachado (manual)</span>
+                        <span className="font-medium text-slate-700">- {surt.salidasDespacho.toFixed(1)} L</span>
+                      </div>
+                    )}
+                    {surt.salidasCompra != null && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Retirado por vehículos (tarjeta)</span>
+                        <span className="font-medium text-slate-700">- {surt.salidasCompra.toFixed(1)} L</span>
+                      </div>
+                    )}
+                    {surt.salidasCompra == null && (
+                      <p className="text-[10px] text-orange-400 pt-0.5">
+                        Sin tarjeta vinculada — edita este surtidor en Consumidores para vincular una tarjeta y calcular el saldo automáticamente.
+                      </p>
+                    )}
+                    <div className="flex justify-between border-t border-slate-100 pt-1 mt-0.5">
+                      <span className="font-semibold text-orange-700">Stock disponible</span>
+                      <span className={`font-bold ${surt.stockActual <= 0 ? 'text-red-600' : 'text-orange-700'}`}>
+                        {surt.stockActual.toFixed(1)} L
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Saldo en depósitos externos */}
       {saldoDepositos.length > 0 && (
         <div>
@@ -817,15 +964,17 @@ export default function Dashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Alertas de consumo crítico — solo operacional */}
-      {!isEconomico && alertasConsumo.length > 0 && (
+      {/* Alertas de nivel bajo — solo operacional */}
+      {!isEconomico && alertasNivel.length > 0 && (
         <div className="space-y-2">
-          {alertasConsumo.map(c => (
+          {alertasNivel.map(c => (
             <div key={c.id} className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
               <span className="font-semibold text-red-700">{c.nombre}</span>
               {c.codigo_interno && <span className="text-red-500 font-mono text-xs">{c.codigo_interno}</span>}
-              <span className="text-red-600 text-xs">— consumo crítico en la última carga</span>
+              <span className="text-red-600 text-xs">
+                — nivel bajo: {c._nivelEstimado.toFixed(0)} L ({c._pct.toFixed(0)}% de {c._capacidad.toFixed(0)} L)
+              </span>
             </div>
           ))}
         </div>
@@ -836,7 +985,7 @@ export default function Dashboard() {
         <div>
           <SectionTitle icon={Users} title="Estado de consumidores" iconColor="text-slate-500" />
           <ConsumidoresPorTipo
-            consumidores={consumidores}
+            consumidores={consumidores.filter(c => !consumidoresSurtidorIds.has(c.id))}
             tiposConsumidor={tiposConsumidor}
             movimientos={movimientos}
             mesFiltro={mesFiltro}

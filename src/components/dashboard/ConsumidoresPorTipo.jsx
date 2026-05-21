@@ -264,8 +264,8 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
   const stockActual = React.useMemo(() => {
     if (!esTanqueConsumidor) return null;
     const ini    = Number(consumidor.litros_iniciales) || 0;
-    const entras = movimientos.filter(m => m.tipo === 'COMPRA'   && m.consumidor_id        === consumidor.id).reduce((s, m) => s + (m.litros || 0), 0);
-    const sales  = movimientos.filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === consumidor.id).reduce((s, m) => s + (m.litros || 0), 0);
+    const entras = movimientos.filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO') && m.consumidor_id        === consumidor.id).reduce((s, m) => s + (m.litros || 0), 0);
+    const sales  = movimientos.filter(m =>  m.tipo === 'DESPACHO'                         && m.consumidor_origen_id === consumidor.id).reduce((s, m) => s + (m.litros || 0), 0);
     return Math.max(0, ini + entras - sales);
   }, [esTanqueConsumidor, movimientos, consumidor.id, consumidor.litros_iniciales]);
 

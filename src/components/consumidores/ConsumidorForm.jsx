@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 const esVehiculo = nombre => nombre?.toLowerCase().includes('veh');
 const esTanque = nombre => nombre?.toLowerCase().includes('tanque') || nombre?.toLowerCase().includes('reserva');
 const esEquipo = nombre => nombre?.toLowerCase().includes('equipo') || nombre?.toLowerCase().includes('planta') || nombre?.toLowerCase().includes('grupo');
+const esSurtidor = nombre => nombre?.toLowerCase().includes('surtidor');
 
 function Field({ label, children, required }) {
   return (
@@ -18,12 +19,13 @@ function Field({ label, children, required }) {
   );
 }
 
-export default function ConsumidorForm({ form, setForm, tipos, combustibles, editingTipo, conductores = [] }) {
+export default function ConsumidorForm({ form, setForm, tipos, combustibles, editingTipo, conductores = [], tarjetas = [] }) {
   const tipo = tipos.find(t => t.id === form.tipo_consumidor_id);
   const nombreTipo = tipo?.nombre || editingTipo || '';
   const isVeh = esVehiculo(nombreTipo);
   const isTanque = esTanque(nombreTipo);
   const isEquipo = esEquipo(nombreTipo);
+  const isSurtidor = esSurtidor(nombreTipo);
 
   const set = (field, val) => setForm(f => ({ ...f, [field]: val }));
   const setVeh = (field, val) => setForm(f => ({ ...f, datos_vehiculo: { ...(f.datos_vehiculo || {}), [field]: val } }));
@@ -197,6 +199,18 @@ export default function ConsumidorForm({ form, setForm, tipos, combustibles, edi
               </SelectContent>
             </Select>
           </Field>
+          <label className="flex items-center justify-between py-1 cursor-pointer select-none">
+            <div>
+              <p className="text-xs font-medium text-slate-600">Sin control de odómetro</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">No se pedirá km ni nivel de tanque al registrar cargas</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={!!dv.sin_odometro}
+              onChange={e => setVeh('sin_odometro', e.target.checked)}
+              className="w-4 h-4 accent-sky-600"
+            />
+          </label>
         </div>
       )}
 
@@ -215,6 +229,41 @@ export default function ConsumidorForm({ form, setForm, tipos, combustibles, edi
           <Field label="Ubicación">
             <Input value={dt.ubicacion || ''} onChange={e => setTanq('ubicacion', e.target.value)} />
           </Field>
+        </div>
+      )}
+
+      {/* Campos específicos surtidor externo */}
+      {isSurtidor && (
+        <div className="border border-orange-100 rounded-xl p-3 space-y-3 bg-orange-50/30">
+          <p className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Datos del Surtidor Externo</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Capacidad (L)">
+              <Input type="number" value={dt.capacidad_litros || ''} onChange={e => setTanq('capacidad_litros', parseFloat(e.target.value) || '')} placeholder="Ej: 5000" />
+            </Field>
+            <Field label="Stock mínimo (L)">
+              <Input type="number" value={dt.stock_minimo || ''} onChange={e => setTanq('stock_minimo', parseFloat(e.target.value) || '')} placeholder="Ej: 200" />
+            </Field>
+          </div>
+          <Field label="Ubicación / Dirección">
+            <Input value={dt.ubicacion || ''} onChange={e => setTanq('ubicacion', e.target.value)} placeholder="Ej: Calle 23 esq. L, Vedado" />
+          </Field>
+          <Field label="Tarjeta vinculada (retiros de vehículos)">
+            <Select
+              value={dt.tarjeta_vinculada_id || '_none'}
+              onValueChange={v => setTanq('tarjeta_vinculada_id', v === '_none' ? '' : v)}
+            >
+              <SelectTrigger><SelectValue placeholder="Sin tarjeta vinculada" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">Sin tarjeta</SelectItem>
+                {tarjetas.filter(t => t.activa !== false).map(t => (
+                  <SelectItem key={t.id} value={t.id}>{t.alias || t.id_tarjeta}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <p className="text-[11px] text-orange-500">
+            La tarjeta vinculada permite al sistema calcular cuánto combustible han retirado los vehículos de este surtidor (COMPRAs con esa tarjeta).
+          </p>
         </div>
       )}
 

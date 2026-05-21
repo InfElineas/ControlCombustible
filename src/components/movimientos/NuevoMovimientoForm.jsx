@@ -7,10 +7,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { ArrowDownCircle, ArrowLeftRight, Warehouse, Save, Loader2, Gauge } from 'lucide-react';
+import { ArrowDownCircle, ArrowLeftRight, Warehouse, Save, Loader2, Gauge, Satellite } from 'lucide-react';
 import { obtenerPrecioVigente, formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import { calcularAuditoriaCompra, obtenerCapacidadTanque, AUDITORIA_ESTADO } from './auditoriaCombustible';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
+import { gpsApi, metersToKm } from '@/api/gpsClient';
 
 export default function NuevoMovimientoForm({ onSuccess }) {
   const queryClient = useQueryClient();
@@ -22,9 +23,6 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   const { data: combustibles = [] } = useQuery({ queryKey: ['combustibles'], queryFn: () => base44.entities.TipoCombustible.list() });
   const { data: precios = [] } = useQuery({ queryKey: ['precios'], queryFn: () => base44.entities.PrecioCombustible.list() });
   const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 500) });
-
-  // Keep legacy vehiculos for backward compat in DESPACHO origen
-  const { data: vehiculos = [] } = useQuery({ queryKey: ['vehiculos'], queryFn: () => base44.entities.Vehiculo.list() });
 
   // Tipos de movimiento que el rol actual puede registrar
   const tiposPermitidos = useMemo(() => {
@@ -64,6 +62,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   });
   const [errors, setErrors] = useState({});
   const [filtroTipoConsumidor, setFiltroTipoConsumidor] = useState('all');
+  const [gpsOdoLoading, setGpsOdoLoading] = useState(false);
 
   const tarjetasActivas = tarjetas.filter(t => t.activa);
   const consumidoresActivos = consumidores.filter(c => c.activo);
@@ -94,20 +93,22 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     return consumidoresActivos.filter(c => c.tipo_consumidor_id === filtroTipoConsumidor);
   }, [consumidoresActivos, filtroTipoConsumidor]);
 
-  // Para COMPRA: excluir tanques/reservas/almacén de uso (solo vehículos/equipos)
-  const esAlmacenamientoConsumidor = (c) => {
-    const n = (c.tipo_consumidor_nombre || '').toLowerCase();
-    return n.includes('tanque') || n.includes('reserva') || n.includes('almac');
-  };
-  // Para DESPACHO destino: solo excluir tanques/reservas (almacén de uso sí puede recibir despacho)
-  const esTanqueOReserva = (c) => {
+  // Helpers de categoría con fallback por keyword para datos pre-migración
+  const esDeposito = (c) => {
+    if (c.categoria) return c.categoria === 'deposito';
     const n = (c.tipo_consumidor_nombre || '').toLowerCase();
     return n.includes('tanque') || n.includes('reserva');
   };
-  // Para COMPRA se permiten todos los consumidores incluyendo tanques/reservas
+  const esSurtidor = (c) => {
+    if (c.categoria) return c.categoria === 'surtidor';
+    return (c.tipo_consumidor_nombre || '').toLowerCase().includes('surtidor');
+  };
+
+  // COMPRA: todos los consumidores activos (incluyendo depósitos que también se abastecen)
   const consumidoresParaCompra = consumidoresFiltradosPorTipo;
+  // DESPACHO destino: consumidores reales + surtidores (isotanque → Cupet es un despacho válido)
   const consumidoresParaDespachoDestino = useMemo(() =>
-    consumidoresFiltradosPorTipo.filter(c => !esTanqueOReserva(c)),
+    consumidoresFiltradosPorTipo.filter(c => !esDeposito(c)),
   [consumidoresFiltradosPorTipo]);
 
   const combustiblesPermitidosConsumidor = useMemo(() => {
@@ -129,13 +130,14 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     }
   }, [form.consumidor_id, form.combustible_id, combustiblesPermitidosConsumidor]);
 
-  // Consumidores que pueden ser origen de despacho (tanques y reservas)
-  const consumidoresOrigen = consumidoresActivos.filter(c => {
-    const tipo_nombre = c.tipo_consumidor_nombre?.toLowerCase() || '';
-    return tipo_nombre.includes('tanque') || tipo_nombre.includes('reserva');
-  });
-  // Si no hay tanques configurados, mostrar todos
+  // Origen de DESPACHO: depósitos internos + surtidores externos
+  const consumidoresOrigen = consumidoresActivos.filter(c => esDeposito(c) || esSurtidor(c));
+  // Si no hay configurados aún, mostrar todos (período de transición)
   const origenList = consumidoresOrigen.length > 0 ? consumidoresOrigen : consumidoresActivos;
+
+  // Depósitos y surtidores (ambos pueden recibir combustible de cisterna/proveedor o isotanque)
+  const depositos = consumidoresActivos.filter(c => esDeposito(c));
+  const depositosYSurtidores = consumidoresActivos.filter(c => esDeposito(c) || esSurtidor(c));
 
   const tarjetaSeleccionada = tarjetas.find(t => t.id === form.tarjeta_id);
 
@@ -153,17 +155,19 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   const consumidorSeleccionado = consumidores.find(c => c.id === form.consumidor_id);
   const tipoConsumidor = tiposConsumidor.find(t => t.id === consumidorSeleccionado?.tipo_consumidor_id);
 
-  // Regla de odómetro por tipo de consumidor:
-  // - Priorizar flag del catálogo (requiere_odometro) si existe.
-  // - Fallback por nombre: reserva/tanque/equipo/almacén NO requieren.
+  // Flag por consumidor individual: vehículos sin control de km/odómetro
+  const consumidorSinOdometro = !!consumidorSeleccionado?.datos_vehiculo?.sin_odometro;
+
+  // Regla de odómetro: depósitos y surtidores nunca requieren; equipos usan horas; vehículos sí.
   const consumidorRequiereOdometro = useMemo(() => {
     if (!consumidorSeleccionado) return false;
+    if (consumidorSinOdometro) return false;
+    if (esDeposito(consumidorSeleccionado) || esSurtidor(consumidorSeleccionado)) return false;
     const n = (consumidorSeleccionado.tipo_consumidor_nombre || '').toLowerCase();
-    // Reserva/tanque/almacén siempre se tratan como almacenamiento global: sin odómetro.
-    if (n.includes('reserva') || n.includes('tanque') || n.includes('equipo') || n.includes('almac')) return false;
+    if (n.includes('equipo') || n.includes('almac')) return false;
     if (tipoConsumidor?.requiere_odometro != null) return !!tipoConsumidor.requiere_odometro;
     return true;
-  }, [consumidorSeleccionado, tipoConsumidor]);
+  }, [consumidorSeleccionado, tipoConsumidor, consumidorSinOdometro]);
 
   const requiereOdometro = (tipo === 'COMPRA' || tipo === 'DESPACHO') && consumidorRequiereOdometro;
 
@@ -183,10 +187,13 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     return n.includes('equipo') || n.includes('planta') || n.includes('generador') || n.includes('grupo');
   }, [consumidorSeleccionado]);
 
-  const consumidorEsTanque = useMemo(() => {
-    const n = (consumidorSeleccionado?.tipo_consumidor_nombre || '').toLowerCase();
-    return n.includes('tanque') || n.includes('reserva') || n.includes('almac');
-  }, [consumidorSeleccionado]);
+  const consumidorEsTanque = useMemo(() =>
+    consumidorSeleccionado ? esDeposito(consumidorSeleccionado) : false,
+  [consumidorSeleccionado]);
+
+  const consumidorEsSurtidorDestino = useMemo(() =>
+    consumidorSeleccionado ? esSurtidor(consumidorSeleccionado) : false,
+  [consumidorSeleccionado]);
 
   const ultimasHorasEquipo = useMemo(() => {
     if (!form.consumidor_id || !consumidorEsEquipo) return null;
@@ -254,13 +261,28 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     if (!con) return null;
     const combustibleCompatible = con.combustible_id ? con.combustible_id === combustibleId : true;
     const stockInicial = combustibleCompatible ? (Number(con.litros_iniciales) || 0) : 0;
-    const entradas = movimientos
+    const esSurtidorOrigen = esSurtidor(con);
+    // Entradas por COMPRA directa al origen
+    const entradasCompra = movimientos
       .filter(m => m.tipo === 'COMPRA' && m.consumidor_id === consumidorId && m.combustible_id === combustibleId)
       .reduce((s, m) => s + (m.litros || 0), 0);
+    // Para surtidores: también cuentan los DESPACHO que recibió desde los tanques
+    const entradasDespacho = esSurtidorOrigen
+      ? movimientos
+          .filter(m => m.tipo === 'DESPACHO' && m.consumidor_id === consumidorId && m.combustible_id === combustibleId)
+          .reduce((s, m) => s + (m.litros || 0), 0)
+      : 0;
     const salidas = movimientos
       .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === consumidorId && m.combustible_id === combustibleId)
       .reduce((s, m) => s + (m.litros || 0), 0);
-    return stockInicial + entradas - salidas;
+    // Para surtidores: los vehículos retiran con COMPRA usando la tarjeta vinculada
+    const tarjetaVinculadaId = con.datos_tanque?.tarjeta_vinculada_id;
+    const salidasTarjeta = (esSurtidorOrigen && tarjetaVinculadaId)
+      ? movimientos
+          .filter(m => m.tipo === 'COMPRA' && m.tarjeta_id === tarjetaVinculadaId)
+          .reduce((s, m) => s + (m.litros || 0), 0)
+      : 0;
+    return stockInicial + entradasCompra + entradasDespacho - salidas - salidasTarjeta;
   };
 
   const stockOrigenDespacho = useMemo(() => {
@@ -277,12 +299,13 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     },
     onError: (error) => {
       const msg = (error?.message || '').toLowerCase();
+      console.error('[movimiento:create]', error);
       if (msg.includes('permission') || msg.includes('denied') || msg.includes('policy')) {
         toast.error('Sin permiso para esta operación');
       } else if (msg.includes('duplicate') || msg.includes('unique')) {
         toast.error('El registro ya existe');
       } else {
-        toast.error('Error al registrar. Intente nuevamente.');
+        toast.error(`Error: ${error?.message || error?.details || 'desconocido'}`, { duration: 8000 });
       }
     },
   });
@@ -290,6 +313,29 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   const set = (field, value) => {
     setForm(f => ({ ...f, [field]: value }));
     setErrors(e => ({ ...e, [field]: undefined }));
+  };
+
+  const fetchGpsOdometer = async () => {
+    if (!consumidorSeleccionado?.gps_device_id) return;
+    setGpsOdoLoading(true);
+    try {
+      const positions = await gpsApi.position(consumidorSeleccionado.gps_device_id);
+      if (positions?.length > 0) {
+        const km = metersToKm(positions[0].attributes?.totalDistance ?? 0);
+        if (km > 0) {
+          set('odometro', String(km));
+          toast.success(`Odómetro GPS: ${km.toLocaleString()} km`);
+        } else {
+          toast.warning('El GPS no reporta odómetro para este vehículo');
+        }
+      } else {
+        toast.warning('Sin posición GPS disponible para este vehículo');
+      }
+    } catch (err) {
+      toast.error(`GPS: ${err.message}`);
+    } finally {
+      setGpsOdoLoading(false);
+    }
   };
 
   const validate = () => {
@@ -384,7 +430,14 @@ export default function NuevoMovimientoForm({ onSuccess }) {
         data.tarjeta_id = tarjeta.id;
         data.tarjeta_alias = tarjeta.alias || tarjeta.id_tarjeta;
       }
-      if (form.referencia) data.referencia = form.referencia;
+      if (form.nivel_tanque) data.nivel_tanque = parseFloat(form.nivel_tanque);
+      if (form.consumidor_origen_id) {
+        data.consumidor_origen_id = consumidorOrigen.id;
+        data.consumidor_origen_nombre = consumidorOrigen.nombre;
+        data.referencia = consumidorOrigen.nombre;
+      } else if (form.referencia) {
+        data.referencia = form.referencia;
+      }
     } else if (tipo === 'DESPACHO') {
       data.consumidor_origen_id = consumidorOrigen.id;
       data.consumidor_origen_nombre = consumidorOrigen.nombre;
@@ -521,8 +574,13 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               </div>
             )}
 
-            {/* Nivel en tanque y odómetro solo para vehículos/equipos, no para tanques/reservas */}
-            {!consumidorEsTanque && (
+            <div>
+              <Label className="text-xs text-slate-500">Referencia (opcional)</Label>
+              <Input value={form.referencia} onChange={e => set('referencia', e.target.value)} placeholder="N° factura, remisión, nota…" className="mt-1" />
+            </div>
+
+            {/* Nivel en tanque y odómetro solo para vehículos/equipos con control de km */}
+            {!consumidorEsTanque && !consumidorSinOdometro && (
             <div className="border border-slate-100 rounded-xl p-3 space-y-1.5 bg-slate-50/60">
               <Label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 Nivel en tanque antes de cargar
@@ -541,8 +599,8 @@ export default function NuevoMovimientoForm({ onSuccess }) {
             </div>
             )}
 
-            {/* Horas de uso (equipos/generadores) o Odómetro (vehículos) — oculto para tanques/reservas */}
-            {!consumidorEsTanque && (consumidorEsEquipo ? (
+            {/* Horas de uso (equipos/generadores) o Odómetro (vehículos) — oculto para tanques/reservas y vehículos sin control de km */}
+            {!consumidorEsTanque && !consumidorSinOdometro && (consumidorEsEquipo ? (
               <div className={`border rounded-xl p-3 space-y-2 ${errors.horas_uso ? 'border-red-200 bg-red-50/30' : 'border-amber-100 bg-amber-50/40'}`}>
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
                   <Gauge className="w-3.5 h-3.5" />
@@ -572,15 +630,30 @@ export default function NuevoMovimientoForm({ onSuccess }) {
                     <span className="font-normal text-slate-400 ml-auto">Anterior: {ultimoOdometro.toLocaleString()} km</span>
                   )}
                 </div>
-                <Input
-                  type="number"
-                  min={ultimoOdometro != null ? ultimoOdometro + 1 : 0}
-                  step="1"
-                  value={form.odometro}
-                  onChange={e => set('odometro', e.target.value)}
-                  placeholder="Lectura actual (km)"
-                  className={errors.odometro ? 'border-red-300 focus-visible:ring-red-300' : ''}
-                />
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    min={ultimoOdometro != null ? ultimoOdometro + 1 : 0}
+                    step="1"
+                    value={form.odometro}
+                    onChange={e => set('odometro', e.target.value)}
+                    placeholder="Lectura actual (km)"
+                    className={errors.odometro ? 'border-red-300 focus-visible:ring-red-300' : ''}
+                  />
+                  {consumidorSeleccionado?.gps_device_id != null && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 gap-1 text-xs px-2 border-sky-200 text-sky-600 hover:bg-sky-50"
+                      onClick={fetchGpsOdometer}
+                      disabled={gpsOdoLoading}
+                      title="Leer odómetro desde GPS"
+                    >
+                      {gpsOdoLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Satellite className="w-3.5 h-3.5" />}
+                    </Button>
+                  )}
+                </div>
                 {!requiereOdometro && (
                   <p className="text-[11px] text-slate-400">No obligatorio para el tipo de consumidor seleccionado.</p>
                 )}
@@ -615,24 +688,68 @@ export default function NuevoMovimientoForm({ onSuccess }) {
         {/* DEPOSITO */}
         {tipo === 'DEPOSITO' && (
           <>
+            {/* Origen — cisterna externa o depósito interno como fuente */}
             <div>
-              <Label className="text-xs text-slate-500">Tipo de consumidor</Label>
-              <Select value={filtroTipoConsumidor} onValueChange={setFiltroTipoConsumidor}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Filtrar tipo" /></SelectTrigger>
+              <Label className="text-xs text-slate-500">Origen (cisterna / proveedor)</Label>
+              <Select
+                value={form.consumidor_origen_id || '_externo'}
+                onValueChange={v => {
+                  if (v === '_externo') {
+                    set('consumidor_origen_id', '');
+                  } else {
+                    const c = consumidores.find(x => x.id === v);
+                    set('consumidor_origen_id', v);
+                    set('referencia', c?.nombre || '');
+                  }
+                }}
+              >
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar origen" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  {tiposConsumidor.filter(t => t.activo !== false).map(t => <SelectItem key={t.id} value={t.id}>{t.nombre}</SelectItem>)}
+                  <SelectItem value="_externo">Externo / Proveedor / Referencia libre</SelectItem>
+                  {depositos.map(c => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nombre}{c.codigo_interno ? ` · ${c.codigo_interno}` : ''}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Destino del depósito (Cupet / Refinería)</Label>
+              <Label className="text-xs text-slate-500">
+                {form.consumidor_origen_id ? 'Referencia / Nota (opcional)' : 'N° cisterna / Remisión / Referencia'}
+              </Label>
+              <Input
+                value={form.referencia}
+                onChange={e => set('referencia', e.target.value)}
+                placeholder={form.consumidor_origen_id ? 'Nota adicional…' : 'Ej: Cisterna-045, Remisión 00123…'}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-500">Tarjeta de pago asociada (opcional)</Label>
+              <Select
+                value={form.tarjeta_id || '_none'}
+                onValueChange={v => set('tarjeta_id', v === '_none' ? '' : v)}
+              >
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Sin tarjeta" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">Sin tarjeta</SelectItem>
+                  {tarjetasActivas.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.alias || t.id_tarjeta} ({t.moneda})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Destino — depósito interno que recibe el combustible */}
+            <div>
+              <Label className="text-xs text-slate-500">Destino (depósito / surtidor) *</Label>
               <Select value={form.consumidor_id} onValueChange={v => set('consumidor_id', v)}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar destino" /></SelectTrigger>
                 <SelectContent>
-                  {consumidoresFiltradosPorTipo.map(c => (
+                  {(depositosYSurtidores.length > 0 ? depositosYSurtidores : consumidoresActivos).map(c => (
                     <SelectItem key={c.id} value={c.id}>
-                      {c.nombre}{c.codigo_interno ? ` · ${c.codigo_interno}` : ''}{c.tipo_consumidor_nombre ? ` (${c.tipo_consumidor_nombre})` : ''}
+                      {c.nombre}{c.codigo_interno ? ` · ${c.codigo_interno}` : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -640,7 +757,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               {errors.consumidor_id && <p className="text-xs text-red-500 mt-1">{errors.consumidor_id}</p>}
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Combustible</Label>
+              <Label className="text-xs text-slate-500">Combustible *</Label>
               <Select value={form.combustible_id} onValueChange={v => set('combustible_id', v)}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar combustible" /></SelectTrigger>
                 <SelectContent>
@@ -650,30 +767,25 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               {errors.combustible_id && <p className="text-xs text-red-500 mt-1">{errors.combustible_id}</p>}
             </div>
             <div>
-              <Label className="text-xs text-slate-500">Litros depositados</Label>
+              <Label className="text-xs text-slate-500">Litros recibidos *</Label>
               <Input type="number" step="0.01" min="0.01" value={form.litros} onChange={e => set('litros', e.target.value)} placeholder="0.00" className="mt-1" />
               {errors.litros && <p className="text-xs text-red-500 mt-1">{errors.litros}</p>}
             </div>
-            <div>
-              <Label className="text-xs text-slate-500">Monto (opcional)</Label>
-              <Input type="number" step="0.01" value={form.monto} onChange={e => set('monto', e.target.value)} placeholder="Costo de adquisición" className="mt-1" />
-              <p className="text-[11px] text-slate-400 mt-1">Costo del iso tanque, factura de compra, etc.</p>
-            </div>
-            <div>
-              <Label className="text-xs text-slate-500">Tarjeta de retiro asociada (opcional)</Label>
-              <Select value={form.tarjeta_id} onValueChange={v => set('tarjeta_id', v)}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar tarjeta Cupet" /></SelectTrigger>
-                <SelectContent>
-                  {tarjetasActivas.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.alias || t.id_tarjeta} ({t.moneda})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-slate-400 mt-1">Tarjeta usada para retirar este combustible. Permite calcular saldo disponible automáticamente.</p>
-            </div>
-            <div>
-              <Label className="text-xs text-slate-500">Referencia (opcional)</Label>
-              <Input value={form.referencia} onChange={e => set('referencia', e.target.value)} placeholder="Nº iso tanque, factura, lote..." className="mt-1" />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-slate-500">Monto (opcional)</Label>
+                <Input type="number" step="0.01" value={form.monto} onChange={e => set('monto', e.target.value)} placeholder="0.00" className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs text-slate-500">Nivel antes (L, opcional)</Label>
+                <Input
+                  type="number" step="0.1" min="0"
+                  value={form.nivel_tanque}
+                  onChange={e => set('nivel_tanque', e.target.value)}
+                  placeholder="Litros previos"
+                  className="mt-1"
+                />
+              </div>
             </div>
           </>
         )}
@@ -701,7 +813,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Filtrar tipo" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
-                  {tiposConsumidor.filter(t => t.activo !== false && !esTanqueOReserva({ tipo_consumidor_nombre: t.nombre })).map(t => <SelectItem key={t.id} value={t.id}>{t.nombre}</SelectItem>)}
+                  {tiposConsumidor.filter(t => t.activo !== false && !esDeposito({ tipo_consumidor_nombre: t.nombre })).map(t => <SelectItem key={t.id} value={t.id}>{t.nombre}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -747,7 +859,8 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               <Input type="number" step="0.01" min="0.01" value={form.litros} onChange={e => set('litros', e.target.value)} placeholder="0.00" className="mt-1" />
               {errors.litros && <p className="text-xs text-red-500 mt-1">{errors.litros}</p>}
             </div>
-            {/* Nivel en tanque al momento del despacho */}
+            {/* Nivel en tanque al momento del despacho — solo para consumidores con control de km */}
+            {!consumidorSinOdometro && !consumidorEsSurtidorDestino && (
             <div className="border border-slate-100 rounded-xl p-3 space-y-1.5 bg-slate-50/60">
               <Label className="text-xs font-semibold text-slate-600 flex items-center gap-1.5">
                 Nivel en tanque antes de recibir
@@ -764,11 +877,12 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               />
               <p className="text-[11px] text-slate-400">Lectura del tanque antes del despacho. Ayuda a verificar consumo real.</p>
             </div>
+            )}
             <div>
               <Label className="text-xs text-slate-500">Referencia (opcional)</Label>
               <Input value={form.referencia} onChange={e => set('referencia', e.target.value)} placeholder="Nota..." className="mt-1" />
             </div>
-            {consumidorEsEquipo ? (
+            {!consumidorSinOdometro && !consumidorEsSurtidorDestino && (consumidorEsEquipo ? (
               <div className={`border rounded-xl p-3 space-y-2 ${errors.horas_uso ? 'border-red-200 bg-red-50/30' : 'border-amber-100 bg-amber-50/40'}`}>
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
                   <Gauge className="w-3.5 h-3.5" />
@@ -797,21 +911,36 @@ export default function NuevoMovimientoForm({ onSuccess }) {
                     <span className="font-normal text-slate-400 ml-auto">Anterior: {ultimoOdometro.toLocaleString()} km</span>
                   )}
                 </div>
-                <Input
-                  type="number"
-                  min={ultimoOdometro != null ? ultimoOdometro + 1 : 0}
-                  step="1"
-                  value={form.odometro}
-                  onChange={e => set('odometro', e.target.value)}
-                  placeholder="Lectura actual (km)"
-                  className={errors.odometro ? 'border-red-300 focus-visible:ring-red-300' : ''}
-                />
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    min={ultimoOdometro != null ? ultimoOdometro + 1 : 0}
+                    step="1"
+                    value={form.odometro}
+                    onChange={e => set('odometro', e.target.value)}
+                    placeholder="Lectura actual (km)"
+                    className={errors.odometro ? 'border-red-300 focus-visible:ring-red-300' : ''}
+                  />
+                  {consumidorSeleccionado?.gps_device_id != null && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 gap-1 text-xs px-2 border-purple-200 text-purple-600 hover:bg-purple-50"
+                      onClick={fetchGpsOdometer}
+                      disabled={gpsOdoLoading}
+                      title="Leer odómetro desde GPS"
+                    >
+                      {gpsOdoLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Satellite className="w-3.5 h-3.5" />}
+                    </Button>
+                  )}
+                </div>
                 {!requiereOdometro && (
                   <p className="text-[11px] text-slate-400">No obligatorio para reserva/tanque/equipo.</p>
                 )}
                 {errors.odometro && <p className="text-xs text-red-500">{errors.odometro}</p>}
               </div>
-            )}
+            ))}
           </>
         )}
       </div>
