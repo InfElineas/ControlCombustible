@@ -109,18 +109,22 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
     throwOnError: false,
   });
 
-  const fetchTrack = async (deviceId) => {
-    setTracks(prev => ({ ...prev, [deviceId]: { loading: true, points: prev[deviceId]?.points ?? [] } }));
+  const hoy = new Date().toISOString().slice(0, 10);
+  const [trackDates, setTrackDates] = useState({});
+
+  const fetchTrack = async (deviceId, fecha) => {
+    const dateStr = fecha ?? hoy;
+    setTracks(prev => ({ ...prev, [deviceId]: { loading: true, points: prev[deviceId]?.points ?? [], fecha: dateStr } }));
     try {
-      const from = new Date(); from.setHours(0, 0, 0, 0);
-      const to   = new Date(); to.setHours(23, 59, 59, 999);
+      const from = new Date(dateStr + 'T00:00:00');
+      const to   = new Date(dateStr + 'T23:59:59');
       const route = await gpsApi.route(deviceId, from, to);
       const points = (route ?? [])
         .filter(p => p.latitude != null && p.longitude != null)
         .map(p => [p.latitude, p.longitude]);
-      setTracks(prev => ({ ...prev, [deviceId]: { loading: false, points } }));
+      setTracks(prev => ({ ...prev, [deviceId]: { loading: false, points, fecha: dateStr } }));
     } catch {
-      setTracks(prev => ({ ...prev, [deviceId]: { loading: false, points: [] } }));
+      setTracks(prev => ({ ...prev, [deviceId]: { loading: false, points: [], fecha: dateStr } }));
     }
   };
 
@@ -128,11 +132,11 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
     const next = { ...prev }; delete next[deviceId]; return next;
   });
 
-  const saveTrack = async (deviceId, consumidor, trackPoints) => {
+  const saveTrack = async (deviceId, consumidor, trackPoints, fecha) => {
     if (!consumidor) return;
     setSavingTrack(prev => ({ ...prev, [deviceId]: true }));
     try {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = fecha ?? hoy;
       const from  = new Date(today + 'T00:00:00');
       const to    = new Date(today + 'T23:59:59');
 
@@ -313,15 +317,15 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
             );
           })}
 
-          {/* Trayectorias del día */}
+          {/* Trayectorias — naranja=hoy, morado=histórico */}
           {Object.entries(tracks).map(([deviceId, track]) =>
             track.points.length > 1 && (
               <Polyline
                 key={`track-${deviceId}`}
                 positions={track.points}
-                color="#f97316"
+                color={track.fecha === hoy ? '#f97316' : '#8b5cf6'}
                 weight={3}
-                opacity={0.75}
+                opacity={0.8}
                 dashArray="6 4"
               />
             )
@@ -367,27 +371,55 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
                     <p style={{ color: '#94a3b8', marginTop: 4, fontFamily: 'monospace' }}>
                       {pos.latitude.toFixed(5)}, {pos.longitude.toFixed(5)}
                     </p>
-                    <button
-                      onClick={() => tracks[pos.deviceId] ? clearTrack(pos.deviceId) : fetchTrack(pos.deviceId)}
-                      style={{
-                        marginTop: 8, width: '100%', padding: '5px 8px',
-                        background: tracks[pos.deviceId] ? '#fff7ed' : '#f0f9ff',
-                        border: `1px solid ${tracks[pos.deviceId] ? '#fb923c' : '#7dd3fc'}`,
-                        borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600,
-                        color: tracks[pos.deviceId] ? '#c2410c' : '#0369a1',
-                      }}
-                    >
-                      {tracks[pos.deviceId]?.loading
-                        ? 'Cargando recorrido…'
-                        : tracks[pos.deviceId]
-                          ? 'Ocultar recorrido'
-                          : 'Ver recorrido de hoy'}
-                    </button>
 
-                    {/* Botón guardar — solo visible cuando el recorrido está cargado y tiene puntos */}
+                    {/* Selector de fecha */}
+                    <div style={{ marginTop: 8 }}>
+                      <input
+                        type="date"
+                        value={trackDates[pos.deviceId] ?? hoy}
+                        max={hoy}
+                        onChange={e => {
+                          setTrackDates(prev => ({ ...prev, [pos.deviceId]: e.target.value }));
+                          if (tracks[pos.deviceId]) clearTrack(pos.deviceId);
+                        }}
+                        style={{
+                          width: '100%', fontSize: 11, padding: '4px 6px',
+                          border: '1px solid #cbd5e1', borderRadius: 4,
+                          color: '#1e293b', background: 'white',
+                        }}
+                      />
+                    </div>
+
+                    {/* Botón ver / ocultar recorrido */}
+                    {(() => {
+                      const fechaSel  = trackDates[pos.deviceId] ?? hoy;
+                      const track     = tracks[pos.deviceId];
+                      const esHoy     = fechaSel === hoy;
+                      const label     = esHoy ? 'de hoy' : fechaSel;
+                      return (
+                        <button
+                          onClick={() => track ? clearTrack(pos.deviceId) : fetchTrack(pos.deviceId, fechaSel)}
+                          style={{
+                            marginTop: 4, width: '100%', padding: '5px 8px',
+                            background: track ? '#fff7ed' : '#f0f9ff',
+                            border: `1px solid ${track ? '#fb923c' : '#7dd3fc'}`,
+                            borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 600,
+                            color: track ? '#c2410c' : '#0369a1',
+                          }}
+                        >
+                          {track?.loading
+                            ? 'Cargando recorrido…'
+                            : track
+                              ? `Ocultar recorrido (${track.fecha === hoy ? 'hoy' : track.fecha})`
+                              : `Ver recorrido ${label}`}
+                        </button>
+                      );
+                    })()}
+
+                    {/* Botón guardar — visible cuando el recorrido está cargado */}
                     {tracks[pos.deviceId] && !tracks[pos.deviceId].loading && tracks[pos.deviceId].points.length > 1 && (
                       <button
-                        onClick={() => saveTrack(pos.deviceId, consumidor, tracks[pos.deviceId].points)}
+                        onClick={() => saveTrack(pos.deviceId, consumidor, tracks[pos.deviceId].points, tracks[pos.deviceId].fecha)}
                         disabled={savingTrack[pos.deviceId]}
                         style={{
                           marginTop: 4, width: '100%', padding: '5px 8px',
@@ -397,7 +429,9 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
                           fontSize: 11, fontWeight: 600, color: '#15803d',
                         }}
                       >
-                        {savingTrack[pos.deviceId] ? 'Guardando…' : '💾 Guardar recorrido de hoy'}
+                        {savingTrack[pos.deviceId]
+                          ? 'Guardando…'
+                          : `💾 Guardar recorrido${tracks[pos.deviceId].fecha === hoy ? ' de hoy' : ` del ${tracks[pos.deviceId].fecha}`}`}
                       </button>
                     )}
                   </div>
@@ -441,10 +475,16 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
             {updatedAt && <span className="text-slate-400">({updatedAt})</span>}
           </span>
         )}
-        {Object.keys(tracks).length > 0 && (
+        {Object.values(tracks).some(t => t.points?.length > 1 && t.fecha === hoy) && (
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-5 border-t-2 border-dashed border-orange-400"></span>
-            Recorrido del día
+            Recorrido de hoy
+          </span>
+        )}
+        {Object.values(tracks).some(t => t.points?.length > 1 && t.fecha !== hoy) && (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-5 border-t-2 border-dashed border-violet-500"></span>
+            Recorrido histórico
           </span>
         )}
         {rutasSinCoords.length > 0 && (
