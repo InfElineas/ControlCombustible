@@ -181,12 +181,19 @@ function ResumenPrecios() {
   const today = new Date().toISOString().slice(0, 10);
 
   const preciosPorComb = useMemo(() => {
-    const map = {};
-    combustibles.forEach(c => { map[c.id] = { nombre: c.nombre, activa: c.activa, vigente: null }; });
+    const map      = {};
+    const byNombre = {};
+    combustibles.forEach(c => {
+      map[c.id] = { nombre: c.nombre, activa: c.activa, vigente: null };
+      byNombre[c.nombre?.toLowerCase().trim()] = c.id;
+    });
     precios.forEach(p => {
-      if (!map[p.combustible_id]) return;
+      const cid = (p.combustible_id && map[p.combustible_id])
+        ? p.combustible_id
+        : byNombre[p.combustible_nombre?.toLowerCase().trim()];
+      if (!cid || !map[cid]) return;
       const esVigente = p.fecha_desde <= today && (!p.fecha_hasta || p.fecha_hasta >= today);
-      if (esVigente && !map[p.combustible_id].vigente) map[p.combustible_id].vigente = p;
+      if (esVigente && !map[cid].vigente) map[cid].vigente = p;
     });
     return Object.values(map).filter(g => g.activa !== false).sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [combustibles, precios, today]);

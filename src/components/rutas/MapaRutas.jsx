@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { base44 } from '@/api/base44Client';
 import { supabase } from '@/api/supabaseClient';
 import { gpsApi, metersToKm } from '@/api/gpsClient';
+import { getRouteGeometry } from '@/api/routingClient';
 import BackfillGpsDialog from '@/components/rutas/BackfillGpsDialog';
 
 // Fix Leaflet default icons when bundled with Vite
@@ -57,11 +58,12 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
   const [tracks, setTracks]       = useState({});
   const [savingTrack, setSavingTrack] = useState({});
 
-  // Consumidores — para mapear deviceId → nombre del vehículo
+  // Consumidores — para mapear deviceId → nombre del vehículo (refresca cada 5 min)
   const { data: consumidores = [] } = useQuery({
     queryKey: ['consumidores'],
     queryFn: () => base44.entities.Consumidor.list(),
-    staleTime: 60_000,
+    staleTime:       4 * 60_000,
+    refetchInterval: 5 * 60_000,
   });
 
   // Waypoints: ruta_marcador + marcadores (para polilíneas multi-punto)
@@ -86,14 +88,10 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
     throwOnError: false,
   });
 
-  // IDs de dispositivos GPS vinculados a vehículos del catálogo (para saveTrack)
-  const linkedDeviceIds = consumidores
-    .filter(c => c.gps_device_id != null)
-    .map(c => Number(c.gps_device_id));
-
-  // Todos los dispositivos visibles en el mapa (vinculados o no)
+  // Solo dispositivos vinculados a un vehículo del catálogo
   const allDeviceIds = livePositions
-    .filter(p => p.latitude != null && p.longitude != null)
+    .filter(p => p.latitude != null && p.longitude != null &&
+      consumidores.some(c => Number(c.gps_device_id) === Number(p.deviceId)))
     .map(p => Number(p.deviceId));
 
   // Resumen del día para TODOS los dispositivos visibles (km recorridos hoy, refresca cada 5 min)
@@ -205,21 +203,84 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
     r => r.lat_inicio == null || r.lng_inicio == null || r.lat_fin == null || r.lng_fin == null
   );
 
-  // Posiciones válidas con lat/lng
-  const posicionesValidas = livePositions.filter(
-    p => p.latitude != null && p.longitude != null
+  // Solo posiciones de dispositivos vinculados a un vehículo del catálogo
+  const posicionesValidas = livePositions.filter(p =>
+    p.latitude != null && p.longitude != null &&
+    consumidores.some(c => Number(c.gps_device_id) === Number(p.deviceId))
   );
 
   const [vehiculoFiltro, setVehiculoFiltro] = useState('');
-  const [showBackfill, setShowBackfill] = useState(false);
+  const [rutaFiltro, setRutaFiltro]       = useState('');
+  const [showBackfill, setShowBackfill]   = useState(false);
+  const [routeGeoms, setRouteGeoms]       = useState({});
+  const fetchedRoutes                     = useRef(new Set());
 
-  const posicionesFiltradas = vehiculoFiltro.trim()
-    ? posicionesValidas.filter(pos => {
-        const c = consumidores.find(c => Number(c.gps_device_id) === Number(pos.deviceId));
+  // rutasMostradas debe declararse ANTES del useEffect que lo referencia en el array de deps
+  const rutasMostradas = rutaFiltro
+    ? rutasConCoords.filter(r => r.id === rutaFiltro)
+    : [];
+
+  // Obtener geometría real por carretera cuando se selecciona una ruta
+  useEffect(() => {
+    if (!rutaFiltro || rutasMostradas.length === 0) return;
+    const ruta = rutasMostradas[0];
+    if (fetchedRoutes.current.has(ruta.id)) return;
+
+    const wps = rutaMarcadores
+      .filter(rm => rm.ruta_id === ruta.id)
+      .sort((a, b) => a.orden - b.orden)
+      .map(rm => marcadores.find(m => m.id === rm.marcador_id))
+      .filter(Boolean);
+
+    const waypointObjs = wps.length >= 2
+      ? wps.map(m => ({ lat: Number(m.lat), lng: Number(m.lng) }))
+      : (ruta.lat_inicio != null && ruta.lng_inicio != null &&
+         ruta.lat_fin    != null && ruta.lng_fin    != null)
+        ? [{ lat: ruta.lat_inicio, lng: ruta.lng_inicio },
+           { lat: ruta.lat_fin,    lng: ruta.lng_fin    }]
+        : null;
+
+    if (!waypointObjs) return;
+
+    fetchedRoutes.current.add(ruta.id);
+    setRouteGeoms(prev => ({ ...prev, [ruta.id]: { loading: true } }));
+
+    getRouteGeometry(waypointObjs)
+      .then(result => setRouteGeoms(prev => ({
+        ...prev,
+        [ruta.id]: { loading: false, points: result.points, distKm: result.distanceKm },
+      })))
+      .catch(() => {
+        fetchedRoutes.current.delete(ruta.id);
+        setRouteGeoms(prev => ({
+          ...prev,
+          [ruta.id]: { loading: false, points: null, straight: true },
+        }));
+      });
+  }, [rutaFiltro, rutasMostradas, rutaMarcadores, marcadores]);
+
+  const posicionesFiltradas = (() => {
+    let resultado = posicionesValidas;
+    if (rutaFiltro) {
+      const ruta = rutas.find(r => r.id === rutaFiltro);
+      if (ruta?.consumidor_id) {
+        const vehCon = consumidores.find(c => c.id === ruta.consumidor_id);
+        resultado = vehCon?.gps_device_id
+          ? resultado.filter(p => Number(p.deviceId) === Number(vehCon.gps_device_id))
+          : [];
+      }
+    }
+    if (vehiculoFiltro.trim()) {
+      const q = vehiculoFiltro.toLowerCase();
+      resultado = resultado.filter(pos => {
+        const c     = consumidores.find(c => Number(c.gps_device_id) === Number(pos.deviceId));
         const nombre = c?.nombre ?? `GPS #${pos.deviceId}`;
-        return nombre.toLowerCase().includes(vehiculoFiltro.toLowerCase());
-      })
-    : posicionesValidas;
+        const chapa  = c?.codigo_interno ?? '';
+        return nombre.toLowerCase().includes(q) || chapa.toLowerCase().includes(q);
+      });
+    }
+    return resultado;
+  })();
 
   const updatedAt = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString('es-CU', { hour: '2-digit', minute: '2-digit' })
@@ -227,31 +288,58 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
 
   return (
     <div className="space-y-2">
-      {/* Filtro de vehículo + botón backfill */}
-      <div className="flex items-center gap-2">
-        {posicionesValidas.length > 0 && (
-          <>
-            <div className="relative flex-1 max-w-xs">
-            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input
-              type="text"
-              value={vehiculoFiltro}
-              onChange={e => setVehiculoFiltro(e.target.value)}
-              placeholder="Filtrar vehículo en mapa…"
-              className="w-full pl-8 pr-8 h-8 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-400"
-            />
-            {vehiculoFiltro && (
+      {/* Filtro de ruta + vehículo + botón backfill */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {/* Selector de ruta */}
+        {rutas.some(r => r.activa) && (
+          <div className="flex items-center gap-1">
+            <select
+              value={rutaFiltro}
+              onChange={e => {
+                setRutaFiltro(e.target.value);
+                if (e.target.value) setVehiculoFiltro('');
+              }}
+              className="h-8 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-sky-400 px-2 max-w-[200px]"
+            >
+              <option value="">Ver ruta en mapa…</option>
+              {rutas.filter(r => r.activa).map(r => (
+                <option key={r.id} value={r.id}>{r.nombre}</option>
+              ))}
+            </select>
+            {rutaFiltro && (
               <button
-                onClick={() => setVehiculoFiltro('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-base leading-none"
+                onClick={() => setRutaFiltro('')}
+                className="text-slate-400 hover:text-slate-600 text-base leading-none"
               >×</button>
             )}
           </div>
+        )}
+
+        {/* Filtro de vehículo por nombre o chapa */}
+        {posicionesValidas.length > 0 && (
+          <>
+            <div className="relative flex-1 max-w-xs">
+              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input
+                type="text"
+                value={vehiculoFiltro}
+                onChange={e => setVehiculoFiltro(e.target.value)}
+                placeholder="Filtrar por nombre o chapa…"
+                className="w-full pl-8 pr-8 h-8 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-400"
+              />
+              {vehiculoFiltro && (
+                <button
+                  onClick={() => setVehiculoFiltro('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-base leading-none"
+                >×</button>
+              )}
+            </div>
             <span className="text-xs text-slate-400 shrink-0">
               {posicionesFiltradas.length} / {posicionesValidas.length} vehículo{posicionesValidas.length !== 1 ? 's' : ''}
             </span>
           </>
         )}
+
         <button
           onClick={() => setShowBackfill(true)}
           className="ml-auto shrink-0 flex items-center gap-1.5 h-8 px-3 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
@@ -273,8 +361,8 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
           />
           <ClickHandler onPick={(lat, lng) => setClickedCoord({ lat, lng })} />
 
-          {/* Rutas como polilíneas (waypoints si existen, si no inicio→fin) */}
-          {rutasConCoords.map(ruta => {
+          {/* Rutas como polilíneas — solo la ruta seleccionada en el filtro */}
+          {rutasMostradas.map(ruta => {
             const nov       = novedadesHoy.find(a => a.ruta_id === ruta.id);
             const cancelada = nov?.estado === 'cancelada';
             const color     = !ruta.activa ? '#94a3b8' : cancelada ? '#ef4444' : '#0ea5e9';
@@ -288,9 +376,12 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
               .map(rm => marcadores.find(m => m.id === rm.marcador_id))
               .filter(Boolean);
 
-            const positions = wps.length >= 2
+            const geom = routeGeoms[ruta.id];
+            const straightPositions = wps.length >= 2
               ? wps.map(m => [Number(m.lat), Number(m.lng)])
               : [[ruta.lat_inicio, ruta.lng_inicio], [ruta.lat_fin, ruta.lng_fin]];
+            const positions  = geom?.points ?? straightPositions;
+            const isStraight = !geom?.points; // línea recta mientras carga o si falló
 
             const popupContent = (
               <div style={{ minWidth: 160 }}>
@@ -304,9 +395,18 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
                     {[ruta.punto_inicio, ruta.punto_fin].filter(Boolean).join(' → ')}
                   </p>
                 )}
-                {ruta.distancia_km && (
-                  <p style={{ fontSize: 11, color: '#0369a1', fontWeight: 600 }}>{ruta.distancia_km} km</p>
+                {geom?.loading && (
+                  <p style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>Calculando ruta por carretera…</p>
                 )}
+                {geom?.straight && (
+                  <p style={{ fontSize: 11, color: '#f59e0b', marginBottom: 2 }}>⚠ Sin datos de carretera — trazado aproximado</p>
+                )}
+                {(geom?.distKm ?? ruta.distancia_km) ? (
+                  <p style={{ fontSize: 11, color: '#0369a1', fontWeight: 600 }}>
+                    {geom?.distKm ?? ruta.distancia_km} km
+                    {geom?.distKm && <span style={{ color: '#64748b', fontWeight: 400 }}> vía carretera</span>}
+                  </p>
+                ) : null}
                 {nov?.consumidor_nombre && (
                   <p style={{ fontSize: 11, marginTop: 4 }}>Hoy: <b>{nov.consumidor_nombre}</b></p>
                 )}
@@ -318,7 +418,13 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
 
             return (
               <React.Fragment key={ruta.id}>
-                <Polyline positions={positions} color={color} weight={weight} opacity={opacity}>
+                <Polyline
+                  positions={positions}
+                  color={color}
+                  weight={isStraight ? 2 : weight}
+                  opacity={isStraight ? 0.35 : opacity}
+                  dashArray={isStraight ? '10 6' : undefined}
+                >
                   <Popup>{popupContent}</Popup>
                 </Polyline>
 
@@ -512,14 +618,17 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
             Recorrido histórico
           </span>
         )}
+        {rutasConCoords.length === 0
+          ? <span className="ml-auto text-slate-400 italic">Agrega coordenadas a las rutas para visualizarlas aquí.</span>
+          : !rutaFiltro
+            ? <span className="text-slate-400 italic">Selecciona una ruta para visualizarla en el mapa</span>
+            : rutasMostradas.length === 0
+              ? <span className="text-amber-500 italic">Ruta sin coordenadas — no se puede visualizar en el mapa</span>
+              : null
+        }
         {rutasSinCoords.length > 0 && (
           <span className="ml-auto text-amber-500">
             {rutasSinCoords.length} ruta{rutasSinCoords.length !== 1 ? 's' : ''} activa{rutasSinCoords.length !== 1 ? 's' : ''} sin coordenadas
-          </span>
-        )}
-        {rutasConCoords.length === 0 && (
-          <span className="ml-auto text-slate-400 italic">
-            Agrega coordenadas a las rutas para visualizarlas aquí.
           </span>
         )}
       </div>

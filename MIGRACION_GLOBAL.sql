@@ -975,5 +975,33 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_asignacion_ruta_gps_por_dia
   WHERE tipo_viaje = 'recorrido_gps';
 
 -- ─────────────────────────────────────────────────────────────
+--  23. Reparación precio_combustible
+--      Añade combustible_nombre (desnormalizado) para robustez,
+--      y repara registros con combustible_id nulo o desactualizado.
+-- ─────────────────────────────────────────────────────────────
+
+-- 23.1  Añadir columna combustible_nombre si no existe
+ALTER TABLE precio_combustible
+  ADD COLUMN IF NOT EXISTS combustible_nombre TEXT;
+
+-- 23.2  Backfill combustible_nombre para registros con combustible_id válido
+UPDATE precio_combustible pc
+SET    combustible_nombre = tc.nombre
+FROM   tipo_combustible tc
+WHERE  pc.combustible_id = tc.id
+  AND  pc.combustible_nombre IS NULL;
+
+-- 23.3  Reparar combustible_id cuando es NULL pero combustible_nombre coincide
+UPDATE precio_combustible pc
+SET    combustible_id = tc.id
+FROM   tipo_combustible tc
+WHERE  LOWER(TRIM(pc.combustible_nombre)) = LOWER(TRIM(tc.nombre))
+  AND  pc.combustible_id IS NULL;
+
+-- 23.4  Índice de soporte para búsquedas por nombre
+CREATE INDEX IF NOT EXISTS idx_precio_combustible_nombre
+  ON precio_combustible (combustible_nombre);
+
+-- ─────────────────────────────────────────────────────────────
 --  FIN DE MIGRACIÓN
 -- ─────────────────────────────────────────────────────────────

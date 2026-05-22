@@ -23,6 +23,7 @@ import CombustibleBadge from '@/components/ui-helpers/CombustibleBadge';
 import { MapaRutas } from '@/components/rutas/MapaRutas';
 import MarcadoresPanel from '@/components/rutas/MarcadoresPanel';
 import { gpsApi, metersToKm } from '@/api/gpsClient';
+import { getRouteGeometry } from '@/api/routingClient';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
 
@@ -640,7 +641,7 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave }) {
       });
   }, [ruta?.id]);
 
-  // Cuando hay 2+ paradas: auto-rellenar coordenadas, puntos y distancia
+  // Cuando hay 2+ paradas: auto-rellenar puntos y coordenadas (distancia vía OSRM — efecto separado)
   useEffect(() => {
     if (paradas.length < 2) return;
     const first = paradas[0];
@@ -651,7 +652,6 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave }) {
       punto_fin:    last.nombre,
       coord_inicio: `${first.lat}, ${first.lng}`,
       coord_fin:    `${last.lat}, ${last.lng}`,
-      distancia_km: calcDistParadas(paradas),
     }));
   }, [paradas]);
 
@@ -676,6 +676,34 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave }) {
 
   const paradasUsadas = new Set(paradas.map(p => p.marcador_id));
   const marcadoresDisponibles = activeMarcadores.filter(m => !paradasUsadas.has(m.id));
+
+  // Distancia real por carretera (OSRM)
+  const [roadDist,        setRoadDist]        = useState(null);
+  const [roadDistLoading, setRoadDistLoading] = useState(false);
+  const [roadDistError,   setRoadDistError]   = useState(false);
+
+  useEffect(() => {
+    if (paradas.length < 2) { setRoadDist(null); setRoadDistError(false); return; }
+    let cancelled = false;
+    setRoadDistLoading(true);
+    setRoadDistError(false);
+    getRouteGeometry(paradas.map(p => ({ lat: p.lat, lng: p.lng })))
+      .then(r => {
+        if (cancelled) return;
+        setRoadDist(r.distanceKm);
+        setForm(prev => ({ ...prev, distancia_km: r.distanceKm }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Fallback haversine solo como último recurso — se indica al usuario
+        const fallback = calcDistParadas(paradas);
+        setRoadDist(fallback);
+        setRoadDistError(true);
+        setForm(prev => ({ ...prev, distancia_km: fallback }));
+      })
+      .finally(() => { if (!cancelled) setRoadDistLoading(false); });
+    return () => { cancelled = true; };
+  }, [paradas]);
 
   // ── Guardar ─────────────────────────────────────────────────
   const handleSave = () => {
@@ -747,8 +775,13 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave }) {
               <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                 Paradas
                 {paradas.length >= 2 && (
-                  <span className="ml-2 font-normal normal-case text-sky-500">
-                    {calcDistParadas(paradas)} km calculados
+                  <span className={`ml-2 font-normal normal-case ${roadDistError ? 'text-amber-500' : 'text-sky-500'}`}>
+                    {roadDistLoading
+                      ? 'Calculando por carretera…'
+                      : roadDistError
+                        ? `${roadDist} km (aprox. — sin datos de carretera)`
+                        : `${roadDist ?? calcDistParadas(paradas)} km por carretera`
+                    }
                   </span>
                 )}
               </p>
@@ -822,13 +855,61 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-slate-500">Punto de inicio</Label>
-              <Input value={form.punto_inicio} onChange={e => set('punto_inicio', e.target.value)}
-                placeholder="Cerro" className="mt-1" />
+              <Select
+                value={activeMarcadores.find(m => m.nombre === form.punto_inicio)?.id ?? '_none'}
+                disabled={paradas.length >= 2}
+                onValueChange={v => {
+                  if (v === '_none') { setForm(p => ({ ...p, punto_inicio: '' })); return; }
+                  const m = activeMarcadores.find(x => x.id === v);
+                  if (!m) return;
+                  setForm(p => ({ ...p, punto_inicio: m.nombre, coord_inicio: `${m.lat}, ${m.lng}` }));
+                }}
+              >
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Selecciona marcador…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— Sin punto de inicio —</SelectItem>
+                  {activeMarcadores.map(m => (
+                    <SelectItem key={m.id} value={m.id}>
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full inline-block" style={{ background: m.color || '#3b82f6' }} />
+                        {m.nombre}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.punto_inicio && !activeMarcadores.find(m => m.nombre === form.punto_inicio) && (
+                <p className="text-[10px] text-slate-400 mt-0.5">Actual: {form.punto_inicio}</p>
+              )}
             </div>
             <div>
               <Label className="text-xs text-slate-500">Punto de fin</Label>
-              <Input value={form.punto_fin} onChange={e => set('punto_fin', e.target.value)}
-                placeholder="Polígono" className="mt-1" />
+              <Select
+                value={activeMarcadores.find(m => m.nombre === form.punto_fin)?.id ?? '_none'}
+                disabled={paradas.length >= 2}
+                onValueChange={v => {
+                  if (v === '_none') { setForm(p => ({ ...p, punto_fin: '' })); return; }
+                  const m = activeMarcadores.find(x => x.id === v);
+                  if (!m) return;
+                  setForm(p => ({ ...p, punto_fin: m.nombre, coord_fin: `${m.lat}, ${m.lng}` }));
+                }}
+              >
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Selecciona marcador…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— Sin punto de fin —</SelectItem>
+                  {activeMarcadores.map(m => (
+                    <SelectItem key={m.id} value={m.id}>
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full inline-block" style={{ background: m.color || '#3b82f6' }} />
+                        {m.nombre}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.punto_fin && !activeMarcadores.find(m => m.nombre === form.punto_fin) && (
+                <p className="text-[10px] text-slate-400 mt-0.5">Actual: {form.punto_fin}</p>
+              )}
             </div>
             <div>
               <Label className="text-xs text-slate-500">Distancia ref. (km)</Label>
@@ -1158,10 +1239,10 @@ function VehiculoStatsCard({ grupo }) {
               <p className="text-sm font-bold text-sky-600 tabular-nums">{grupo.kmTotal.toFixed(0)}</p>
             </div>
           )}
-          {grupo.litrosTotal > 0 && (
+          {(grupo.litrosReal ?? grupo.litrosTotal) > 0 && (
             <div className="text-center">
-              <p className="text-[10px] text-emerald-500">litros est.</p>
-              <p className="text-sm font-bold text-emerald-600 tabular-nums">{grupo.litrosTotal.toFixed(1)}</p>
+              <p className="text-[10px] text-emerald-500">{grupo.litrosReal != null ? 'litros' : 'litros est.'}</p>
+              <p className="text-sm font-bold text-emerald-600 tabular-nums">{(grupo.litrosReal ?? grupo.litrosTotal).toFixed(1)}</p>
             </div>
           )}
           {grupo.kmPerLitro != null && (
@@ -1247,6 +1328,23 @@ export default function Rutas() {
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'],     queryFn: () => base44.entities.Consumidor.list() });
   const { data: conductores = [] }  = useQuery({ queryKey: ['conductores'],      queryFn: () => base44.entities.Conductor.list() });
 
+  // Movimientos del mes de stats (DESPACHO + COMPRA) para litros reales y comparativo
+  const { data: movimientosMes = [] } = useQuery({
+    queryKey: ['movimientos-stats', mesStat],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('movimiento')
+        .select('consumidor_id, litros, tipo, fecha, combustible_nombre, odometro, km_recorridos')
+        .in('tipo', ['DESPACHO', 'COMPRA'])
+        .gte('fecha', mesStat + '-01')
+        .lte('fecha', mesStat + '-31')
+        .not('litros', 'is', null)
+        .gt('litros', 0);
+      return data ?? [];
+    },
+    staleTime: 2 * 60_000,
+  });
+
   const rutaById     = useMemo(() => Object.fromEntries(rutas.map(r => [r.id, r])), [rutas]);
   const rutasActivas = useMemo(() => rutas.filter(r => r.activa), [rutas]);
 
@@ -1310,13 +1408,78 @@ export default function Rutas() {
 
     Object.values(byVehicle).forEach(v => {
       v.trips.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-      v.kmPerLitro = (v.kmTotal > 0 && v.litrosTotal > 0)
-        ? v.kmTotal / v.litrosTotal
+      const litrosMovs = movimientosMes
+        .filter(m => m.consumidor_id === v.key)
+        .reduce((s, m) => s + (Number(m.litros) || 0), 0);
+      v.litrosReal = litrosMovs > 0 ? Math.round(litrosMovs * 10) / 10 : null;
+      const litrosBase = v.litrosReal ?? v.litrosTotal;
+      v.kmPerLitro = (v.kmTotal > 0 && litrosBase > 0)
+        ? v.kmTotal / litrosBase
         : null;
     });
 
     return Object.values(byVehicle).sort((a, b) => b.trips.length - a.trips.length);
-  }, [asigStatMes, rutaById, consumidores]);
+  }, [asigStatMes, rutaById, consumidores, movimientosMes]);
+
+  const comparativoData = useMemo(() => {
+    const conById  = Object.fromEntries(consumidores.map(c => [c.id, c]));
+    const gpsRecs  = asigStatMes.filter(a => a.tipo_viaje === 'recorrido_gps' && a.estado !== 'cancelada');
+    const tripRecs = asigStatMes.filter(a => a.tipo_viaje !== 'recorrido_gps' && a.estado !== 'cancelada');
+
+    const ids = new Set([
+      ...gpsRecs.map(a => a.consumidor_id),
+      ...tripRecs.map(a => a.consumidor_id),
+      ...movimientosMes.map(d => d.consumidor_id),
+    ].filter(Boolean));
+
+    return Array.from(ids).map(cid => {
+      const con   = conById[cid];
+      // Solo vehículos: excluir tanques, reservas, equipos, etc.
+      if (con && esNoVehiculo(con)) return null;
+
+      const gps   = gpsRecs.filter(a => a.consumidor_id === cid);
+      const trips = tripRecs.filter(a => a.consumidor_id === cid);
+      const movs  = movimientosMes.filter(d => d.consumidor_id === cid);
+
+      const kmGps  = gps.reduce((s, a)  => s + (Number(a.km_reales) || 0), 0);
+      const kmReg  = trips.reduce((s, a) => s + (Number(a.km_reales) || 0), 0);
+      const litros = movs.reduce((s, d)  => s + (Number(d.litros)    || 0), 0);
+
+      // Km por odómetro: max(odo) - min(odo) de COMPRAs con odómetro registrado
+      const comprasOdo = movs.filter(m => m.tipo === 'COMPRA' && m.odometro > 0);
+      let kmOdo = null;
+      if (comprasOdo.length >= 2) {
+        const odos = comprasOdo.map(m => Number(m.odometro));
+        const diff = Math.max(...odos) - Math.min(...odos);
+        if (diff > 0) kmOdo = Math.round(diff * 10) / 10;
+      }
+      if (kmOdo == null) {
+        // Fallback: suma de km_recorridos de COMPRAs
+        const sumKr = movs
+          .filter(m => m.tipo === 'COMPRA' && Number(m.km_recorridos) > 0)
+          .reduce((s, m) => s + Number(m.km_recorridos), 0);
+        if (sumKr > 0) kmOdo = Math.round(sumKr * 10) / 10;
+      }
+
+      return {
+        cid,
+        nombre:      con?.nombre || gps[0]?.consumidor_nombre || trips[0]?.consumidor_nombre || '—',
+        chapa:       con?.codigo_interno     || null,
+        combustible: con?.combustible_nombre || null,
+        kmGps:   Math.round(kmGps  * 10) / 10,
+        kmReg:   Math.round(kmReg  * 10) / 10,
+        kmOdo,
+        litros:  Math.round(litros * 10) / 10,
+        diasGps: gps.length,
+        viajes:  trips.length,
+        efGps: kmGps  > 0 && litros > 0 ? Math.round(kmGps  / litros * 100) / 100 : null,
+        efReg: kmReg  > 0 && litros > 0 ? Math.round(kmReg  / litros * 100) / 100 : null,
+        efOdo: kmOdo  > 0 && litros > 0 ? Math.round(kmOdo  / litros * 100) / 100 : null,
+      };
+    })
+    .filter(v => v != null && (v.kmGps > 0 || v.kmReg > 0 || v.kmOdo > 0 || v.litros > 0))
+    .sort((a, b) => (b.kmGps + b.kmReg) - (a.kmGps + a.kmReg));
+  }, [asigStatMes, movimientosMes, consumidores]);
 
   const navegarMesStat = (meses) => {
     const d = new Date(mesStat + '-01T12:00:00');
@@ -1472,11 +1635,12 @@ export default function Rutas() {
       {/* Tabs */}
       <div className="flex gap-0.5 flex-wrap border-b border-slate-200 dark:border-slate-700">
         {[
-          { value: 'viajes',     label: 'Programa diario',  icon: <Navigation className="w-3.5 h-3.5" /> },
-          { value: 'catalogo',  label: 'Catálogo de rutas', icon: <BookOpen   className="w-3.5 h-3.5" /> },
-          { value: 'stats',     label: 'Estadísticas',      icon: <BarChart3  className="w-3.5 h-3.5" /> },
-          { value: 'mapa',      label: 'Mapa',              icon: <Map        className="w-3.5 h-3.5" /> },
-          { value: 'marcadores', label: 'Marcadores',        icon: <MapPin     className="w-3.5 h-3.5" /> },
+          { value: 'viajes',      label: 'Programa diario',  icon: <Navigation className="w-3.5 h-3.5" /> },
+          { value: 'catalogo',   label: 'Catálogo de rutas', icon: <BookOpen   className="w-3.5 h-3.5" /> },
+          { value: 'stats',      label: 'Estadísticas',      icon: <BarChart3  className="w-3.5 h-3.5" /> },
+          { value: 'comparativo', label: 'GPS vs Mov.',       icon: <Satellite  className="w-3.5 h-3.5" /> },
+          { value: 'mapa',       label: 'Mapa',              icon: <Map        className="w-3.5 h-3.5" /> },
+          { value: 'marcadores', label: 'Marcadores',         icon: <MapPin     className="w-3.5 h-3.5" /> },
         ].map(({ value, label, icon }) => (
           <button
             key={value}
@@ -1822,6 +1986,169 @@ export default function Rutas() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Tab: GPS vs Movimientos ──────────────────────────────────────────── */}
+      {tab === 'comparativo' && (
+        <div className="space-y-4">
+          {/* Selector de mes (compartido con stats) */}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navegarMesStat(-1)}>
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 min-w-[150px] text-center capitalize">
+              {new Date(mesStat + '-01T12:00:00').toLocaleDateString('es', { month: 'long', year: 'numeric' })}
+            </span>
+            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navegarMesStat(1)}>
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {/* Leyenda */}
+          <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-full bg-violet-500"></span>
+              Km GPS — suma de recorridos guardados desde GPS
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-full bg-sky-500"></span>
+              Km Reg. — km declarados en novedades y viajes extra
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-3 rounded-full bg-emerald-500"></span>
+              Litros — despachos + compras del período
+            </span>
+          </div>
+
+          {comparativoData.length === 0 ? (
+            <div className="py-14 text-center text-sm text-slate-400">Sin datos para este período</div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left">
+                    <th className="px-3 py-2.5 font-semibold text-slate-500">Vehículo</th>
+                    <th className="px-3 py-2.5 font-semibold text-violet-500 text-right">Km GPS</th>
+                    <th className="px-3 py-2.5 font-semibold text-amber-500 text-right">Km Odóm.</th>
+                    <th className="px-3 py-2.5 font-semibold text-sky-500 text-right">Km Reg.</th>
+                    <th className="px-3 py-2.5 font-semibold text-emerald-500 text-right">Litros</th>
+                    <th className="px-3 py-2.5 font-semibold text-violet-400 text-right">km/L GPS</th>
+                    <th className="px-3 py-2.5 font-semibold text-amber-400 text-right">km/L Odóm.</th>
+                    <th className="px-3 py-2.5 font-semibold text-sky-400 text-right">km/L Reg.</th>
+                    <th className="px-3 py-2.5 font-semibold text-slate-400 text-right">Días / Viajes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {comparativoData.map(v => {
+                    const diff = v.kmGps > 0 && v.kmReg > 0
+                      ? Math.abs(v.kmGps - v.kmReg) / Math.max(v.kmGps, v.kmReg)
+                      : null;
+                    const discrepancia = diff != null && diff > 0.25;
+                    return (
+                      <tr key={v.cid} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                        <td className="px-3 py-2.5">
+                          <p className="font-medium text-slate-700 dark:text-slate-200 truncate max-w-[180px]">{v.nombre}</p>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            {v.chapa && (
+                              <span className="font-mono text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">{v.chapa}</span>
+                            )}
+                            {v.combustible && <CombustibleBadge nombre={v.combustible} />}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">
+                          {v.kmGps > 0
+                            ? <span className="font-semibold text-violet-600">{v.kmGps.toFixed(0)}</span>
+                            : <span className="text-slate-300">—</span>
+                          }
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">
+                          {v.kmOdo != null
+                            ? <span className="font-semibold text-amber-600">{v.kmOdo.toFixed(0)}</span>
+                            : <span className="text-slate-300">—</span>
+                          }
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">
+                          {discrepancia && v.kmReg > 0 && (
+                            <AlertTriangle className="inline w-3 h-3 text-amber-400 mr-1" title={`Diferencia ${(diff * 100).toFixed(0)}% vs GPS`} />
+                          )}
+                          {v.kmReg > 0
+                            ? <span className="font-semibold text-sky-600">{v.kmReg.toFixed(0)}</span>
+                            : <span className="text-slate-300">—</span>
+                          }
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">
+                          {v.litros > 0
+                            ? <span className="font-semibold text-emerald-600">{v.litros.toFixed(1)}</span>
+                            : <span className="text-slate-300">—</span>
+                          }
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">
+                          {v.efGps != null
+                            ? <span className="font-medium text-violet-500">{v.efGps.toFixed(2)}</span>
+                            : <span className="text-slate-300">—</span>
+                          }
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">
+                          {v.efOdo != null
+                            ? <span className="font-medium text-amber-500">{v.efOdo.toFixed(2)}</span>
+                            : <span className="text-slate-300">—</span>
+                          }
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">
+                          {v.efReg != null
+                            ? <span className="font-medium text-sky-500">{v.efReg.toFixed(2)}</span>
+                            : <span className="text-slate-300">—</span>
+                          }
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <span className="text-violet-400 tabular-nums">{v.diasGps || '—'}</span>
+                          <span className="text-slate-300 mx-1">/</span>
+                          <span className="text-sky-400 tabular-nums">{v.viajes || '—'}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                {/* Totales */}
+                {(() => {
+                  const tot = comparativoData.reduce((acc, v) => ({
+                    kmGps:  acc.kmGps  + v.kmGps,
+                    kmOdo:  acc.kmOdo  + (v.kmOdo  ?? 0),
+                    kmReg:  acc.kmReg  + v.kmReg,
+                    litros: acc.litros + v.litros,
+                  }), { kmGps: 0, kmOdo: 0, kmReg: 0, litros: 0 });
+                  return (
+                    <tfoot>
+                      <tr className="bg-slate-50 dark:bg-slate-800 border-t-2 border-slate-200 dark:border-slate-600 font-semibold text-xs">
+                        <td className="px-3 py-2 text-slate-500 text-[11px] uppercase tracking-wide">Total</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-violet-600">{tot.kmGps.toFixed(0)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-amber-600">{tot.kmOdo > 0 ? tot.kmOdo.toFixed(0) : '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-sky-600">{tot.kmReg.toFixed(0)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-emerald-600">{tot.litros.toFixed(1)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-violet-400">
+                          {tot.kmGps > 0 && tot.litros > 0 ? (tot.kmGps / tot.litros).toFixed(2) : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-amber-400">
+                          {tot.kmOdo > 0 && tot.litros > 0 ? (tot.kmOdo / tot.litros).toFixed(2) : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-sky-400">
+                          {tot.kmReg > 0 && tot.litros > 0 ? (tot.kmReg / tot.litros).toFixed(2) : '—'}
+                        </td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  );
+                })()}
+              </table>
+            </div>
+          )}
+
+          <div className="text-[11px] text-slate-400 space-y-0.5 pt-1">
+            <p>⚠ Icono de alerta indica diferencia mayor al 25% entre km GPS y km registrados — puede señalar recorridos no declarados.</p>
+            <p><span className="text-amber-500 font-medium">Km Odóm.</span> = diferencia máx–mín del odómetro en compras del período; se actualiza con cada nueva lectura registrada.</p>
+            <p>Litros = despachos internos + compras en surtidor registradas en Movimientos para el período.</p>
+          </div>
         </div>
       )}
 

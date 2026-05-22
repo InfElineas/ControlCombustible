@@ -1402,9 +1402,19 @@ function TabPrecios({ canManage }) {
   const [form, setForm]     = useState(emptyPrecio());
 
   const preciosPorComb = useMemo(() => {
-    const map = {};
-    combustibles.forEach(c => { map[c.id] = { nombre: c.nombre, activa: c.activa, precios: [] }; });
-    precios.forEach(p => { if (map[p.combustible_id]) map[p.combustible_id].precios.push(p); });
+    const map     = {};
+    const byNombre = {}; // nombre normalizado → id
+    combustibles.forEach(c => {
+      map[c.id] = { nombre: c.nombre, activa: c.activa, precios: [] };
+      byNombre[c.nombre?.toLowerCase().trim()] = c.id;
+    });
+    precios.forEach(p => {
+      // Matching por UUID, con fallback por combustible_nombre
+      const cid = (p.combustible_id && map[p.combustible_id])
+        ? p.combustible_id
+        : byNombre[p.combustible_nombre?.toLowerCase().trim()];
+      if (cid && map[cid]) map[cid].precios.push(p);
+    });
     return Object.entries(map)
       .filter(([, v]) => v.activa !== false || v.precios.length > 0)
       .sort((a, b) => a[1].nombre.localeCompare(b[1].nombre));
@@ -1439,11 +1449,13 @@ function TabPrecios({ canManage }) {
     const precio = parseFloat(form.precio_por_litro);
     if (!form.precio_por_litro || isNaN(precio) || precio <= 0) { toast.error('El precio debe ser mayor a 0'); return; }
     if (!form.fecha_desde) { toast.error('La fecha de inicio es requerida'); return; }
+    const comb = combustibles.find(c => c.id === form.combustible_id);
     saveMut.mutate({
-      combustible_id: form.combustible_id,
-      precio_por_litro: precio,
-      fecha_desde: form.fecha_desde,
-      fecha_hasta: form.fecha_hasta || null,
+      combustible_id:     form.combustible_id,
+      combustible_nombre: comb?.nombre || null,
+      precio_por_litro:   precio,
+      fecha_desde:        form.fecha_desde,
+      fecha_hasta:        form.fecha_hasta || null,
     });
   }
 

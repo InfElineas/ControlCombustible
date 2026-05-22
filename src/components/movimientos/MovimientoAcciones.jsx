@@ -20,8 +20,8 @@ export default function MovimientoAcciones({ movimiento, onLog, onDetalle, onVer
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuItem onClick={() => onVerDetalle(movimiento)} className="gap-2 cursor-pointer">
-          <FileText className="w-3.5 h-3.5 text-sky-500" />
-          Ver detalle del movimiento
+          <FileText className="w-3.5 h-3.5 text-slate-500" />
+          Detalles del movimiento
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => onLog(movimiento)} className="gap-2 cursor-pointer">
