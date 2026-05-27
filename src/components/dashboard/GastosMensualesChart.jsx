@@ -7,6 +7,7 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
 
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -22,7 +23,7 @@ function CustomTooltip({ active, payload, label }) {
       </div>
       <div className="flex justify-between gap-3">
         <span className="text-slate-400">Litros</span>
-        <span className="font-semibold text-orange-600">{litros.toFixed(1)} L</span>
+        <span className="font-semibold text-orange-600">{fmtL(litros)} L</span>
       </div>
       {precioMed !== null && (
         <div className="flex justify-between gap-3 border-t border-slate-100 pt-1 mt-1">

@@ -416,14 +416,15 @@ Ejemplo:
   },
   {
     id: 'dashboard',
-    label: 'Dashboard',
+    label: 'Inicio',
     icon: LayoutDashboard,
     color: 'text-sky-600',
     content: () => (
       <>
         <P>
-          El Dashboard es la pantalla principal. Muestra el resumen del mes seleccionado,
-          alertas activas y el estado del stock por tipo de combustible.
+          La pantalla <strong>Inicio</strong> (accesible desde el primer ítem del menú lateral) es el panel
+          principal del sistema. Muestra el resumen del mes seleccionado, alertas activas, el estado del
+          stock por tipo de combustible y el resumen de operación GPS de la flota.
         </P>
 
         <SubTitle>KPIs del mes</SubTitle>
@@ -492,6 +493,28 @@ Si Desviación < Umbral alerta                    → NORMAL   (verde)`}
           Cada tarjeta de vehículo tiene el botón <strong>«Ver detalles por mes»</strong> que abre
           una tabla con el desglose histórico completo: cargas, litros, monto, odómetro y km/L separados
           por mes. Aparece cuando el vehículo tiene actividad en dos o más meses distintos.
+        </Callout>
+
+        <SubTitle>Resumen Flota GPS del mes</SubTitle>
+        <P>
+          Justo sobre la sección «Resumen por combustible» aparece automáticamente el panel
+          <strong> Flota GPS</strong> cuando hay registros de rutas del mes seleccionado.
+          Muestra 4 tarjetas de un vistazo:
+        </P>
+        <TableDoc
+          headers={['Tarjeta', 'Qué mide', 'Fuente']}
+          rows={[
+            ['Km GPS', 'Total de kilómetros acumulados por los recorridos GPS guardados automáticamente al cierre del día', 'asignacion_ruta donde tipo_viaje = "recorrido_gps"'],
+            ['Km Reg.', 'Km declarados manualmente en novedades y viajes extra del mes', 'asignacion_ruta donde tipo_viaje ≠ "recorrido_gps"'],
+            ['Días con GPS', 'Número de días únicos en que hay al menos un registro GPS guardado', 'Fechas únicas de los recorridos GPS del período'],
+            ['Última actualización', 'Fecha del registro más reciente entre GPS y novedades del período', 'Máximo de fecha en todos los registros del mes'],
+          ]}
+        />
+        <Callout type="info">
+          El panel solo aparece cuando al menos uno de los dos valores (Km GPS o Km Reg.) es mayor que cero.
+          El mes mostrado se sincroniza con el selector de período del Dashboard: si filtras por "Abril 2026",
+          el panel muestra los datos GPS de abril.
+          El enlace <em>«Ver comparativo detallado →»</em> lleva directamente al tab GPS vs Mov. en Rutas.
         </Callout>
       </>
     ),
@@ -1018,6 +1041,27 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
           Los tanques, reservas y equipos/generadores quedan excluidos automáticamente.
         </Callout>
 
+        <SubTitle>Paso 5b — Trazabilidad: ver el origen de cualquier dato</SubTitle>
+        <P>
+          En la pestaña <strong>GPS vs Mov.</strong>, haz clic en cualquier fila de la tabla
+          para abrir el panel de trazabilidad de ese vehículo. El panel muestra exactamente
+          qué registros fuente generaron cada columna:
+        </P>
+        <TableDoc
+          headers={['Sección del panel', 'Qué muestra', 'Modifica cambiando…']}
+          rows={[
+            ['Recorridos GPS', 'Lista de asignaciones tipo "Recorrido GPS" del mes con fecha y km de cada una', 'El km_reales de la asignación en el programa diario o el auto-guardado nocturno del GPS'],
+            ['Novedades / Viajes', 'Lista de novedades y viajes extra del mes con fecha, tipo y km declarados', 'El km_reales al editar la novedad en el programa diario'],
+            ['Combustible', 'Lista de movimientos COMPRA y DESPACHO del mes con fecha, litros y odómetro', 'El registro en la pantalla Movimientos (litros, odómetro)'],
+            ['Cálculo Km Odóm.', 'Paso a paso de la resta: odo. fin del mes − odo. previo al mes', 'El odómetro en el movimiento más antiguo o más reciente del período'],
+          ]}
+        />
+        <Callout type="tip" title="Por qué una columna muestra «—»">
+          Si una columna es un guión, el panel de trazabilidad explica exactamente qué falta:
+          «Sin registros GPS en este período», «Sin novedades declaradas» o «Sin odómetro suficiente».
+          Esto permite identificar rápidamente si el dato no fue registrado o si hay un problema de vinculación.
+        </Callout>
+
         <SubTitle>Paso 7 — Km reales automáticos desde GPS</SubTitle>
         <P>
           Si el vehículo tiene un dispositivo GPS vinculado (ver <strong>Configuración → GPS</strong>),
@@ -1044,16 +1088,26 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
             ['Punto gris', 'Vehículo detenido o con motor apagado.'],
             ['Popup del vehículo', 'Muestra nombre, chapa, tipo, combustible, velocidad actual, km recorridos hoy y estado del motor.'],
             ['Km hoy (popup)', 'Kilómetros acumulados desde 00:00 hasta el momento. Se actualiza cada 5 minutos.'],
-            ['Botón "Ver recorrido de hoy"', 'Dibuja en el mapa la trayectoria GPS del día como línea naranja discontinua.'],
+            ['Botón "Ver recorrido de hoy"', 'Dibuja en el mapa la trayectoria GPS del día como línea de colores (violeta/índigo).'],
             ['Botón "Ocultar recorrido"', 'Quita la trayectoria del mapa.'],
           ]}
         />
-        <Callout type="info" title="Sobre la trayectoria (línea naranja)">
+        <SubTitle>Filtros del mapa</SubTitle>
+        <P>
+          La barra de filtros del mapa tiene dos selectores independientes:
+        </P>
+        <TableDoc
+          headers={['Selector', 'Qué hace']}
+          rows={[
+            ['Selector de ruta', 'Filtra qué ruta del catálogo se dibuja en el mapa (polilínea de paradas). Selecciona "Todas las rutas" para ver el catálogo completo.'],
+            ['Selector de vehículo (chapa)', 'Filtra qué vehículo GPS se muestra. Al seleccionar uno, el mapa centra su posición y el botón «Ver recorrido de hoy» aplica solo a ese vehículo.'],
+          ]}
+        />
+        <Callout type="info" title="Sobre la trayectoria">
           La línea muestra los puntos GPS reales registrados por Traccar a lo largo del día,
-          conectados en orden cronológico. Si la línea parece recta o tiene pocos puntos,
-          significa que el dispositivo GPS está configurado con baja frecuencia de actualización
-          en AsTrack (p. ej. solo registra posición cada 30 minutos). Esto es normal y no indica
-          un fallo — la precisión de la trayectoria depende de la configuración del dispositivo en la plataforma GPS.
+          conectados en orden cronológico con marcadores numerados en los waypoints.
+          Si la línea parece recta o tiene pocos puntos, el dispositivo GPS está configurado
+          con baja frecuencia de actualización — esto es normal y no indica un fallo.
         </Callout>
 
         <SubTitle>Paso 9 — Histórico GPS automático al final del día</SubTitle>
@@ -1113,6 +1167,54 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
         <Callout type="tip" title="Rutas sin marcadores">
           Las rutas tradicionales (solo coordenadas de inicio y fin) siguen funcionando exactamente igual.
           Los marcadores/paradas son opcionales y complementan, no reemplazan, el flujo anterior.
+        </Callout>
+
+        <SubTitle>Paso 12 — Tab GPS vs Movimientos (comparativo mensual)</SubTitle>
+        <P>
+          La pestaña <strong>GPS vs Mov.</strong> cruza tres fuentes de datos para cada vehículo
+          en el mes seleccionado y permite detectar discrepancias entre lo que reporta el GPS,
+          lo que declararon los conductores y lo que registra el sistema de combustible.
+        </P>
+        <TableDoc
+          headers={['Columna', 'Qué mide', 'Fuente de datos']}
+          rows={[
+            ['Km GPS', 'Suma de km de todos los recorridos GPS guardados automáticamente en el mes', 'asignacion_ruta · tipo_viaje = "recorrido_gps"'],
+            ['Km Odóm.', 'Diferencia entre el odómetro máximo del mes y el último odómetro registrado antes del mes', 'movimiento · campo odometro (COMPRA/DESPACHO)'],
+            ['Km Reg.', 'Suma de km declarados manualmente en novedades y viajes extra', 'asignacion_ruta · tipo_viaje ≠ "recorrido_gps"'],
+            ['Litros', 'Total de litros consumidos (DESPACHO interno + COMPRA en surtidor)', 'movimiento · tipos COMPRA y DESPACHO'],
+            ['km/L GPS / Odóm. / Reg.', 'Rendimiento calculado con cada fuente de km', 'Km (fuente) ÷ Litros'],
+            ['Días / Viajes', 'Días únicos con registro GPS · viajes declarados en novedades', 'Conteos de registros por fuente'],
+          ]}
+        />
+        <Callout type="formula" title="Fórmula Km Odóm.">
+          <Formula>
+{`Km Odóm. = Odo. fin del mes − Odo. inicio del mes
+
+  Odo. fin del mes    = MAX(odometro) en movimientos del período
+  Odo. inicio del mes = MAX(odometro) en movimientos ANTERIORES al período
+                        (si no hay dato previo → MIN del propio mes)
+
+Si no hay lecturas de odómetro → columna muestra —`}
+          </Formula>
+        </Callout>
+        <Callout type="warning" title="¿Por qué algunas celdas muestran —?">
+          <ul className="space-y-1 mt-1">
+            <li><strong>Km GPS = —</strong>: no se guardaron recorridos GPS para ese vehículo en el período (el auto-guardado nocturno no corrió o el dispositivo no estaba activo).</li>
+            <li><strong>Km Odóm. = —</strong>: no hay registros de odómetro en los movimientos del mes ni del mes anterior. Registra el odómetro al cargar combustible.</li>
+            <li><strong>Km Reg. = —</strong>: no se registraron novedades ni viajes extra con km reales para ese vehículo.</li>
+            <li><strong>Litros = —</strong>: no hay movimientos de COMPRA ni DESPACHO para ese vehículo en el período.</li>
+          </ul>
+          Haz clic en la fila del vehículo para ver el panel de trazabilidad con la explicación exacta.
+        </Callout>
+        <P>
+          El encabezado del tab muestra la <strong>última fecha de actualización</strong> del período,
+          calculada como la fecha más reciente entre todos los registros GPS y de combustible del mes.
+          Esto indica hasta qué día están actualizados los datos del comparativo.
+        </P>
+        <Callout type="info" title="Límite de datos históricos resuelto">
+          El comparativo consulta <em>directamente</em> la tabla de asignaciones en Supabase filtrada por mes,
+          sin el límite de 2000 registros del programa diario. Esto garantiza que meses antiguos muestren
+          datos completos aunque haya muchos registros en el sistema.
         </Callout>
       </>
     ),
@@ -1310,13 +1412,13 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
             ['Leer km del día GPS', 'Rutas → Novedad / Viaje extra', 'Botón 🛰 junto al campo "Km reales". Obtiene los km recorridos en la fecha del registro.'],
             ['Posición en vivo', 'Rutas → Mapa', 'Punto verde/gris actualizado cada 30 s con velocidad y estado del motor.'],
             ['Km recorridos hoy', 'Rutas → Mapa (popup)', 'Contador diario actualizado cada 5 minutos desde 00:00.'],
-            ['Trayectoria del día', 'Rutas → Mapa (popup → "Ver recorrido")', 'Línea naranja sobre el mapa con los puntos GPS registrados desde 00:00 hasta ahora.'],
+            ['Trayectoria del día', 'Rutas → Mapa (popup → "Ver recorrido")', 'Línea violeta/índigo sobre el mapa con los puntos GPS registrados desde 00:00 hasta ahora. Cada waypoint muestra un círculo numerado.'],
             ['Auto-guardado al cierre del día', 'Rutas → Estadísticas (tipo "Recorrido GPS")', 'La tarea programada guarda km, odómetro y vel. máx a las 23:55 sin intervención del usuario.'],
           ]}
         />
 
         <Callout type="info" title="Sobre la trayectoria en el mapa">
-          La línea naranja en el mapa conecta los puntos GPS registrados por Traccar en orden cronológico.
+          La trayectoria en el mapa conecta los puntos GPS registrados por Traccar en orden cronológico con una línea violeta/índigo.
           Si aparece casi recta o con pocos segmentos, el dispositivo GPS está configurado con baja
           frecuencia de reporte en AsTrack (normal para dispositivos en modo económico).
           La precisión de la trayectoria depende enteramente de la configuración del dispositivo,
@@ -1423,6 +1525,14 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
             ['Litros estimados (rutas)', 'Campo litros_estimados en un registro de asignación de ruta. Se completa al importar del chat o se puede ingresar manualmente. Aparece en la barra resumen del día y en las estadísticas del mes.'],
             ['Fuente del registro (fuente)', 'Indica el origen de un registro de ruta: "manual" si fue registrado por el operador directamente, "chat" si fue importado desde WhatsApp. Visible en las estadísticas por vehículo.'],
             ['Audit log', 'Registro inmutable de cada acción realizada en el sistema con usuario, fecha y datos completos.'],
+            ['Km GPS', 'Kilómetros registrados automáticamente por el sistema GPS al cierre del día (tipo "Recorrido GPS"). Se consultan en el tab GPS vs Mov. de Rutas.'],
+            ['Km Odóm.', 'Kilómetros estimados a partir de la diferencia de odómetro: odo. fin del mes − odo. más reciente registrado antes del mes. Fuente: campo odometro en movimientos COMPRA/DESPACHO.'],
+            ['Km Reg.', 'Kilómetros declarados manualmente en novedades y viajes extra (campo km_reales). Fuente: asignacion_ruta con tipo_viaje ≠ recorrido_gps.'],
+            ['Recorrido GPS (tipo de viaje)', 'Tipo especial de asignación de ruta generado automáticamente por el auto-guardado nocturno del GPS. Aparece en Estadísticas con etiqueta teal y alimenta la columna Km GPS del comparativo.'],
+            ['Trazabilidad', 'Capacidad de ver el origen exacto de un dato: qué registros fuente lo componen, sus fechas y cómo afectan a los totales. En el tab GPS vs Mov., haz clic en cualquier fila para ver el panel de trazabilidad del vehículo.'],
+            ['Panel de trazabilidad', 'Modal que se abre al hacer clic en una fila del comparativo GPS vs Mov. Desglosa por secciones los registros GPS, novedades, movimientos de combustible y el cálculo paso a paso del km por odómetro.'],
+            ['Última actualización (comparativo)', 'Fecha más reciente entre todos los registros GPS y de combustible del mes seleccionado. Se muestra en el encabezado del tab GPS vs Mov. como indicador de vigencia de los datos.'],
+            ['Flota GPS (Dashboard)', 'Sección del panel Inicio que resume los km GPS, km registrados, días con actividad GPS y la última fecha de registro del mes. Se sincroniza con el selector de período del Dashboard.'],
           ]}
         />
       </>

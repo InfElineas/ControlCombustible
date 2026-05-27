@@ -28,6 +28,7 @@ import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
+const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
 
 const ESTADO_CFG = {
   completada: { label: 'Completada', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', Icon: CheckCircle2 },
@@ -1322,6 +1323,7 @@ export default function Rutas() {
   const [deleteRutaId, setDeleteRutaId]       = useState(null);
   const [filtroTipo, setFiltroTipo]           = useState('all');
   const [filtroGrupo, setFiltroGrupo]         = useState('');
+  const [detalleVeh, setDetalleVeh]           = useState(null); // cid del vehículo en modal de trazabilidad
 
   const { data: rutas = [] }       = useQuery({ queryKey: ['rutas'],            queryFn: () => base44.entities.Ruta.list() });
   const { data: asignaciones = [], isLoading } = useQuery({ queryKey: ['asignaciones_ruta'], queryFn: () => base44.entities.AsignacionRuta.list('-fecha', 2000) });
@@ -1343,6 +1345,40 @@ export default function Rutas() {
       return data ?? [];
     },
     staleTime: 2 * 60_000,
+  });
+
+  // Último odómetro por vehículo ANTES del mes de stats (para calcular km del mes correctamente)
+  const { data: movOdoAntesMes = [] } = useQuery({
+    queryKey: ['movimientos-odo-antes', mesStat],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('movimiento')
+        .select('consumidor_id, odometro, fecha')
+        .in('tipo', ['DESPACHO', 'COMPRA'])
+        .lt('fecha', mesStat + '-01')
+        .not('odometro', 'is', null)
+        .order('fecha', { ascending: false });
+      return data ?? [];
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  // Asignaciones del mes de comparativo desde Supabase directamente (sin límite de 2000 registros)
+  const { data: asigComparativoMes = [] } = useQuery({
+    queryKey: ['asig-comparativo', mesStat],
+    queryFn: async () => {
+      const nextMonth = new Date(mesStat + '-01T12:00:00');
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      const nextMonthStr = nextMonth.toISOString().slice(0, 7) + '-01';
+      const { data } = await supabase
+        .from('asignacion_ruta')
+        .select('id, consumidor_id, consumidor_nombre, tipo_viaje, km_reales, fecha, estado')
+        .gte('fecha', mesStat + '-01')
+        .lt('fecha', nextMonthStr)
+        .neq('estado', 'cancelada');
+      return data ?? [];
+    },
+    staleTime: 5 * 60_000,
   });
 
   const rutaById     = useMemo(() => Object.fromEntries(rutas.map(r => [r.id, r])), [rutas]);
@@ -1421,10 +1457,19 @@ export default function Rutas() {
     return Object.values(byVehicle).sort((a, b) => b.trips.length - a.trips.length);
   }, [asigStatMes, rutaById, consumidores, movimientosMes]);
 
+  // Última fecha registrada en el mes del comparativo (cualquier fuente)
+  const ultimaFechaComparativo = useMemo(() => {
+    const fechas = [
+      ...asigComparativoMes.map(a => a.fecha),
+      ...movimientosMes.map(m => m.fecha),
+    ].filter(Boolean).sort();
+    return fechas[fechas.length - 1] ?? null;
+  }, [asigComparativoMes, movimientosMes]);
+
   const comparativoData = useMemo(() => {
     const conById  = Object.fromEntries(consumidores.map(c => [c.id, c]));
-    const gpsRecs  = asigStatMes.filter(a => a.tipo_viaje === 'recorrido_gps' && a.estado !== 'cancelada');
-    const tripRecs = asigStatMes.filter(a => a.tipo_viaje !== 'recorrido_gps' && a.estado !== 'cancelada');
+    const gpsRecs  = asigComparativoMes.filter(a => a.tipo_viaje === 'recorrido_gps');
+    const tripRecs = asigComparativoMes.filter(a => a.tipo_viaje !== 'recorrido_gps');
 
     const ids = new Set([
       ...gpsRecs.map(a => a.consumidor_id),
@@ -1445,13 +1490,19 @@ export default function Rutas() {
       const kmReg  = trips.reduce((s, a) => s + (Number(a.km_reales) || 0), 0);
       const litros = movs.reduce((s, d)  => s + (Number(d.litros)    || 0), 0);
 
-      // Km por odómetro: max(odo) - min(odo) de COMPRAs con odómetro registrado
-      const comprasOdo = movs.filter(m => m.tipo === 'COMPRA' && m.odometro > 0);
+      // Km por odómetro: odoFin (máx del mes) - odoInicio (último odo antes del mes)
+      // Replica la lógica del modal "Consumo por mes" para ser consistente
+      const movsConOdo = movs.filter(m => m.odometro != null && Number(m.odometro) > 0);
+      const odoFinMes = movsConOdo.length > 0
+        ? Math.max(...movsConOdo.map(m => Number(m.odometro)))
+        : null;
+      const antesDelMes = movOdoAntesMes.filter(m => m.consumidor_id === cid && Number(m.odometro) > 0);
+      const odoInicioMes = antesDelMes.length > 0
+        ? Math.max(...antesDelMes.map(m => Number(m.odometro)))
+        : (movsConOdo.length > 0 ? Math.min(...movsConOdo.map(m => Number(m.odometro))) : null);
       let kmOdo = null;
-      if (comprasOdo.length >= 2) {
-        const odos = comprasOdo.map(m => Number(m.odometro));
-        const diff = Math.max(...odos) - Math.min(...odos);
-        if (diff > 0) kmOdo = Math.round(diff * 10) / 10;
+      if (odoFinMes != null && odoInicioMes != null && odoFinMes > odoInicioMes) {
+        kmOdo = Math.round((odoFinMes - odoInicioMes) * 10) / 10;
       }
       if (kmOdo == null) {
         // Fallback: suma de km_recorridos de COMPRAs
@@ -1475,11 +1526,18 @@ export default function Rutas() {
         efGps: kmGps  > 0 && litros > 0 ? Math.round(kmGps  / litros * 100) / 100 : null,
         efReg: kmReg  > 0 && litros > 0 ? Math.round(kmReg  / litros * 100) / 100 : null,
         efOdo: kmOdo  > 0 && litros > 0 ? Math.round(kmOdo  / litros * 100) / 100 : null,
+        // Registros fuente para trazabilidad
+        _gps:         [...gps].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '')),
+        _trips:       [...trips].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '')),
+        _movs:        [...movs].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '')),
+        _odoAntes:    antesDelMes,
+        _odoInicioMes: odoInicioMes,
+        _odoFinMes:   odoFinMes,
       };
     })
     .filter(v => v != null && (v.kmGps > 0 || v.kmReg > 0 || v.kmOdo > 0 || v.litros > 0))
     .sort((a, b) => (b.kmGps + b.kmReg) - (a.kmGps + a.kmReg));
-  }, [asigStatMes, movimientosMes, consumidores]);
+  }, [asigComparativoMes, movimientosMes, movOdoAntesMes, consumidores]);
 
   const navegarMesStat = (meses) => {
     const d = new Date(mesStat + '-01T12:00:00');
@@ -1993,16 +2051,24 @@ export default function Rutas() {
       {tab === 'comparativo' && (
         <div className="space-y-4">
           {/* Selector de mes (compartido con stats) */}
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navegarMesStat(-1)}>
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 min-w-[150px] text-center capitalize">
-              {new Date(mesStat + '-01T12:00:00').toLocaleDateString('es', { month: 'long', year: 'numeric' })}
-            </span>
-            <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navegarMesStat(1)}>
-              <ChevronRight className="w-4 h-4" />
-            </Button>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navegarMesStat(-1)}>
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <span className="text-sm font-semibold text-slate-700 dark:text-slate-200 min-w-[150px] text-center capitalize">
+                {new Date(mesStat + '-01T12:00:00').toLocaleDateString('es', { month: 'long', year: 'numeric' })}
+              </span>
+              <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => navegarMesStat(1)}>
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+            {ultimaFechaComparativo && (
+              <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Última actualización: <b className="text-slate-500">{new Date(ultimaFechaComparativo + 'T12:00:00').toLocaleDateString('es', { day: 'numeric', month: 'long' })}</b>
+              </span>
+            )}
           </div>
 
           {/* Leyenda */}
@@ -2046,7 +2112,7 @@ export default function Rutas() {
                       : null;
                     const discrepancia = diff != null && diff > 0.25;
                     return (
-                      <tr key={v.cid} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                      <tr key={v.cid} className="hover:bg-violet-50/40 dark:hover:bg-slate-800/30 transition-colors cursor-pointer" onClick={() => setDetalleVeh(v.cid)} title="Clic para ver detalle de fuentes">
                         <td className="px-3 py-2.5">
                           <p className="font-medium text-slate-700 dark:text-slate-200 truncate max-w-[180px]">{v.nombre}</p>
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -2079,7 +2145,7 @@ export default function Rutas() {
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums">
                           {v.litros > 0
-                            ? <span className="font-semibold text-emerald-600">{v.litros.toFixed(1)}</span>
+                            ? <span className="font-semibold text-emerald-600">{fmtL(v?.litros ?? 0)}</span>
                             : <span className="text-slate-300">—</span>
                           }
                         </td>
@@ -2125,7 +2191,7 @@ export default function Rutas() {
                         <td className="px-3 py-2 text-right tabular-nums text-violet-600">{tot.kmGps.toFixed(0)}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-amber-600">{tot.kmOdo > 0 ? tot.kmOdo.toFixed(0) : '—'}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-sky-600">{tot.kmReg.toFixed(0)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums text-emerald-600">{tot.litros.toFixed(1)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-emerald-600">{fmtL(tot.litros)}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-violet-400">
                           {tot.kmGps > 0 && tot.litros > 0 ? (tot.kmGps / tot.litros).toFixed(2) : '—'}
                         </td>
@@ -2146,11 +2212,164 @@ export default function Rutas() {
 
           <div className="text-[11px] text-slate-400 space-y-0.5 pt-1">
             <p>⚠ Icono de alerta indica diferencia mayor al 25% entre km GPS y km registrados — puede señalar recorridos no declarados.</p>
-            <p><span className="text-amber-500 font-medium">Km Odóm.</span> = diferencia máx–mín del odómetro en compras del período; se actualiza con cada nueva lectura registrada.</p>
+            <p><span className="text-amber-500 font-medium">Km Odóm.</span> = odo. fin del mes − odo. previo al mes (último registrado antes del período).</p>
             <p>Litros = despachos internos + compras en surtidor registradas en Movimientos para el período.</p>
+            <p className="text-violet-400">Clic en cualquier fila para ver el detalle de los registros fuente de cada columna.</p>
           </div>
         </div>
       )}
+
+      {/* ── Modal de trazabilidad del comparativo ──────────────────────────────── */}
+      {detalleVeh && (() => {
+        const v = comparativoData.find(x => x.cid === detalleVeh);
+        if (!v) return null;
+        const tipoViajeLbl = t => ({
+          recorrido_gps: 'GPS', regular: 'Regular', viaje_extra: 'Extra',
+          carga_mercancias: 'Carga', mensajeria: 'Mensajería',
+        }[t] || t || '—');
+        return (
+          <Dialog open onOpenChange={() => setDetalleVeh(null)}>
+            <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-base">
+                  {v.nombre}
+                  {v.chapa && <span className="font-mono text-xs bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-500">{v.chapa}</span>}
+                  <span className="text-xs font-normal text-slate-400 ml-1">
+                    — {new Date(mesStat + '-01T12:00:00').toLocaleDateString('es', { month: 'long', year: 'numeric' })}
+                  </span>
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-5 text-xs mt-2">
+
+                {/* GPS */}
+                <div>
+                  <p className="font-semibold text-violet-600 mb-2 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-violet-500 inline-block shrink-0" />
+                    Recorridos GPS · {v._gps.length} registros · <span className="font-bold">{v.kmGps} km</span>
+                  </p>
+                  {v._gps.length > 0 ? (
+                    <table className="w-full rounded-lg overflow-hidden border border-slate-100 dark:border-slate-700">
+                      <thead className="bg-slate-50 dark:bg-slate-800">
+                        <tr>
+                          <th className="px-3 py-1.5 text-left text-slate-500">Fecha</th>
+                          <th className="px-3 py-1.5 text-right text-slate-500">Km</th>
+                          <th className="px-3 py-1.5 text-left text-slate-500">Fuente</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                        {v._gps.map((r, i) => (
+                          <tr key={r.id || i}>
+                            <td className="px-3 py-1.5 tabular-nums">{r.fecha}</td>
+                            <td className="px-3 py-1.5 text-right font-semibold text-violet-600 tabular-nums">{r.km_reales ?? '—'}</td>
+                            <td className="px-3 py-1.5 text-slate-400">Auto-guardado GPS</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="text-slate-400 italic px-1">Sin registros GPS en este período. La columna Km GPS muestra —.</p>
+                  )}
+                </div>
+
+                {/* Novedades */}
+                <div>
+                  <p className="font-semibold text-sky-600 mb-2 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-sky-500 inline-block shrink-0" />
+                    Novedades / Viajes · {v._trips.length} registros · <span className="font-bold">{v.kmReg} km</span>
+                  </p>
+                  {v._trips.length > 0 ? (
+                    <table className="w-full rounded-lg overflow-hidden border border-slate-100 dark:border-slate-700">
+                      <thead className="bg-slate-50 dark:bg-slate-800">
+                        <tr>
+                          <th className="px-3 py-1.5 text-left text-slate-500">Fecha</th>
+                          <th className="px-3 py-1.5 text-right text-slate-500">Km</th>
+                          <th className="px-3 py-1.5 text-left text-slate-500">Tipo</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                        {v._trips.map((r, i) => (
+                          <tr key={r.id || i}>
+                            <td className="px-3 py-1.5 tabular-nums">{r.fecha}</td>
+                            <td className="px-3 py-1.5 text-right font-semibold text-sky-600 tabular-nums">{r.km_reales ?? '—'}</td>
+                            <td className="px-3 py-1.5 text-slate-400">{tipoViajeLbl(r.tipo_viaje)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="text-slate-400 italic px-1">Sin novedades declaradas. La columna Km Reg. muestra —.</p>
+                  )}
+                </div>
+
+                {/* Combustible */}
+                <div>
+                  <p className="font-semibold text-emerald-600 mb-2 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0" />
+                    Combustible · {v._movs.length} registros · <span className="font-bold">{fmtL(v.litros)} L</span>
+                  </p>
+                  {v._movs.length > 0 ? (
+                    <table className="w-full rounded-lg overflow-hidden border border-slate-100 dark:border-slate-700">
+                      <thead className="bg-slate-50 dark:bg-slate-800">
+                        <tr>
+                          <th className="px-3 py-1.5 text-left text-slate-500">Fecha</th>
+                          <th className="px-3 py-1.5 text-left text-slate-500">Tipo</th>
+                          <th className="px-3 py-1.5 text-right text-slate-500">Litros</th>
+                          <th className="px-3 py-1.5 text-right text-slate-500">Odómetro</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                        {v._movs.map((m, i) => (
+                          <tr key={m.id || i}>
+                            <td className="px-3 py-1.5 tabular-nums">{m.fecha}</td>
+                            <td className="px-3 py-1.5">
+                              <span className={m.tipo === 'COMPRA' ? 'text-orange-600 font-medium' : 'text-emerald-600 font-medium'}>{m.tipo}</span>
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-semibold text-emerald-600 tabular-nums">{fmtL(Number(m.litros))} L</td>
+                            <td className="px-3 py-1.5 text-right text-slate-400 tabular-nums">
+                              {m.odometro ? `${Number(m.odometro).toLocaleString()} km` : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="text-slate-400 italic px-1">Sin movimientos de combustible. La columna Litros muestra —.</p>
+                  )}
+                </div>
+
+                {/* Traza odómetro */}
+                {(v._odoAntes.length > 0 || v._movs.some(m => m.odometro)) && (
+                  <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-800 rounded-xl px-3 py-2.5 space-y-1">
+                    <p className="font-semibold text-amber-700 dark:text-amber-400 mb-1">Cálculo Km Odóm.</p>
+                    {v._odoAntes.length > 0 && v._odoInicioMes != null ? (
+                      <p className="text-amber-600 dark:text-amber-300">
+                        Odo. inicio — último registro <b>antes del mes</b>: <b className="tabular-nums">{Number(v._odoInicioMes).toLocaleString()} km</b>
+                        <span className="text-amber-400 ml-1">({v._odoAntes[0]?.fecha})</span>
+                      </p>
+                    ) : v._odoInicioMes != null ? (
+                      <p className="text-amber-600 dark:text-amber-300">Odo. inicio — mín. del mes (sin dato previo): <b className="tabular-nums">{Number(v._odoInicioMes).toLocaleString()} km</b></p>
+                    ) : null}
+                    {v._odoFinMes != null && (
+                      <p className="text-amber-600 dark:text-amber-300">
+                        Odo. fin — máx. del mes: <b className="tabular-nums">{Number(v._odoFinMes).toLocaleString()} km</b>
+                      </p>
+                    )}
+                    {v.kmOdo != null ? (
+                      <p className="font-bold text-amber-700 dark:text-amber-300 border-t border-amber-200 dark:border-amber-700 pt-1 mt-1">
+                        Km Odóm. = {Number(v._odoFinMes).toLocaleString()} − {Number(v._odoInicioMes).toLocaleString()} = <span className="text-lg">{v.kmOdo} km</span>
+                      </p>
+                    ) : (
+                      <p className="text-amber-400 italic">Sin odómetro suficiente — la columna Km Odóm. muestra —.</p>
+                    )}
+                  </div>
+                )}
+
+              </div>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
       {/* ── Tab: Mapa ─────────────────────────────────────────────────────────── */}
       {tab === 'mapa' && (

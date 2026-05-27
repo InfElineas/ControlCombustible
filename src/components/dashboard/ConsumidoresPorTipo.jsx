@@ -27,6 +27,8 @@ function esAlmacenUso(consumidor) {
   return n.includes('almac');
 }
 
+const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
+
 function fuelColor(nombre) {
   const n = (nombre || '').toLowerCase();
   if (n.includes('diesel'))   return 'text-amber-600';
@@ -422,7 +424,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
             <div>
               <div className="flex justify-between text-[10px] text-slate-500 mb-1">
                 <span className="flex items-center gap-1"><Droplets className="w-3 h-3 text-blue-400" />Stock actual</span>
-                <span className="font-bold text-slate-700">{stockActual.toFixed(1)} L{capacidad ? ` / ${capacidad} L` : ''}</span>
+                <span className="font-bold text-slate-700">{fmtL(stockActual)} L{capacidad ? ` / ${capacidad} L` : ''}</span>
               </div>
               {capacidad && <StockBar pct={stockPct} />}
               {coberturaDias != null && (
@@ -437,13 +439,13 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
             <Stat label="Último reaprov.">
               {ultimaCarga ? (
                 <>
-                  <p className="font-semibold text-slate-700">{Number(ultimaCarga.litros || 0).toFixed(1)} L</p>
+                  <p className="font-semibold text-slate-700">{fmtL(Number(ultimaCarga.litros || 0))} L</p>
                   <p className="text-[10px] text-slate-400">{ultimaCarga.fecha}</p>
                 </>
               ) : <p className="text-slate-300">Sin datos</p>}
             </Stat>
             <Stat label="Despachado (mes)">
-              <p className="font-semibold text-slate-700">{despachadoMes > 0 ? `${despachadoMes.toFixed(1)} L` : '—'}</p>
+              <p className="font-semibold text-slate-700">{despachadoMes > 0 ? `${fmtL(despachadoMes)} L` : '—'}</p>
             </Stat>
           </div>
         </CardContent>
@@ -492,7 +494,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
                 {ultimaAutorizacion.combustible_nombre && (
                   <CombustibleBadge nombre={ultimaAutorizacion.combustible_nombre} />
                 )}
-                <span className="font-semibold text-slate-700">{Number(ultimaAutorizacion.litros || 0).toFixed(1)} L</span>
+                <span className="font-semibold text-slate-700">{fmtL(Number(ultimaAutorizacion.litros || 0))} L</span>
               </div>
             ) : <span className="text-slate-300">Sin registros</span>}
           </div>
@@ -501,12 +503,12 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
           <div className="grid grid-cols-2 gap-1.5 text-xs">
             <Stat label={`${mesFiltro === 'ALL' ? 'Este mes' : 'Período'} (${numAlmacenMes} autorización${numAlmacenMes !== 1 ? 'es' : ''})`}>
               {numAlmacenMes > 0
-                ? <p className="font-semibold text-slate-700">{litrosMesAlmacen.toFixed(1)} L</p>
+                ? <p className="font-semibold text-slate-700">{fmtL(litrosMesAlmacen)} L</p>
                 : <p className="text-slate-300 font-medium">Sin autorizaciones</p>}
             </Stat>
             <Stat label={`Histórico (${totalAutorizaciones} total)`}>
               {totalAutorizaciones > 0
-                ? <p className="font-semibold text-slate-700">{totalLitrosHistorico.toFixed(1)} L</p>
+                ? <p className="font-semibold text-slate-700">{fmtL(totalLitrosHistorico)} L</p>
                 : <p className="text-slate-300 font-medium">—</p>}
             </Stat>
           </div>
@@ -562,7 +564,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
                           : <span className="text-slate-300">—</span>}
                       </td>
                       <td className="py-2 pr-3 text-right font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
-                        {Number(m.litros || 0).toFixed(1)} L
+                        {fmtL(Number(m.litros || 0))} L
                       </td>
                       <td className="py-2 pr-2 text-slate-500 dark:text-slate-400 hidden sm:table-cell max-w-[100px] truncate">
                         {m.consumidor_origen_nombre || '—'}
@@ -580,7 +582,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
             <div className="pt-3 border-t border-slate-100 dark:border-slate-700 flex justify-between text-xs text-slate-500">
               <span>{despachosRecibidos.length} autorización{despachosRecibidos.length !== 1 ? 'es' : ''}</span>
               <span className="font-semibold text-slate-700 dark:text-slate-200">
-                Total: {despachosRecibidos.reduce((s, m) => s + (m.litros || 0), 0).toFixed(1)} L
+                Total: {fmtL(despachosRecibidos.reduce((s, m) => s + (m.litros || 0), 0))} L
               </span>
             </div>
           )}
@@ -644,7 +646,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
             </Stat>
             <Stat label="Cargas (mes)">
               {numCargasMes > 0
-                ? <p className="font-semibold text-slate-700"><span className="text-sky-700">{numCargasMes}</span> · {litrosMes.toFixed(1)} L</p>
+                ? <p className="font-semibold text-slate-700"><span className="text-sky-700">{numCargasMes}</span> · {fmtL(litrosMes)} L</p>
                 : <p className="text-slate-300 font-medium">Sin cargas</p>}
             </Stat>
           </div>
@@ -698,7 +700,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
                     ? 'Total abastecido'
                     : `Total abastecido (${new Date(mesReferencia + '-02').toLocaleDateString('es', { month: 'short', year: 'numeric' })})`}
                 </p>
-                <p className="font-semibold text-slate-700">{litrosMes > 0 ? `${litrosMes.toFixed(1)} L` : <span className="text-slate-300 font-normal">—</span>}</p>
+                <p className="font-semibold text-slate-700">{litrosMes > 0 ? `${fmtL(litrosMes)} L` : <span className="text-slate-300 font-normal">—</span>}</p>
                 {gastoMes > 0 && <p className="text-[9px] text-slate-400">{formatMonto(gastoMes)}</p>}
                 {numCargasMes > 0 && <p className="text-[9px] text-slate-400">{numCargasMes} carga{numCargasMes !== 1 ? 's' : ''}</p>}
               </div>
@@ -713,7 +715,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
                     <p className={`font-semibold tabular-nums ${estadoConsumo === 'critico' ? 'text-red-600' : estadoConsumo === 'alerta' ? 'text-amber-600' : 'text-emerald-700'}`}>
                       {nivelData.indice.toFixed(2)} km/L
                     </p>
-                    <p className="text-[9px] text-slate-400">{nivelData.litrosConsumidos.toFixed(1)} L cons.</p>
+                    <p className="text-[9px] text-slate-400">{fmtL(nivelData.litrosConsumidos)} L cons.</p>
                   </>
                 ) : (
                   <>
@@ -759,8 +761,8 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
                 <span className="shrink-0 mt-0.5">{nivelData.discrepanciaL > 0 ? '⚠' : 'ℹ'}</span>
                 <span>
                   {nivelData.discrepanciaL > 0
-                    ? <>Consumió <b>{nivelData.litrosConsumidos.toFixed(1)} L</b> pero cargó <b>{nivelData.litrosCargados.toFixed(1)} L</b> — diferencia de <b>+{nivelData.discrepanciaL.toFixed(1)} L</b> ({nivelData.discrepanciaPct.toFixed(0)}%)</>
-                    : <>Cargó <b>{nivelData.litrosCargados.toFixed(1)} L</b> pero consumió <b>{nivelData.litrosConsumidos.toFixed(1)} L</b> — tanque no se llenó completo ({Math.abs(nivelData.discrepanciaL).toFixed(1)} L de margen)</>
+                    ? <>Consumió <b>{fmtL(nivelData.litrosConsumidos)} L</b> pero cargó <b>{fmtL(nivelData.litrosCargados)} L</b> — diferencia de <b>+{fmtL(nivelData.discrepanciaL)} L</b> ({nivelData.discrepanciaPct.toFixed(0)}%)</>
+                    : <>Cargó <b>{fmtL(nivelData.litrosCargados)} L</b> pero consumió <b>{fmtL(nivelData.litrosConsumidos)} L</b> — tanque no se llenó completo ({fmtL(Math.abs(nivelData.discrepanciaL))} L de margen)</>
                   }
                 </span>
               </div>
@@ -774,7 +776,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
           {ultimaCarga ? (
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <span className="text-slate-500 tabular-nums">{ultimaCarga.fecha}</span>
-              <span className="font-semibold text-slate-700">{Number(ultimaCarga.litros || 0).toFixed(1)} L</span>
+              <span className="font-semibold text-slate-700">{fmtL(Number(ultimaCarga.litros || 0))} L</span>
               {ultimaCarga.monto != null && <span className="text-slate-400">{formatMonto(ultimaCarga.monto)}</span>}
             </div>
           ) : <span className="text-slate-300">Sin registros</span>}
@@ -841,7 +843,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
                       {new Date(mes + '-02').toLocaleDateString('es', { month: 'long', year: 'numeric' })}
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums text-slate-500">{cargas}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums font-semibold text-slate-700 dark:text-slate-200">{litros.toFixed(1)} L</td>
+                    <td className="py-2 pr-3 text-right tabular-nums font-semibold text-slate-700 dark:text-slate-200">{fmtL(litros)} L</td>
                     <td className="py-2 pr-3 text-right text-slate-500 hidden sm:table-cell">{monto > 0 ? formatMonto(monto) : '—'}</td>
                     {!esEquipoConsumidor && (
                       <td className={`py-2 pr-3 text-right tabular-nums hidden md:table-cell ${odoInconsistente ? 'text-amber-600 font-semibold' : 'text-slate-400'}`}>
@@ -876,7 +878,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
                                   title={
                                     `Mes intermedio sin km/L calculable.\n` +
                                     `${fillsSinConsumoReal.length} carga${fillsSinConsumoReal.length !== 1 ? 's' : ''} sin carga anterior con odómetro registrado:\n` +
-                                    fillsSinConsumoReal.map(m => `  · ${m.fecha}  odo ${m.odometro?.toLocaleString()} km  ${m.litros?.toFixed(1)} L`).join('\n') +
+                                    fillsSinConsumoReal.map(m => `  · ${m.fecha}  odo ${m.odometro?.toLocaleString()} km  ${fmtL(m.litros || 0)} L`).join('\n') +
                                     `\n\nCausa probable: la carga inmediatamente anterior a este mes no tiene odómetro registrado.\n` +
                                     `Solución: registre el odómetro en esa carga previa (Movimientos → Editar) y el km/L aparecerá automáticamente.`
                                   }
@@ -899,7 +901,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
                               ? 'Dato exacto: nivel registrado al inicio de la siguiente carga'
                               : 'Estimado: nivel + litros de la última carga del mes (antes del consumo posterior)'}
                           >
-                            {!nivelCierreEsExacto && '≈ '}{nivelCierre.toFixed(1)} L
+                            {!nivelCierreEsExacto && '≈ '}{fmtL(nivelCierre)} L
                           </span>
                         ) : <span className="text-slate-300">—</span>}
                       </td>
@@ -952,7 +954,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div>
                     <p className="text-slate-400 mb-0.5">Total litros</p>
-                    <p className="font-bold text-slate-700 dark:text-slate-200">{totalLitros.toFixed(1)} L</p>
+                    <p className="font-bold text-slate-700 dark:text-slate-200">{fmtL(totalLitros)} L</p>
                   </div>
                   <div>
                     <p className="text-slate-400 mb-0.5">Total monto</p>
@@ -1065,12 +1067,12 @@ export default function ConsumidoresPorTipo({ consumidores, tiposConsumidor, mov
                 {Object.entries(litrosPorCombustible).map(([nombre, litros], i) => (
                   <span key={nombre} className="flex items-center gap-1">
                     {i > 0 && <span className="text-slate-300">·</span>}
-                    <b className={fuelColor(nombre)}>{litros.toFixed(1)} L</b>
+                    <b className={fuelColor(nombre)}>{fmtL(litros)} L</b>
                     <span className="text-[10px]">{abbrFuel(nombre)}</span>
                   </span>
                 ))}
                 {Object.keys(litrosPorCombustible).length === 0 && litrosMes > 0 && (
-                  <span><b className="text-slate-600">{litrosMes.toFixed(1)} L</b></span>
+                  <span><b className="text-slate-600">{fmtL(litrosMes)} L</b></span>
                 )}
                 {gastoMes > 0 && <span className="text-slate-300 ml-1">·</span>}
                 {gastoMes > 0 && <span><b className="text-slate-600">{formatMonto(gastoMes)}</b></span>}

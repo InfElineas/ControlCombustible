@@ -30,6 +30,18 @@ function makeVehicleIcon(moving) {
   });
 }
 
+// Numbered circle icon for route stop markers
+function makeStopIcon(num, color, isTerminal) {
+  const size = isTerminal ? 26 : 20;
+  const fontSize = isTerminal ? 11 : 10;
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-size:${fontSize}px;font-weight:700;color:white;font-family:system-ui,sans-serif;line-height:1">${num}</div>`,
+    iconSize:   [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
 function ClickHandler({ onPick }) {
   useMapEvents({ click: e => onPick(e.latlng.lat, e.latlng.lng) });
   return null;
@@ -270,17 +282,19 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
           : [];
       }
     }
-    if (vehiculoFiltro.trim()) {
-      const q = vehiculoFiltro.toLowerCase();
-      resultado = resultado.filter(pos => {
-        const c     = consumidores.find(c => Number(c.gps_device_id) === Number(pos.deviceId));
-        const nombre = c?.nombre ?? `GPS #${pos.deviceId}`;
-        const chapa  = c?.codigo_interno ?? '';
-        return nombre.toLowerCase().includes(q) || chapa.toLowerCase().includes(q);
-      });
+    if (vehiculoFiltro) {
+      resultado = resultado.filter(p => String(p.deviceId) === vehiculoFiltro);
     }
     return resultado;
   })();
+
+  // Lista de vehículos con posición GPS activa, ordenada por chapa
+  const vehiculosGps = posicionesValidas
+    .map(pos => {
+      const c = consumidores.find(c => Number(c.gps_device_id) === Number(pos.deviceId));
+      return { deviceId: String(pos.deviceId), chapa: c?.codigo_interno || '', nombre: c?.nombre || `GPS #${pos.deviceId}` };
+    })
+    .sort((a, b) => a.chapa.localeCompare(b.chapa));
 
   const updatedAt = dataUpdatedAt
     ? new Date(dataUpdatedAt).toLocaleTimeString('es-CU', { hour: '2-digit', minute: '2-digit' })
@@ -315,29 +329,31 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
           </div>
         )}
 
-        {/* Filtro de vehículo por nombre o chapa */}
-        {posicionesValidas.length > 0 && (
-          <>
-            <div className="relative flex-1 max-w-xs">
-              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input
-                type="text"
-                value={vehiculoFiltro}
-                onChange={e => setVehiculoFiltro(e.target.value)}
-                placeholder="Filtrar por nombre o chapa…"
-                className="w-full pl-8 pr-8 h-8 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-sky-400"
-              />
-              {vehiculoFiltro && (
-                <button
-                  onClick={() => setVehiculoFiltro('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-base leading-none"
-                >×</button>
-              )}
-            </div>
-            <span className="text-xs text-slate-400 shrink-0">
-              {posicionesFiltradas.length} / {posicionesValidas.length} vehículo{posicionesValidas.length !== 1 ? 's' : ''}
-            </span>
-          </>
+        {/* Selector de vehículo por chapa */}
+        {vehiculosGps.length > 0 && (
+          <div className="flex items-center gap-1">
+            <select
+              value={vehiculoFiltro}
+              onChange={e => {
+                setVehiculoFiltro(e.target.value);
+                if (e.target.value) setRutaFiltro('');
+              }}
+              className="h-8 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-sky-400 px-2 max-w-[200px]"
+            >
+              <option value="">Ver vehículo en mapa…</option>
+              {vehiculosGps.map(v => (
+                <option key={v.deviceId} value={v.deviceId}>
+                  {v.chapa ? `${v.chapa} — ${v.nombre}` : v.nombre}
+                </option>
+              ))}
+            </select>
+            {vehiculoFiltro && (
+              <button
+                onClick={() => setVehiculoFiltro('')}
+                className="text-slate-400 hover:text-slate-600 text-base leading-none"
+              >×</button>
+            )}
+          </div>
         )}
 
         <button
@@ -428,13 +444,20 @@ export function MapaRutas({ rutas = [], novedadesHoy = [] }) {
                   <Popup>{popupContent}</Popup>
                 </Polyline>
 
-                {/* Marcadores de parada en waypoints (o inicio/fin) */}
-                {positions.map((pos, idx) => {
-                  const label = wps.length >= 2
-                    ? wps[idx]?.nombre
-                    : idx === 0 ? (ruta.punto_inicio || 'Inicio') : (ruta.punto_fin || 'Fin');
+                {/* Marcadores de parada solo en waypoints reales (no en cada punto de geometría) */}
+                {(wps.length >= 2
+                  ? wps.map(m => ({ pos: [Number(m.lat), Number(m.lng)], label: m.nombre }))
+                  : straightPositions.map((pos, i) => ({
+                      pos,
+                      label: i === 0 ? (ruta.punto_inicio || 'Inicio') : (ruta.punto_fin || 'Fin'),
+                    }))
+                ).map(({ pos, label }, idx, arr) => {
+                  const isTerminal = idx === 0 || idx === arr.length - 1;
+                  const num = wps.length >= 2
+                    ? (idx === 0 ? 'A' : idx === arr.length - 1 ? 'B' : idx)
+                    : (idx === 0 ? 'A' : 'B');
                   return (
-                    <Marker key={idx} position={pos}>
+                    <Marker key={idx} position={pos} icon={makeStopIcon(num, color, isTerminal)}>
                       <Popup>
                         <div style={{ fontSize: 12 }}>
                           <b>{label}</b><br />

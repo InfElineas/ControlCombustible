@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from '@/api/supabaseClient';
 
 const navItems = [
-  { name: 'Dashboard',      page: 'Dashboard',     icon: LayoutDashboard, roles: ['superadmin', 'operador', 'auditor', 'economico'] },
+  { name: 'Inicio',         page: 'Dashboard',     icon: LayoutDashboard, roles: ['superadmin', 'operador', 'auditor', 'economico'] },
   { name: 'Movimientos',    page: 'Movimientos',   icon: List,             roles: ['superadmin', 'operador', 'auditor', 'economico'] },
   { name: 'Finanzas',       page: 'Finanzas',      icon: WalletCards,      roles: ['superadmin', 'economico'] },
   { name: 'Catálogos',      page: 'Catalogos',     icon: BookOpen,         roles: ['superadmin', 'operador', 'economico'] },

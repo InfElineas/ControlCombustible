@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertTriangle, TrendingDown, TrendingUp, Users, CalendarDays, User, ChevronDown, Warehouse } from 'lucide-react';
+import { AlertTriangle, TrendingDown, TrendingUp, Users, CalendarDays, User, ChevronDown, Warehouse, Navigation, Clock } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
@@ -54,6 +54,26 @@ export default function Dashboard() {
 
   const hoy = new Date();
   const movimientosFiltrados = filterMovimientosByMonth(movimientos, mesFiltro);
+
+  // Mes para el resumen GPS (usa el filtro seleccionado o el mes actual si es 'ALL')
+  const mesGps = mesFiltro !== 'ALL' ? mesFiltro : hoy.toISOString().slice(0, 7);
+
+  const { data: asigGpsMes = [] } = useQuery({
+    queryKey: ['asig-gps-dashboard', mesGps],
+    queryFn: async () => {
+      const nextMonth = new Date(mesGps + '-01T12:00:00');
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      const nextMonthStr = nextMonth.toISOString().slice(0, 7) + '-01';
+      const { data } = await supabase
+        .from('asignacion_ruta')
+        .select('consumidor_id, tipo_viaje, km_reales, fecha, estado')
+        .gte('fecha', mesGps + '-01')
+        .lt('fecha', nextMonthStr)
+        .neq('estado', 'cancelada');
+      return data ?? [];
+    },
+    staleTime: 5 * 60_000,
+  });
 
   const opcionesMes = useMemo(() => {
     return getMonthOptionsFromMovimientos(movimientos);
@@ -506,6 +526,18 @@ export default function Dashboard() {
     return [];
   }, [statModal.tipo, movimientosFiltradosOrdenados, alertasConsumo]);
 
+  const gpsResumenMes = useMemo(() => {
+    const gpsRecs  = asigGpsMes.filter(a => a.tipo_viaje === 'recorrido_gps');
+    const tripRecs = asigGpsMes.filter(a => a.tipo_viaje !== 'recorrido_gps');
+    const kmGps   = Math.round(gpsRecs.reduce((s, a)  => s + (Number(a.km_reales) || 0), 0));
+    const kmReg   = Math.round(tripRecs.reduce((s, a) => s + (Number(a.km_reales) || 0), 0));
+    const diasGps = new Set(gpsRecs.map(a => a.fecha)).size;
+    const ultimaFecha = [...asigGpsMes].map(a => a.fecha).filter(Boolean).sort().at(-1) ?? null;
+    return { kmGps, kmReg, diasGps, ultimaFecha };
+  }, [asigGpsMes]);
+
+  const mesGpsLabel = new Date(mesGps + '-01T12:00:00').toLocaleDateString('es', { month: 'long', year: 'numeric' });
+
   return (
     <div className="space-y-6">
       <div>
@@ -657,6 +689,60 @@ export default function Dashboard() {
               <GastosMensualesChart movimientos={movimientos} />
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* Resumen GPS del mes */}
+      {(gpsResumenMes.kmGps > 0 || gpsResumenMes.kmReg > 0) && (
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SectionTitle icon={Navigation} title={`Flota GPS — ${mesGpsLabel}`} iconColor="text-violet-500" />
+            <Link to={createPageUrl('Rutas')} className="text-xs text-violet-600 hover:underline">
+              Ver comparativo detallado →
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-3">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Km GPS</p>
+                <p className="text-lg font-bold mt-0.5 text-violet-600 tabular-nums">
+                  {gpsResumenMes.kmGps > 0 ? `${gpsResumenMes.kmGps.toLocaleString()} km` : '—'}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5">recorridos guardados</p>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-3">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Km Reg.</p>
+                <p className="text-lg font-bold mt-0.5 text-sky-600 tabular-nums">
+                  {gpsResumenMes.kmReg > 0 ? `${gpsResumenMes.kmReg.toLocaleString()} km` : '—'}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5">declarados en novedades</p>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-3">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Días con GPS</p>
+                <p className="text-lg font-bold mt-0.5 text-teal-600 tabular-nums">
+                  {gpsResumenMes.diasGps > 0 ? gpsResumenMes.diasGps : '—'}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5">días registrados</p>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-3">
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> Última actualización
+                </p>
+                <p className="text-sm font-semibold mt-1 text-slate-600 capitalize">
+                  {gpsResumenMes.ultimaFecha
+                    ? new Date(gpsResumenMes.ultimaFecha + 'T12:00:00').toLocaleDateString('es', { day: 'numeric', month: 'long' })
+                    : '—'}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5">del período</p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
 
