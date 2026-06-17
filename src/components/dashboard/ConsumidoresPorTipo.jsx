@@ -1057,13 +1057,12 @@ export default function ConsumidoresPorTipo({ consumidores, tiposConsumidor, mov
       {grupos.map(({ tipo, items }) => {
         const isOpen = openGroups.has(tipo.id);
 
+        const itemIds = new Set(items.map(c => c.id));
         const comprasMes = movimientos.filter(m =>
-          m.tipo === 'COMPRA' && m.fecha?.startsWith(periodo) &&
-          items.some(c => c.id === m.consumidor_id)
+          m.tipo === 'COMPRA' && m.fecha?.startsWith(periodo) && itemIds.has(m.consumidor_id)
         );
         const despachosMesRecibidos = movimientos.filter(m =>
-          m.tipo === 'DESPACHO' && m.fecha?.startsWith(periodo) &&
-          items.some(c => c.id === m.consumidor_id)
+          m.tipo === 'DESPACHO' && m.fecha?.startsWith(periodo) && itemIds.has(m.consumidor_id)
         );
         const litrosMes = comprasMes.reduce((s, m) => s + (m.litros || 0), 0)
                         + despachosMesRecibidos.reduce((s, m) => s + (m.litros || 0), 0);

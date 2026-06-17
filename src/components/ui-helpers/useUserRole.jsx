@@ -37,14 +37,15 @@ export function useUserRole() {
         roleRow = created;
       }
 
+      const normalizedRole = (roleRow?.role ?? 'auditor') === 'admin' ? 'superadmin' : (roleRow?.role ?? 'auditor');
       if (active) {
         setUser({
           id:        authUser.id,
           email:     authUser.email,
           full_name: roleRow?.full_name ?? authUser.user_metadata?.full_name ?? authUser.email,
-          role:      roleRow?.role ?? 'auditor',
+          role:      normalizedRole,
         });
-        setRole(roleRow?.role ?? 'auditor');
+        setRole(normalizedRole);
         setLoading(false);
       }
     }

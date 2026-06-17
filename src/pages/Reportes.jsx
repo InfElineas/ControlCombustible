@@ -42,7 +42,7 @@ export default function Reportes() {
 
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
-  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-created_date', 2000) });
+  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
 
   const [fechaDesde, setFechaDesde] = useState('');
   const [fechaHasta, setFechaHasta] = useState('');
@@ -127,14 +127,17 @@ export default function Reportes() {
   ), [consumidores]);
 
   const reporteFinanciero = useMemo(() => {
-    const compras = movsFiltered.filter(m => m.tipo === 'COMPRA');
-    const litrosComprados = compras.reduce((s, m) => s + (m.litros || 0), 0);
-    const gastoCompras    = compras.reduce((s, m) => s + (m.monto  || 0), 0);
+    let litrosComprados = 0, gastoCompras = 0, litrosVD = 0, litrosServicios = 0;
+    movsFiltered.forEach(m => {
+      if (m.tipo === 'COMPRA') {
+        litrosComprados += m.litros || 0;
+        gastoCompras    += m.monto  || 0;
+      } else if (m.tipo === 'DESPACHO') {
+        if (m.consumidor_nombre === 'Uso Logístico')                                        litrosVD        += m.litros || 0;
+        else if (!consumidoresSurtidorIds.has(m.consumidor_id))                             litrosServicios += m.litros || 0;
+      }
+    });
     const precioPromedio  = litrosComprados > 0 ? gastoCompras / litrosComprados : 0;
-
-    const despachos = movsFiltered.filter(m => m.tipo === 'DESPACHO');
-    const litrosVD  = despachos.filter(m => m.consumidor_nombre === 'Uso Logístico').reduce((s, m) => s + (m.litros || 0), 0);
-    const litrosServicios = despachos.filter(m => m.consumidor_nombre !== 'Uso Logístico' && !consumidoresSurtidorIds.has(m.consumidor_id)).reduce((s, m) => s + (m.litros || 0), 0);
     const litrosTotalSalida = litrosVD + litrosServicios;
 
     const cobradas   = ventasFiltradas.filter(v => ['PAGADO_FINALIZADO', 'PAGADO'].includes(v.estado));

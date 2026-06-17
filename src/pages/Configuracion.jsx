@@ -194,55 +194,58 @@ export default function Configuracion() {
     const ext = file.name.split('.').pop().toLowerCase();
     let rows = [];
 
-    if (ext === 'json') {
-      const text = await file.text();
-      rows = parseJSON(text);
-      if (!Array.isArray(rows)) rows = [rows];
-    } else if (ext === 'csv') {
-      const text = await file.text();
-      rows = parseCSV(text);
-    } else if (ext === 'xlsx' || ext === 'xls') {
-      // Upload and extract via LLM integration
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
-      const result = await base44.integrations.Core.ExtractDataFromUploadedFile({
-        file_url,
-        json_schema: {
-          type: 'object',
-          properties: {
-            rows: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  Fecha: { type: 'string' },
-                  Accion: { type: 'string' },
-                  Tarjeta: { type: 'string' },
-                  'Tipo Combustible': { type: 'string' },
-                  Consumidor: { type: 'string' },
-                  'Consumidor Origen': { type: 'string' },
-                  Precio: { type: 'number' },
-                  'Compra L': { type: 'number' },
-                  'Compra $': { type: 'number' },
-                  'Recarga L': { type: 'number' },
-                  'Recarga $': { type: 'number' },
-                  Odometro: { type: 'number' },
-                  Referencia: { type: 'string' },
+    try {
+      if (ext === 'json') {
+        const text = await file.text();
+        rows = parseJSON(text);
+        if (!Array.isArray(rows)) rows = [rows];
+      } else if (ext === 'csv') {
+        const text = await file.text();
+        rows = parseCSV(text);
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        const { file_url } = await base44.integrations.Core.UploadFile({ file });
+        const result = await base44.integrations.Core.ExtractDataFromUploadedFile({
+          file_url,
+          json_schema: {
+            type: 'object',
+            properties: {
+              rows: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    Fecha: { type: 'string' },
+                    Accion: { type: 'string' },
+                    Tarjeta: { type: 'string' },
+                    'Tipo Combustible': { type: 'string' },
+                    Consumidor: { type: 'string' },
+                    'Consumidor Origen': { type: 'string' },
+                    Precio: { type: 'number' },
+                    'Compra L': { type: 'number' },
+                    'Compra $': { type: 'number' },
+                    'Recarga L': { type: 'number' },
+                    'Recarga $': { type: 'number' },
+                    Odometro: { type: 'number' },
+                    Referencia: { type: 'string' },
+                  },
                 },
               },
             },
           },
-        },
-      });
-      rows = result.output?.rows || result.output || [];
-    } else {
-      toast.error('Formato no soportado. Use JSON, CSV o XLSX.');
-      setIsProcessing(false);
-      return;
-    }
+        });
+        rows = result.output?.rows || result.output || [];
+      } else {
+        toast.error('Formato no soportado. Use JSON, CSV o XLSX.');
+        return;
+      }
 
-    const normalized = rows.map(normalizeRow);
-    setPreview(normalized);
-    setIsProcessing(false);
+      const normalized = rows.map(normalizeRow);
+      setPreview(normalized);
+    } catch (err) {
+      toast.error('Error al procesar el archivo: ' + (err?.message ?? 'Error desconocido'));
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleImport = async () => {

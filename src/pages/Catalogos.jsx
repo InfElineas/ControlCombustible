@@ -162,10 +162,10 @@ function TabConsumidores({ canWrite, canDelete }) {
     const payload = {
       ...baseForm,
       litros_iniciales: Number(form.litros_iniciales),
-      ...(conductor_id    ? { conductor_id }                    : {}),
-      ...(form.conductor  ? { conductor: form.conductor }       : {}),
-      ...(ayudante_id     ? { ayudante_id }                     : {}),
-      ...(ayudante        ? { ayudante }                        : {}),
+      conductor_id:  conductor_id    || null,
+      conductor:     form.conductor  || null,
+      ayudante_id:   ayudante_id     || null,
+      ayudante:      ayudante        || null,
     };
     editing ? updateMut.mutate({ id: editing.id, d: payload }) : createMut.mutate(payload);
   };
@@ -305,7 +305,7 @@ function TabConductores({ canDelete }) {
   const qc = useQueryClient();
   const { data: conductores = []  } = useQuery({ queryKey: ['conductores'],  queryFn: () => base44.entities.Conductor.list() });
   const { data: consumidores = []  } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
-  const { data: movimientos = []   } = useQuery({ queryKey: ['movimientos'],  queryFn: () => base44.entities.Movimiento.list('-fecha', 1000) });
+  const { data: movimientos = []   } = useQuery({ queryKey: ['movimientos'],  queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
 
   const [dialogOpen, setDialogOpen]             = useState(false);
   const [editing, setEditing]                   = useState(null);
@@ -1082,7 +1082,7 @@ function TabTiposConsumidor() {
 function TabCombustibles({ canDelete }) {
   const qc = useQueryClient();
   const { data: combustibles = [] } = useQuery({ queryKey: ['combustibles'], queryFn: () => base44.entities.TipoCombustible.list() });
-  const { data: movimientos  = [] } = useQuery({ queryKey: ['movimientos'],  queryFn: () => base44.entities.Movimiento.list('-created_date', 500) });
+  const { data: movimientos  = [] } = useQuery({ queryKey: ['movimientos'],  queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
 
   const [dialogOpen, setDialogOpen]       = useState(false);
   const [editing, setEditing]             = useState(null);
@@ -1192,7 +1192,7 @@ const emptyTarjeta = () => ({ id_tarjeta: '', alias: '', moneda: 'USD', activa: 
 function TabTarjetas({ canManage, canDelete }) {
   const qc = useQueryClient();
   const { data: tarjetas    = [] } = useQuery({ queryKey: ['tarjetas'],   queryFn: () => base44.entities.Tarjeta.list() });
-  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 2000) });
+  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
 
   const [dialog, setDialog]       = useState(null);
   const [form, setForm]           = useState(emptyTarjeta());

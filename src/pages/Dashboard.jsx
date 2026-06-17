@@ -46,7 +46,7 @@ export default function Dashboard() {
     return next;
   });
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
-  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 1000) });
+  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
   const { data: tiposConsumidor = [] } = useQuery({ queryKey: ['tiposConsumidor'], queryFn: () => base44.entities.TipoConsumidor.list() });
   const { data: tipoCombustible = [] } = useQuery({ queryKey: ['tipoCombustible'], queryFn: () => base44.entities.TipoCombustible.list() });
@@ -276,6 +276,7 @@ export default function Dashboard() {
         if (m.consumidor_nombre === 'Uso Logístico') return;
         const key = m.consumidor_id || m.consumidor_nombre || 'Sin identificar';
         if (!detalleConsumoMap[key]) detalleConsumoMap[key] = {
+          id: key,
           nombre: m.consumidor_nombre || 'Sin identificar',
           chapa: m.vehiculo_chapa || null,
           litros: 0, monto: 0,
@@ -1189,7 +1190,7 @@ export default function Dashboard() {
                             <>
                               <p className="text-[10px] text-slate-400 uppercase tracking-wide pb-0.5">Consumo por consumidor</p>
                               {visibleConsumers.map(d => (
-                                <div key={`${d.nombre}-${d.chapa}`} className="flex items-center justify-between py-1 border-b border-slate-50">
+                                <div key={d.id} className="flex items-center justify-between py-1 border-b border-slate-50">
                                   <span className="text-slate-500 truncate max-w-[65%]">
                                     {d.nombre}
                                     {d.chapa && <span className="text-slate-400 ml-1 font-mono text-[10px]">[{d.chapa}]</span>}

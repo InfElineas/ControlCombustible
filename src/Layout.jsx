@@ -16,7 +16,7 @@ import { supabase } from '@/api/supabaseClient';
 const navItems = [
   { name: 'Inicio',         page: 'Dashboard',     icon: LayoutDashboard, roles: ['superadmin', 'operador', 'auditor', 'economico', 'cajero'] },
   { name: 'Movimientos',    page: 'Movimientos',   icon: List,             roles: ['superadmin', 'operador', 'auditor', 'economico'] },
-  { name: 'Bonificaciones', page: 'Ventas',        icon: ShoppingCart,     roles: ['superadmin', 'operador', 'economico', 'auditor', 'cajero'] },
+  { name: 'Bonificaciones', page: 'Ventas',        icon: ShoppingCart,     roles: ['superadmin', 'economico', 'auditor', 'cajero'] },
   { name: 'Finanzas',       page: 'Finanzas',      icon: WalletCards,      roles: ['superadmin', 'economico'] },
   { name: 'Catálogos',      page: 'Catalogos',     icon: BookOpen,         roles: ['superadmin', 'operador', 'economico'] },
   { name: 'Rutas',          page: 'Rutas',         icon: Navigation,       roles: ['superadmin', 'operador', 'auditor'] },
@@ -43,7 +43,7 @@ const pageRoles = {
   Configuracion: ['superadmin', 'operador'],
   Finanzas:      ['superadmin', 'economico'],
   AdminPanel:    ['superadmin'],
-  Ventas:        ['superadmin', 'operador', 'economico', 'auditor', 'cajero'],
+  Ventas:        ['superadmin', 'economico', 'auditor', 'cajero'],
 };
 // Nota: Consumidores y Conductores mantienen pageRoles para redireccionamiento
 // correcto si alguien navega a esas URLs directamente (ambas redirigen a Catalogos).
@@ -124,8 +124,7 @@ function NavContent({ currentPageName, role, onNavigate, isDark, toggle }) {
 }
 
 export default function Layout() {
-  const { user, role: rawRole, loading } = useUserRole();
-  const role = rawRole === 'admin' ? 'superadmin' : rawRole;
+  const { user, role, loading } = useUserRole();
   const { isDark, toggle } = useTheme();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();

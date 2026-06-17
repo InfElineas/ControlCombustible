@@ -35,8 +35,9 @@ export default function Movimientos() {
 
   const { data: movimientos = [], isLoading } = useQuery({
     queryKey: ['movimientos'],
-    queryFn: () => base44.entities.Movimiento.list('-fecha', 1000),
+    queryFn: () => base44.entities.Movimiento.list('-fecha', 2000),
     select: data => [...data].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')),
+    staleTime: 5 * 60_000,
   });
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
@@ -359,7 +360,7 @@ export default function Movimientos() {
                       const countFecha = paginated.filter(x => x.fecha === m.fecha).length;
                       rows.push(
                         <tr key={`sep-${m.fecha}`} className="cursor-pointer select-none" onClick={() => toggleDate(m.fecha)}>
-                          <td colSpan={10} className="px-4 py-1.5 bg-slate-50 border-y border-slate-100">
+                          <td colSpan={11} className="px-4 py-1.5 bg-slate-50 border-y border-slate-100">
                             <div className="flex items-center gap-2">
                               <ChevronDown className={`w-3 h-3 text-slate-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} />
                               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{label}</span>

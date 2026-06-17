@@ -9,6 +9,25 @@ import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
 
+function Tendencia({ pct }) {
+  if (pct === null) return <span className="text-sm font-bold text-slate-400">—</span>;
+  if (pct > 5) return (
+    <span className="flex items-center gap-1 text-sm font-bold text-red-600">
+      <TrendingUp className="w-3.5 h-3.5" />+{pct.toFixed(0)}%
+    </span>
+  );
+  if (pct < -5) return (
+    <span className="flex items-center gap-1 text-sm font-bold text-emerald-600">
+      <TrendingDown className="w-3.5 h-3.5" />{pct.toFixed(0)}%
+    </span>
+  );
+  return (
+    <span className="flex items-center gap-1 text-sm font-bold text-slate-500">
+      <Minus className="w-3.5 h-3.5" />{pct > 0 ? '+' : ''}{pct.toFixed(0)}%
+    </span>
+  );
+}
+
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   const gasto  = Number(payload.find(p => p.dataKey === 'gasto')?.value  || 0);
@@ -65,27 +84,6 @@ export default function GastosMensualesChart({ movimientos }) {
   const tendenciaPct   = anterior > 0 ? ((actual - anterior) / anterior) * 100 : null;
   const maxGasto       = Math.max(...data.map(d => d.gasto));
 
-  const Tendencia = () => {
-    if (tendenciaPct === null) return <span className="text-sm font-bold text-slate-400">—</span>;
-    if (tendenciaPct > 5)
-      return (
-        <span className="flex items-center gap-1 text-sm font-bold text-red-600">
-          <TrendingUp className="w-3.5 h-3.5" />+{tendenciaPct.toFixed(0)}%
-        </span>
-      );
-    if (tendenciaPct < -5)
-      return (
-        <span className="flex items-center gap-1 text-sm font-bold text-emerald-600">
-          <TrendingDown className="w-3.5 h-3.5" />{tendenciaPct.toFixed(0)}%
-        </span>
-      );
-    return (
-      <span className="flex items-center gap-1 text-sm font-bold text-slate-500">
-        <Minus className="w-3.5 h-3.5" />{tendenciaPct > 0 ? '+' : ''}{tendenciaPct.toFixed(0)}%
-      </span>
-    );
-  };
-
   return (
     <div className="space-y-4">
       {/* Mini-KPIs */}
@@ -100,7 +98,7 @@ export default function GastosMensualesChart({ movimientos }) {
         </div>
         <div>
           <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">vs mes anterior</p>
-          <Tendencia />
+          <Tendencia pct={tendenciaPct} />
         </div>
       </div>
 

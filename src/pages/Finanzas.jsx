@@ -728,7 +728,7 @@ function PreciosDespacho() {
 
   const tipoNombre = id => tiposConsumidor.find(t => t.id === id)?.nombre ?? id;
   const combNombre = id => id ? (combustibles.find(c => c.id === id)?.nombre ?? '—') : 'Todos';
-  const esVigente  = p => p.fecha_desde <= today;
+  const esVigente  = p => p.fecha_desde <= today && (!p.fecha_hasta || p.fecha_hasta >= today);
 
   return (
     <Card className="border-0 shadow-sm">

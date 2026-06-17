@@ -71,14 +71,9 @@ function calcularNivelTanque(consumidor, movimientos) {
   };
 }
 
-function NivelTanqueRow({ consumidor, movimientos, config, onConfigEdit }) {
+function NivelTanqueRow({ consumidor, datos, config, onConfigEdit }) {
   const [expandido, setExpandido] = useState(false);
   const [enviandoEmail, setEnviandoEmail] = useState(false);
-
-  const datos = useMemo(
-    () => calcularNivelTanque(consumidor, movimientos),
-    [consumidor, movimientos],
-  );
 
   const umbralAlerta  = config?.umbral_alerta_pct  ?? 40;
   const umbralCritico = config?.umbral_critico_pct ?? 20;
@@ -352,7 +347,7 @@ function ConfigAlertaDialog({ consumidor, config, onClose }) {
 
 export default function Alertas() {
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
-  const { data: movimientos = [] }  = useQuery({ queryKey: ['movimientos'],  queryFn: () => base44.entities.Movimiento.list('-fecha', 1000) });
+  const { data: movimientos = [] }  = useQuery({ queryKey: ['movimientos'],  queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
   const { data: configAlertas = [] } = useQuery({ queryKey: ['configAlertas'], queryFn: () => base44.entities.ConfigAlerta.list() });
 
   const [editando, setEditando] = useState(null);
@@ -476,7 +471,7 @@ export default function Alertas() {
                 <NivelTanqueRow
                   key={c.id}
                   consumidor={c}
-                  movimientos={movimientos}
+                  datos={c.datos}
                   config={c.config}
                   onConfigEdit={setEditando}
                 />
