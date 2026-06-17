@@ -8,6 +8,7 @@ import {
   ChevronRight, Fuel, ArrowRightLeft, AlertTriangle, CheckCircle2,
   Calculator, Info, Lightbulb, FileText, Gauge, Car,
   CreditCard, TrendingUp, Clock, Route, User2, Database, ClipboardList,
+  Droplets, PackageCheck, XCircle, Upload,
 } from 'lucide-react';
 
 // ── Primitivos de layout ──────────────────────────────────────────────────────
@@ -138,10 +139,11 @@ const sections = [
         <TableDoc
           headers={['Rol', 'Qué puede hacer']}
           rows={[
-            [<Tag color="sky">Super Admin</Tag>, 'Acceso completo: crear, editar, eliminar en todos los módulos. Gestiona usuarios y roles.'],
-            [<Tag color="emerald">Operador</Tag>, 'Registra movimientos, consumidores, alertas y configuración. No accede a Finanzas ni Administración.'],
-            [<Tag color="violet">Auditor</Tag>, 'Solo lectura. Ve Dashboard, Movimientos, Rutas y Reportes. No puede crear ni eliminar.'],
-            [<Tag color="amber">Económico</Tag>, 'Accede a Dashboard, Movimientos, Finanzas y Reportes. Perfil contable/financiero.'],
+            [<Tag color="sky">Super Admin</Tag>, 'Acceso completo: crear, editar, eliminar en todos los módulos. Gestiona usuarios y roles. Puede eliminar bonificaciones de prueba.'],
+            [<Tag color="emerald">Operador</Tag>, 'Registra movimientos, consumidores, alertas y configuración. Puede registrar y gestionar bonificaciones. No accede a Finanzas ni Administración.'],
+            [<Tag color="violet">Auditor</Tag>, 'Solo lectura. Ve Dashboard, Movimientos, Rutas, Reportes y Bonificaciones. No puede crear ni eliminar.'],
+            [<Tag color="amber">Económico</Tag>, 'Accede a Dashboard, Movimientos, Finanzas, Reportes y Bonificaciones. Puede marcar bonificaciones como cobradas. Perfil contable/financiero.'],
+            [<Tag color="red">Cajero</Tag>, 'Acceso exclusivo a Bonificaciones y Reportes de bonificaciones. Registra nuevas bonificaciones, marca retiros y cobros. Perfil para el personal de caja.'],
           ]}
         />
       </>
@@ -693,53 +695,72 @@ Si Desviación < Umbral alerta                    → NORMAL   (verde)`}
     content: () => (
       <>
         <P>
-          El módulo de Finanzas tiene dos secciones: gestión de <strong>tarjetas corporativas</strong>
-          y control del <strong>stock de combustible por tipo</strong>.
+          El módulo de Finanzas es el panel económico principal del sistema. Muestra el resumen
+          financiero del mes seleccionado organizado en tres pestañas: <strong>Tarjetas</strong>,{' '}
+          <strong>Bonificaciones</strong> y <strong>Precios</strong>. Solo está disponible para
+          los roles <Tag color="amber">Económico</Tag> y <Tag color="sky">Super Admin</Tag>.
         </P>
 
-        <SubTitle>Tarjetas corporativas</SubTitle>
+        <SubTitle>Selector de período</SubTitle>
         <P>
-          Cada compra en surtidor externo (COMPRA) se asocia a una tarjeta corporativa.
-          Las tarjetas permiten rastrear el gasto por instrumento de pago y detectar uso no autorizado.
+          El selector de mes (esquina superior derecha) filtra todos los datos de la página al
+          mes elegido. El botón <strong>Exportar</strong> genera un Excel con tres hojas:
+          Compras, Bonificaciones y Resumen del período.
+        </P>
+
+        <SubTitle>Indicadores principales (KPIs)</SubTitle>
+        <TableDoc
+          headers={['Indicador', 'Qué muestra']}
+          rows={[
+            ['Gasto compras', 'Suma de montos de todas las COMPRA del período (combustible adquirido en surtidores externos).'],
+            ['Litros comprados', 'Total de litros registrados en COMPRA durante el período.'],
+            ['Bonificaciones', 'Monto total de bonificaciones activas del período (excluye las canceladas).'],
+            ['Pendiente cobro', 'Bonificaciones en estado Pendiente o Entregado que aún no han sido cobradas.'],
+          ]}
+        />
+        <P>
+          Debajo de los KPIs aparece el <strong>Balance financiero</strong>: muestra el gasto total
+          en compras, lo cobrado en bonificaciones y el flujo neto de caja del período. Si hay
+          bonificaciones por cobrar, se destaca el monto pendiente.
+        </P>
+
+        <SubTitle>Pestaña Tarjetas</SubTitle>
+        <P>
+          Muestra el resumen de compras agrupado por tarjeta y por tipo de combustible, con fila
+          de totales. Más abajo aparece el detalle expandible de cada tarjeta con todos sus
+          movimientos del período (se expande pulsando la flecha de cada tarjeta).
         </P>
         <TableDoc
-          headers={['Campo', 'Descripción']}
+          headers={['Campo tarjeta', 'Descripción']}
           rows={[
-            ['Número / Código', 'Identificador único de la tarjeta (puede ser número o código interno).'],
-            ['Alias', 'Nombre descriptivo para identificarla fácilmente en los listados.'],
-            ['Moneda', 'USD, CUP, MLC o EUR. Afecta el formato del monto en los reportes.'],
+            ['Número / Alias', 'Identificador y nombre descriptivo de la tarjeta.'],
+            ['Moneda', 'USD, CUP o MLC. Determina el formato del monto.'],
             ['Activa', 'Las tarjetas inactivas no pueden usarse en nuevos movimientos.'],
+            ['Gasto del período', 'Suma de COMPRA vinculadas a esa tarjeta en el mes seleccionado.'],
           ]}
         />
 
-        <SubTitle>Stock por tipo de combustible</SubTitle>
+        <SubTitle>Pestaña Bonificaciones</SubTitle>
         <P>
-          El panel de stock muestra para cada tipo de combustible el balance entre entradas (COMPRA)
-          y salidas (DESPACHO), con desglose de quién consumió qué.
+          Muestra 4 sub-indicadores (total, litros, cobrado, pendiente) y el listado completo de
+          bonificaciones del período con su estado. El total en la parte inferior suma solo las
+          bonificaciones activas (excluye canceladas). Para cambiar estados ve al módulo{' '}
+          <strong>Bonificaciones</strong>.
         </P>
-        <Callout type="formula" title="Cálculo del saldo de combustible">
-          <Formula>
-{`Total disponible = Litros inicio período + Σ(COMPRA del período)
-Consumo (DESPACHO) = Σ(DESPACHO del período)
-Saldo final      = Total disponible − Consumo
 
-"Consumo por consumidor" → DESPACHO agrupado por consumidor_id (destinatario)`}
-          </Formula>
-        </Callout>
-
-        <Callout type="info" title="¿Por qué el saldo puede parecer alto?">
-          Las COMPRA directas de vehículos (que no pasan por reserva) suman al "Total disponible"
-          pero no tienen un DESPACHO correspondiente. Esto es correcto: ese combustible fue comprado
-          y consumido directamente, sin pasar por el depósito interno. Ver sección de Movimientos
-          para la explicación completa.
-        </Callout>
-
-        <SubTitle>Precios de combustible</SubTitle>
+        <SubTitle>Pestaña Precios</SubTitle>
         <P>
-          En la sección de catálogos se configuran los precios vigentes por tipo de combustible y
-          período. Cuando se registra una COMPRA, el sistema sugiere el precio vigente en esa fecha.
-          Los precios históricos se mantienen para calcular correctamente el monto de movimientos pasados.
+          Muestra los precios vigentes por tipo de combustible y permite gestionar los precios de
+          despacho por tipo de consumidor (los precios que se aplican automáticamente al registrar
+          una bonificación). Los cambios en precios se aplican a nuevas bonificaciones, no a las
+          ya registradas.
         </P>
+
+        <Callout type="info" title="Nota para el rol Económico">
+          El perfil <Tag color="amber">Económico</Tag> puede ver toda la información financiera
+          pero no puede registrar ni editar movimientos directamente. Para registrar compras o
+          ajustes, el operador debe hacerlo desde el módulo de Movimientos.
+        </Callout>
       </>
     ),
   },
@@ -822,7 +843,7 @@ Clasificación:
     content: () => (
       <>
         <P>
-          El módulo de Reportes ofrece tres vistas analíticas del consumo de la flota,
+          El módulo de Reportes ofrece vistas analíticas del consumo de la flota y las bonificaciones,
           filtrables por rango de fechas (campo «Desde» / «Hasta»).
           Cuando no se establece ningún filtro se muestran todos los datos históricos disponibles.
         </P>
@@ -878,6 +899,160 @@ Sin capacidad configurada → barra relativa al mayor consumidor del período.`}
           Desde el ícono de lista en cualquier fila del reporte se puede ver el historial
           completo de movimientos de ese consumidor, con filtros de fecha y tipo.
         </P>
+
+        <SubTitle>Reporte de Bonificaciones</SubTitle>
+        <P>
+          La pestaña <strong>Bonificaciones</strong> muestra el listado de bonificaciones de combustible
+          a trabajadores, exportable a Excel y PDF. El rol <Tag color="red">Cajero</Tag> solo ve esta pestaña.
+          Para más detalles ve a la sección <strong>Bonificaciones</strong> de esta ayuda.
+        </P>
+      </>
+    ),
+  },
+  {
+    id: 'bonificaciones',
+    label: 'Bonificaciones',
+    icon: Droplets,
+    color: 'text-rose-600',
+    content: () => (
+      <>
+        <P>
+          El módulo de <strong>Bonificación de Combustible</strong> permite registrar y controlar
+          el beneficio laboral de combustible que reciben los trabajadores de la empresa.
+          Cada bonificación pasa por tres etapas: se registra, se entrega físicamente y luego se cobra.
+        </P>
+
+        <Callout type="info" title="¿Para qué sirve este módulo?">
+          En lugar de anotar las entregas de combustible a trabajadores en papel o en una hoja de cálculo,
+          este módulo las registra en el sistema de forma trazable. Cada entrega descuenta del stock
+          del tanque, genera un movimiento de despacho automático y queda vinculada al trabajador
+          y al período correspondiente.
+        </Callout>
+
+        <SubTitle>Ciclo de vida de una bonificación</SubTitle>
+        <TableDoc
+          headers={['Estado', 'Qué significa', 'Qué acción lo genera']}
+          rows={[
+            [<Tag color="amber">Pendiente</Tag>, 'La bonificación fue registrada pero el trabajador aún no ha retirado el combustible. Los litros quedan reservados en el stock (nadie más puede usar esa cantidad).', 'Se crea al registrar una nueva bonificación.'],
+            [<Tag color="sky">Entregado</Tag>, 'El trabajador pasó por caja y retiró el combustible físicamente. En ese momento se descuenta del tanque y se crea un movimiento de Despacho automático.', 'Botón "Retirar" — lo marca el cajero u operador al momento de la entrega.'],
+            [<Tag color="emerald">Pagado-Finalizado</Tag>, 'El trabajador pagó el monto correspondiente. La operación queda cerrada.', 'Botón "Cobrado" — lo marca el cajero o el perfil económico.'],
+            [<Tag color="red">Cancelado</Tag>, 'La bonificación fue cancelada. Los litros reservados quedan disponibles nuevamente.', 'Botón de anulación (×) — solo disponible en estado Pendiente o Entregado.'],
+          ]}
+        />
+
+        <Callout type="tip" title="¿Cómo afecta al stock de combustible?">
+          <ul className="space-y-1 mt-1">
+            <li>📌 <strong>Al registrar</strong> (Pendiente): los litros se <em>reservan</em>. El stock disponible para otros despachos se reduce aunque el trabajador aún no haya retirado.</li>
+            <li>📦 <strong>Al retirar</strong> (Retirado): el sistema crea automáticamente un <strong>Despacho</strong> en el módulo de Movimientos. Esto descuenta definitivamente los litros del tanque.</li>
+            <li>❌ <strong>Al anular</strong>: los litros reservados se liberan y vuelven a estar disponibles.</li>
+          </ul>
+        </Callout>
+
+        <SectionTitle id="bon-registro">Registrar una nueva bonificación</SectionTitle>
+        <P>
+          Pulsa el botón <strong>"+ Nueva bonificación"</strong> en la esquina superior derecha.
+          Se abre un formulario con estos campos:
+        </P>
+        <TableDoc
+          headers={['Campo', 'Obligatorio', 'Qué poner']}
+          rows={[
+            ['Fecha', 'Sí', 'Fecha en que se registra la bonificación (hoy por defecto).'],
+            ['Trabajador', 'Sí', 'Selecciona el trabajador del listado de beneficiarios.'],
+            ['Tanque de origen', 'Sí', 'El depósito de donde saldrá el combustible.'],
+            ['Tipo de combustible', 'Sí', 'Se activa al elegir el tanque. Selecciona el tipo correspondiente.'],
+            ['Litros', 'Sí', 'Cantidad de combustible a entregar.'],
+            ['Referencia', 'No', 'Nota opcional (número de resolución, observación, etc.).'],
+          ]}
+        />
+        <Callout type="info" title="Precio automático">
+          El sistema calcula el monto automáticamente usando el precio de despacho configurado
+          en <strong>Finanzas → Precios de despacho</strong> para ese tipo de combustible.
+          Si no hay precio configurado, el formulario no permite guardar y muestra una advertencia.
+          En ese caso contacta al administrador para que configure el precio.
+        </Callout>
+        <Callout type="warning" title="Control de stock">
+          Si los litros solicitados superan el stock disponible del tanque (considerando otras
+          bonificaciones pendientes), aparece un aviso en rojo de "Stock insuficiente".
+          No se puede registrar la bonificación hasta reducir la cantidad.
+        </Callout>
+
+        <SectionTitle id="bon-flujo">Flujo diario típico</SectionTitle>
+        <Callout type="tip" title="Ejemplo: un trabajador retira su bonificación">
+          <ol className="list-decimal ml-4 space-y-1 mt-1">
+            <li>El operador o cajero abre <strong>Bonificaciones → Nueva bonificación</strong> y registra los litros para el trabajador. Estado: <Tag color="amber">Pendiente</Tag>.</li>
+            <li>El trabajador se presenta en caja. El cajero lo busca en la pestaña <strong>Pendientes</strong> y pulsa <strong>"Retirar"</strong>. Estado: <Tag color="sky">Entregado</Tag>. El sistema crea el despacho automáticamente.</li>
+            <li>El trabajador paga. El cajero o el perfil económico pulsa <strong>"Cobrado"</strong>. Estado: <Tag color="emerald">Pagado-Finalizado</Tag>. La operación queda cerrada.</li>
+          </ol>
+        </Callout>
+
+        <SectionTitle id="bon-trabajadores">Gestión de trabajadores</SectionTitle>
+        <P>
+          El botón <strong>"Trabajadores"</strong> abre el catálogo de beneficiarios.
+          Aquí se pueden agregar, editar y buscar los trabajadores que tienen derecho a la bonificación.
+        </P>
+        <TableDoc
+          headers={['Campo', 'Descripción']}
+          rows={[
+            ['Nombre completo', 'Nombre y apellidos del trabajador.'],
+            ['CI', 'Carnet de identidad. Sirve para identificar al trabajador y evitar duplicados.'],
+            ['Área / Departamento', 'Área de trabajo del trabajador dentro de la empresa.'],
+          ]}
+        />
+        <Callout type="tip" title="Importar trabajadores desde archivo JSON">
+          Si tienes la lista de trabajadores en un archivo exportado del sistema de RRHH (formato JSON),
+          puedes importarlos en masa usando el botón <strong>"Importar JSON"</strong> dentro del panel
+          de Trabajadores. El sistema:
+          <ul className="mt-1 space-y-0.5 list-disc list-inside">
+            <li>Muestra todos los trabajadores del archivo con casillas de selección.</li>
+            <li>Pre-selecciona automáticamente los trabajadores activos.</li>
+            <li>Detecta y deshabilita los que ya existen en el sistema (mismo CI).</li>
+            <li>Permite seleccionar manualmente trabajadores en baja si se necesita importarlos igualmente.</li>
+            <li>Los trabajadores con estado "Baja" en el campo Departamento no se asignan a ninguna área.</li>
+          </ul>
+        </Callout>
+
+        <SectionTitle id="bon-historial">Historial y filtros</SectionTitle>
+        <P>
+          La pestaña <strong>Historial</strong> muestra todas las bonificaciones del mes seleccionado.
+          Puedes cambiar el mes en el selector de la parte superior y buscar por nombre de trabajador
+          en el campo de búsqueda.
+        </P>
+        <P>
+          Las tarjetas de resumen del mes muestran de un vistazo:
+        </P>
+        <TableDoc
+          headers={['Tarjeta', 'Qué muestra']}
+          rows={[
+            ['Bonificaciones', 'Cantidad total de bonificaciones registradas en el mes.'],
+            ['Pendientes', 'Cuántas bonificaciones aún no han sido retiradas.'],
+            ['Litros', 'Total de litros entregados (o reservados) en el mes.'],
+            ['Monto total', 'Suma de los montos de todas las bonificaciones no anuladas.'],
+          ]}
+        />
+
+        <SectionTitle id="bon-reporte">Reporte de bonificaciones</SectionTitle>
+        <P>
+          En el módulo <strong>Reportes → pestaña Bonificaciones</strong> puedes exportar el listado
+          completo de bonificaciones filtrado por período en formato Excel (.xlsx) o PDF.
+          El reporte incluye: fecha, nombre del trabajador, CI, área, combustible, litros,
+          precio por litro, monto, moneda, estado y tanque de origen.
+        </P>
+        <Callout type="tip">
+          El rol <Tag color="red">Cajero</Tag> solo ve la pestaña de Bonificaciones en Reportes.
+          Los demás módulos de reportes no están disponibles para ese perfil.
+        </Callout>
+
+        <SectionTitle id="bon-eliminar">Eliminar un registro (Solo Super Admin)</SectionTitle>
+        <P>
+          Los usuarios con rol <Tag color="sky">Super Admin</Tag> pueden eliminar definitivamente
+          cualquier bonificación usando el ícono de papelera que aparece en cada fila.
+          El sistema pedirá confirmación antes de borrar. Esta acción <strong>no se puede deshacer</strong>.
+        </P>
+        <Callout type="warning">
+          Si la bonificación ya fue marcada como Retirada, el movimiento de Despacho que se creó
+          automáticamente <strong>no se elimina</strong> al borrar la bonificación.
+          Deberás eliminarlo manualmente desde el módulo de Movimientos si es necesario.
+        </Callout>
       </>
     ),
   },
@@ -1555,6 +1730,7 @@ const PAGE_TO_SECTION = {
   Configuracion: 'configuracion',
   AdminPanel:    'administracion',
   Guia:          'guia',
+  Ventas:        'bonificaciones',
 };
 
 export default function Ayuda() {

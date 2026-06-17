@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useSearchParams } from 'react-router-dom';
-import { ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Warehouse, Filter, Plus, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Warehouse, Filter, Plus, ChevronLeft, ChevronRight, ChevronDown, Paperclip } from 'lucide-react';
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import CombustibleBadge from '@/components/ui-helpers/CombustibleBadge';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
@@ -20,7 +20,7 @@ import ConsumidorDetalleModal from '@/components/movimientos/ConsumidorDetalleMo
 import EditarMovimientoModal from '@/components/movimientos/EditarMovimientoModal';
 import MovimientosFiltros, { FILTROS_INICIAL } from '@/components/movimientos/MovimientosFiltros';
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 0]; // 0 = todos
 
 const TIPO_CONFIG = {
   RECARGA:  { label: 'Recarga',  icon: ArrowUpCircle,   bg: 'bg-emerald-50', text: 'text-emerald-600', badge: 'border-emerald-200 text-emerald-700' },
@@ -48,6 +48,7 @@ export default function Movimientos() {
   const [showFilters, setShowFilters] = useState(false);
   const [tabCombustible, setTabCombustible] = useState('all');
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
   const [pinMovId, setPinMovId] = useState(null);
 
   useEffect(() => {
@@ -101,7 +102,8 @@ export default function Movimientos() {
     if (pinMovId) return movimientos.filter(m => m.id === pinMovId);
     const consumidorById = Object.fromEntries(consumidores.map(c => [c.id, c]));
     return movimientos.filter(m => {
-      if (isEconomico && m.tipo === 'DESPACHO') return false;
+      // Economico ve solo DESPACHOs VD (consumidor_nombre='Uso Logístico'), no los de flota
+      if (isEconomico && m.tipo === 'DESPACHO' && m.consumidor_nombre !== 'Uso Logístico') return false;
       if (filters.fechaDesde && m.fecha < filters.fechaDesde) return false;
       if (filters.fechaHasta && m.fecha > filters.fechaHasta) return false;
       if (filters.tipo !== 'all' && m.tipo !== filters.tipo) return false;
@@ -134,12 +136,13 @@ export default function Movimientos() {
     return filtered.filter(m => m.combustible_id === tabCombustible);
   }, [filtered, tabCombustible]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredByTab.length / PAGE_SIZE));
+  const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(filteredByTab.length / pageSize));
 
   const paginated = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return filteredByTab.slice(start, start + PAGE_SIZE);
-  }, [filteredByTab, page]);
+    if (pageSize === 0) return filteredByTab;
+    const start = (page - 1) * pageSize;
+    return filteredByTab.slice(start, start + pageSize);
+  }, [filteredByTab, page, pageSize]);
 
   const resumen = useMemo(() => {
     const litros = filteredByTab.filter(m => m.tipo === 'COMPRA').reduce((s, m) => s + (m.litros || 0), 0);
@@ -160,9 +163,11 @@ export default function Movimientos() {
     { label: 'Litros', accessor: r => r.litros || '' },
     { label: 'Precio/L', accessor: r => r.precio || '' },
     { label: 'Monto', accessor: 'monto' },
-    { label: 'Odómetro', accessor: r => r.odometro || '' },
-    { label: 'Km recorridos', accessor: r => r.km_recorridos || '' },
-    { label: 'Consumo real (km/L)', accessor: r => r.consumo_real || '' },
+    ...(!isEconomico ? [
+      { label: 'Odómetro', accessor: r => r.odometro || '' },
+      { label: 'Km recorridos', accessor: r => r.km_recorridos || '' },
+      { label: 'Consumo real (km/L)', accessor: r => r.consumo_real || '' },
+    ] : []),
     { label: 'Referencia', accessor: r => r.referencia || '' },
   ];
 
@@ -255,8 +260,8 @@ export default function Movimientos() {
         />
       )}
 
-      {/* Resumen rápido cuando hay filtros activos o tab seleccionado */}
-      {(hasActiveFilters || tabCombustible !== 'all') && filteredByTab.length > 0 && (
+      {/* Resumen rápido — siempre visible para economico, o cuando hay filtros activos */}
+      {(isEconomico || hasActiveFilters || tabCombustible !== 'all') && filteredByTab.length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {resumen.litros > 0 && (
             <div className="bg-orange-50 border border-orange-100 rounded-lg px-3 py-1.5 flex items-center gap-2">
@@ -293,19 +298,32 @@ export default function Movimientos() {
       ) : (
         <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900 shadow-sm">
           {/* Paginación superior */}
-          {totalPages > 1 && (
+          {(totalPages > 1 || filteredByTab.length > 0) && (
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 bg-slate-50/50">
               <span className="text-xs text-slate-500">
-                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredByTab.length)} de {filteredByTab.length}
+                {pageSize === 0
+                  ? `${filteredByTab.length} registros`
+                  : `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, filteredByTab.length)} de ${filteredByTab.length}`}
               </span>
-              <div className="flex items-center gap-1">
-                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </Button>
-                <span className="px-2 text-xs text-slate-600 tabular-nums">{page} / {totalPages}</span>
-                <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </Button>
+              <div className="flex items-center gap-2">
+                <select
+                  value={pageSize}
+                  onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+                  className="h-7 rounded border border-slate-200 bg-white text-xs px-1.5 text-slate-600 focus:outline-none"
+                >
+                  {PAGE_SIZE_OPTIONS.map(n => (
+                    <option key={n} value={n}>{n === 0 ? 'Todos' : n}</option>
+                  ))}
+                </select>
+                {pageSize !== 0 && (<>
+                  <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </Button>
+                  <span className="px-2 text-xs text-slate-600 tabular-nums">{page} / {totalPages}</span>
+                  <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Button>
+                </>)}
               </div>
             </div>
           )}
@@ -322,6 +340,7 @@ export default function Movimientos() {
                   <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Litros</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">Precio/L</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
+                  <th className="px-2 py-3 w-8"></th>
                   <th className="px-2 py-3 w-10"></th>
                 </tr>
               </thead>
@@ -409,6 +428,14 @@ export default function Movimientos() {
                           </span>
                         ) : '—'}
                       </td>
+                      <td className="px-2 py-3 text-center">
+                        {m.adjunto_url && (
+                          <a href={m.adjunto_url} target="_blank" rel="noreferrer" title={m.adjunto_nombre || 'Ver adjunto'}
+                            className="inline-flex text-slate-400 hover:text-sky-500 transition-colors">
+                            <Paperclip className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                      </td>
                       <td className="px-2 py-3">
                         <MovimientoAcciones
                           movimiento={m}
@@ -427,14 +454,43 @@ export default function Movimientos() {
                   return rows;
                 })()}
               </tbody>
+              {filteredByTab.length > 0 && (() => {
+                const totalLitros = filteredByTab.reduce((s, m) => s + (Number(m.litros) || 0), 0);
+                const totalMonto  = filteredByTab.filter(m => m.monto != null && m.tipo !== 'DESPACHO').reduce((s, m) => s + (Number(m.monto) || 0), 0);
+                const detalles = [];
+                const lC = filteredByTab.filter(m => m.tipo === 'COMPRA').reduce((s, m) => s + (Number(m.litros) || 0), 0);
+                const lD = filteredByTab.filter(m => m.tipo === 'DESPACHO').reduce((s, m) => s + (Number(m.litros) || 0), 0);
+                const lDep = filteredByTab.filter(m => m.tipo === 'DEPOSITO').reduce((s, m) => s + (Number(m.litros) || 0), 0);
+                if (lC > 0)   detalles.push(`${lC.toFixed(1)} L comprados`);
+                if (lD > 0)   detalles.push(`${lD.toFixed(1)} L despachados`);
+                if (lDep > 0) detalles.push(`${lDep.toFixed(1)} L depositados`);
+                return (
+                  <tfoot>
+                    <tr className="bg-slate-100 border-t-2 border-slate-300">
+                      <td colSpan={6} className="px-4 py-2.5 text-xs font-bold text-slate-700">
+                        Total — {filteredByTab.length} registro{filteredByTab.length !== 1 ? 's' : ''}
+                        {detalles.length > 1 && <span className="font-normal text-slate-500 ml-2">({detalles.join(' · ')})</span>}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-xs font-bold text-slate-800 whitespace-nowrap">
+                        {totalLitros.toFixed(1)} L
+                      </td>
+                      <td className="px-4 py-2.5 hidden lg:table-cell" />
+                      <td className="px-4 py-2.5 text-right text-xs font-bold text-slate-800 whitespace-nowrap">
+                        {totalMonto > 0 ? formatMonto(totalMonto) : '—'}
+                      </td>
+                      <td colSpan={2} />
+                    </tr>
+                  </tfoot>
+                );
+              })()}
             </table>
           </div>
 
-          {/* Paginación */}
-          {totalPages > 1 && (
+          {/* Paginación inferior */}
+          {pageSize !== 0 && totalPages > 1 && (
             <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
               <span className="text-xs text-slate-500">
-                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredByTab.length)} de {filteredByTab.length}
+                {`${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, filteredByTab.length)} de ${filteredByTab.length}`}
               </span>
               <div className="flex items-center gap-1">
                 <Button variant="outline" size="sm" className="h-7 w-7 p-0" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>

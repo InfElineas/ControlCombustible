@@ -78,7 +78,7 @@ export default function MovimientosFiltros({ filters, onChange, consumidores, ti
             </Select>
           </div>
           <div>
-            <label className="text-xs text-slate-500 font-medium flex items-center gap-1">
+            <label className="text-xs text-slate-500 font-medium flex items-center gap-1 h-4">
               Consumidor
               {filters.tipoConsumidor !== 'all' && (
                 <Badge className="text-[9px] py-0 px-1.5 bg-sky-100 text-sky-600 border-0 font-normal">

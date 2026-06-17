@@ -13,7 +13,8 @@ const ENTITY_LABEL = {
   consumidor:         d => d?.nombre,
   tipo_consumidor:    d => d?.nombre,
   tipo_combustible:   d => d?.nombre,
-  precio_combustible: d => [d?.combustible_nombre, d?.fecha_vigencia].filter(Boolean).join(' · '),
+  precio_combustible:     d => [d?.combustible_nombre, d?.fecha_vigencia].filter(Boolean).join(' · '),
+  precio_despacho_tipo:   d => [d?.tipo_consumidor_id, d?.fecha_desde].filter(Boolean).join(' · '),
   conductor:          d => d?.nombre,
   vehiculo:           d => d?.nombre || d?.chapa,
   config_alerta:      d => d?.nombre,
@@ -90,6 +91,9 @@ export const base44 = {
     Ruta:                   createEntity('ruta',                     'Ruta'),
     AsignacionRuta:         createEntity('asignacion_ruta',          'AsignacionRuta'),
     ReporteChatTransporte:  createEntity('reporte_chat_transporte',  'ReporteChatTransporte'),
+    PrecioDespachoTipo:     createEntity('precio_despacho_tipo',     'PrecioDespachoTipo'),
+    Beneficiario:           createEntity('beneficiario',             'Beneficiario'),
+    VentaTrabajador:        createEntity('venta_trabajador',         'VentaTrabajador'),
   },
 
   auth: {

@@ -59,6 +59,7 @@ import Alertas from './pages/Alertas';
 import AdminPanel from './pages/AdminPanel';
 import Rutas from './pages/Rutas';
 import Ayuda from './pages/Ayuda';
+import Ventas from './pages/Ventas';
 import __Layout from './Layout.jsx';
 
 
@@ -75,6 +76,7 @@ export const PAGES = {
     "AdminPanel": AdminPanel,
     "Rutas": Rutas,
     "Ayuda": Ayuda,
+    "Ventas": Ventas,
 }
 
 export const pagesConfig = {

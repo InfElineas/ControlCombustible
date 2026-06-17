@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from "sonner";
-import { Save, Loader2 } from 'lucide-react';
+import { Save, Loader2, Paperclip, X, ExternalLink } from 'lucide-react';
+import { supabase } from '@/api/supabaseClient';
 import { calcularAuditoriaCompra, obtenerCapacidadTanque, AUDITORIA_ESTADO } from './auditoriaCombustible';
 
 export default function EditarMovimientoModal({ movimiento, onClose }) {
@@ -33,6 +34,9 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
     combustible_id: movimiento?.combustible_id || '',
   }));
   const [filtroTipoConsumidor, setFiltroTipoConsumidor] = useState('all');
+  const [adjuntoFile, setAdjuntoFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [quitarAdjunto, setQuitarAdjunto] = useState(false);
 
   useEffect(() => {
     if (movimiento) {
@@ -51,6 +55,8 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
         combustible_id: movimiento.combustible_id || '',
       });
     }
+    setAdjuntoFile(null);
+    setQuitarAdjunto(false);
   }, [movimiento?.id]);
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
@@ -166,7 +172,7 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
     },
   });
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const tarjeta = tarjetas.find(t => t.id === form.tarjeta_id);
     const consumidor = consumidores.find(c => c.id === form.consumidor_id);
     const consumidorOrigen = consumidores.find(c => c.id === form.consumidor_origen_id);
@@ -222,6 +228,23 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
     // Horas de uso para equipos/generadores
     if (esEquipoConsumidor && form.horas_uso !== '') {
       data.horas_uso = parseFloat(form.horas_uso);
+    }
+
+    if (adjuntoFile) {
+      setIsUploading(true);
+      const ext = adjuntoFile.name.split('.').pop();
+      const path = `${crypto.randomUUID()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('movimiento-adjuntos')
+        .upload(path, adjuntoFile);
+      setIsUploading(false);
+      if (uploadError) { toast.error('Error al subir adjunto'); return; }
+      const { data: { publicUrl } } = supabase.storage.from('movimiento-adjuntos').getPublicUrl(path);
+      data.adjunto_url = publicUrl;
+      data.adjunto_nombre = adjuntoFile.name;
+    } else if (quitarAdjunto) {
+      data.adjunto_url = null;
+      data.adjunto_nombre = null;
     }
 
     updateMutation.mutate(data);
@@ -398,13 +421,50 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
             <Input value={form.referencia} onChange={e => set('referencia', e.target.value)} placeholder="Nota, factura..." className="mt-1" />
           </div>
 
+          {/* Adjunto */}
+          <div>
+            <label className="text-xs text-slate-500 font-medium block mb-1">Adjunto</label>
+            {/* Adjunto existente */}
+            {movimiento.adjunto_url && !quitarAdjunto && !adjuntoFile && (
+              <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 mb-2">
+                <Paperclip className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <a href={movimiento.adjunto_url} target="_blank" rel="noreferrer"
+                  className="text-xs text-sky-600 hover:underline truncate flex-1 flex items-center gap-1">
+                  {movimiento.adjunto_nombre || 'Ver adjunto'}
+                  <ExternalLink className="w-3 h-3 shrink-0" />
+                </a>
+                <button type="button" onClick={() => setQuitarAdjunto(true)} className="text-slate-400 hover:text-red-500" title="Quitar adjunto">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+            {/* Nuevo archivo seleccionado */}
+            {adjuntoFile ? (
+              <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <Paperclip className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="text-xs text-slate-700 truncate flex-1">{adjuntoFile.name}</span>
+                <button type="button" onClick={() => setAdjuntoFile(null)} className="text-slate-400 hover:text-red-500">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 cursor-pointer hover:bg-slate-50 transition-colors">
+                <Paperclip className="w-3.5 h-3.5 text-slate-400" />
+                <span className="text-xs text-slate-400">
+                  {movimiento.adjunto_url && !quitarAdjunto ? 'Reemplazar archivo…' : 'Seleccionar archivo…'}
+                </span>
+                <input type="file" className="hidden" onChange={e => { setAdjuntoFile(e.target.files?.[0] ?? null); setQuitarAdjunto(false); }} />
+              </label>
+            )}
+          </div>
+
           <Button
             onClick={handleSubmit}
-            disabled={updateMutation.isPending}
+            disabled={updateMutation.isPending || isUploading}
             className="w-full bg-sky-600 hover:bg-sky-700 h-10"
           >
-            {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-            Guardar cambios
+            {(updateMutation.isPending || isUploading) ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+            {isUploading ? 'Subiendo archivo…' : 'Guardar cambios'}
           </Button>
         </div>
       </DialogContent>

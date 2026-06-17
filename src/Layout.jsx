@@ -6,7 +6,7 @@ import { useTheme } from '@/components/ui-helpers/useTheme';
 import {
   LayoutDashboard, List, Fuel, BarChart3, Menu, ChevronRight,
   LogOut, Settings, ShieldCheck, Bell, BookOpen, Shield,
-  Moon, Sun, WalletCards, Navigation, HelpCircle,
+  Moon, Sun, WalletCards, Navigation, HelpCircle, ShoppingCart,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -14,13 +14,14 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from '@/api/supabaseClient';
 
 const navItems = [
-  { name: 'Inicio',         page: 'Dashboard',     icon: LayoutDashboard, roles: ['superadmin', 'operador', 'auditor', 'economico'] },
+  { name: 'Inicio',         page: 'Dashboard',     icon: LayoutDashboard, roles: ['superadmin', 'operador', 'auditor', 'economico', 'cajero'] },
   { name: 'Movimientos',    page: 'Movimientos',   icon: List,             roles: ['superadmin', 'operador', 'auditor', 'economico'] },
+  { name: 'Bonificaciones', page: 'Ventas',        icon: ShoppingCart,     roles: ['superadmin', 'operador', 'economico', 'auditor', 'cajero'] },
   { name: 'Finanzas',       page: 'Finanzas',      icon: WalletCards,      roles: ['superadmin', 'economico'] },
   { name: 'Catálogos',      page: 'Catalogos',     icon: BookOpen,         roles: ['superadmin', 'operador', 'economico'] },
   { name: 'Rutas',          page: 'Rutas',         icon: Navigation,       roles: ['superadmin', 'operador', 'auditor'] },
   { name: 'Alertas',        page: 'Alertas',       icon: Bell,             roles: ['superadmin', 'operador'] },
-  { name: 'Reportes',       page: 'Reportes',      icon: BarChart3,        roles: ['superadmin', 'operador', 'auditor', 'economico'] },
+  { name: 'Reportes',       page: 'Reportes',      icon: BarChart3,        roles: ['superadmin', 'operador', 'auditor', 'economico', 'cajero'] },
   { name: 'Configuración',  page: 'Configuracion', icon: Settings,         roles: ['superadmin', 'operador'] },
 ];
 
@@ -31,6 +32,7 @@ const roleLabels = {
   operador:   { label: 'Operador',    color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300' },
   auditor:    { label: 'Auditor',     color: 'bg-violet-100 text-violet-700 dark:bg-violet-900/60 dark:text-violet-300' },
   economico:  { label: 'Económico',   color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/60 dark:text-amber-300' },
+  cajero:     { label: 'Cajero',      color: 'bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300' },
 };
 
 const pageRoles = {
@@ -41,6 +43,7 @@ const pageRoles = {
   Configuracion: ['superadmin', 'operador'],
   Finanzas:      ['superadmin', 'economico'],
   AdminPanel:    ['superadmin'],
+  Ventas:        ['superadmin', 'operador', 'economico', 'auditor', 'cajero'],
 };
 // Nota: Consumidores y Conductores mantienen pageRoles para redireccionamiento
 // correcto si alguien navega a esas URLs directamente (ambas redirigen a Catalogos).

@@ -403,6 +403,21 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
     : diasSinAbast > 14 ? 'bg-amber-50 text-amber-700'
     : 'bg-emerald-50 text-emerald-700';
 
+  // ── Distribución: este consumidor como origen de despachos ────────────────
+  const despachosEnviados = React.useMemo(() =>
+    movimientos
+      .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === consumidor.id)
+      .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')),
+  [movimientos, consumidor.id]);
+
+  const saldoDistribucion = React.useMemo(() => {
+    if (esTanqueConsumidor || despachosEnviados.length === 0) return null;
+    const ini      = Number(consumidor.litros_iniciales) || 0;
+    const recibido = [...compras, ...despachosRecibidos].reduce((s, m) => s + (m.litros || 0), 0);
+    const enviado  = despachosEnviados.reduce((s, m) => s + (m.litros || 0), 0);
+    return { ini, recibido, enviado, saldo: Math.max(0, ini + recibido - enviado) };
+  }, [esTanqueConsumidor, despachosEnviados, compras, despachosRecibidos, consumidor.litros_iniciales]);
+
   // ━━━━━━━━━━━━━━━━━━━━━━ TANQUE CARD ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   if (esTanqueConsumidor) {
     return (
@@ -536,40 +551,40 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
 
       {/* Modal de autorizaciones */}
       <Dialog open={detallesOpen} onOpenChange={setDetallesOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="text-base">Autorizaciones — {consumidor.nombre}</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto -mx-1 px-1">
+          <div className="max-h-[65vh] overflow-y-auto -mx-1 px-1">
             {despachosRecibidos.length === 0 ? (
               <p className="text-sm text-slate-400 py-6 text-center">Sin autorizaciones registradas</p>
             ) : (
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-white dark:bg-slate-900">
                   <tr className="border-b border-slate-100 dark:border-slate-700 text-[11px] text-slate-400 uppercase tracking-wide">
-                    <th className="text-left py-2 pr-3">Fecha</th>
+                    <th className="text-left py-2 pr-3 whitespace-nowrap">Fecha</th>
                     <th className="text-left py-2 pr-3">Combustible</th>
-                    <th className="text-right py-2 pr-3">Litros</th>
-                    <th className="text-left py-2 pr-2 hidden sm:table-cell">Origen</th>
+                    <th className="text-right py-2 pr-3 whitespace-nowrap">Litros</th>
+                    <th className="text-left py-2 pr-3">Origen</th>
                     <th className="text-left py-2">Referencia</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
                   {despachosRecibidos.map(m => (
                     <tr key={m.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-                      <td className="py-2 pr-3 text-slate-600 dark:text-slate-300 tabular-nums">{m.fecha}</td>
+                      <td className="py-2 pr-3 text-slate-600 dark:text-slate-300 tabular-nums whitespace-nowrap">{m.fecha}</td>
                       <td className="py-2 pr-3">
                         {m.combustible_nombre
                           ? <CombustibleBadge nombre={m.combustible_nombre} />
                           : <span className="text-slate-300">—</span>}
                       </td>
-                      <td className="py-2 pr-3 text-right font-semibold text-slate-700 dark:text-slate-200 tabular-nums">
+                      <td className="py-2 pr-3 text-right font-semibold text-slate-700 dark:text-slate-200 tabular-nums whitespace-nowrap">
                         {fmtL(Number(m.litros || 0))} L
                       </td>
-                      <td className="py-2 pr-2 text-slate-500 dark:text-slate-400 hidden sm:table-cell max-w-[100px] truncate">
+                      <td className="py-2 pr-3 text-slate-500 dark:text-slate-400">
                         {m.consumidor_origen_nombre || '—'}
                       </td>
-                      <td className="py-2 text-slate-400 max-w-[80px] truncate">
+                      <td className="py-2 text-slate-400">
                         {m.referencia || '—'}
                       </td>
                     </tr>
@@ -627,6 +642,29 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
             )}
           </div>
         </div>
+
+        {/* ── BALANCE DE DISTRIBUCIÓN (cuando también despacha a otros) ── */}
+        {saldoDistribucion && (
+          <div className="rounded-lg border border-sky-100 bg-sky-50/40 px-3 py-2 space-y-1.5">
+            <p className="text-[9px] text-sky-600 uppercase tracking-widest font-medium">Balance de stock acumulado</p>
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div>
+                <p className="text-[9px] text-slate-400 mb-0.5">Recibido total</p>
+                <p className="font-bold text-slate-700 tabular-nums">{fmtL(saldoDistribucion.ini + saldoDistribucion.recibido)} L</p>
+              </div>
+              <div>
+                <p className="text-[9px] text-slate-400 mb-0.5">Despachado</p>
+                <p className="font-bold text-rose-600 tabular-nums">−{fmtL(saldoDistribucion.enviado)} L</p>
+              </div>
+              <div>
+                <p className="text-[9px] text-slate-400 mb-0.5">Disponible ahora</p>
+                <p className={`font-bold tabular-nums ${saldoDistribucion.saldo < 20 ? 'text-red-600' : saldoDistribucion.saldo < 50 ? 'text-amber-600' : 'text-emerald-700'}`}>
+                  {fmtL(saldoDistribucion.saldo)} L
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── EQUIPO: horas ── */}
         {esEquipoConsumidor && (

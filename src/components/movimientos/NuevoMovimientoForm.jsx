@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { ArrowDownCircle, ArrowLeftRight, Warehouse, Save, Loader2, Gauge, Satellite } from 'lucide-react';
+import { ArrowDownCircle, ArrowLeftRight, Warehouse, Save, Loader2, Gauge, Satellite, Paperclip, X, Tag } from 'lucide-react';
+import { supabase } from '@/api/supabaseClient';
 import { obtenerPrecioVigente, formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import { calcularAuditoriaCompra, obtenerCapacidadTanque, AUDITORIA_ESTADO } from './auditoriaCombustible';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
@@ -22,6 +23,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   const { data: tiposConsumidor = [] } = useQuery({ queryKey: ['tiposConsumidor'], queryFn: () => base44.entities.TipoConsumidor.list() });
   const { data: combustibles = [] } = useQuery({ queryKey: ['combustibles'], queryFn: () => base44.entities.TipoCombustible.list() });
   const { data: precios = [] } = useQuery({ queryKey: ['precios'], queryFn: () => base44.entities.PrecioCombustible.list() });
+  const { data: preciosDespacho = [] } = useQuery({ queryKey: ['precios-despacho'], queryFn: () => base44.entities.PrecioDespachoTipo.list('-fecha_desde', 200) });
   const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 500) });
 
   // Tipos de movimiento que el rol actual puede registrar
@@ -62,6 +64,8 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   });
   const [errors, setErrors] = useState({});
   const [filtroTipoConsumidor, setFiltroTipoConsumidor] = useState('all');
+  const [adjuntoFile, setAdjuntoFile] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
   const [gpsOdoLoading, setGpsOdoLoading] = useState(false);
 
   const tarjetasActivas = tarjetas.filter(t => t.activa);
@@ -154,6 +158,25 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   // Consumidor seleccionado y su tipo
   const consumidorSeleccionado = consumidores.find(c => c.id === form.consumidor_id);
   const tipoConsumidor = tiposConsumidor.find(t => t.id === consumidorSeleccionado?.tipo_consumidor_id);
+
+  // Precio de despacho vigente para el tipo de consumidor seleccionado
+  const precioDespachoVigente = useMemo(() => {
+    if (tipo !== 'DESPACHO' || !consumidorSeleccionado || preciosDespacho.length === 0) return null;
+    const tcId   = consumidorSeleccionado.tipo_consumidor_id;
+    const fecha  = form.fecha || new Date().toISOString().slice(0, 10);
+    const combId = form.combustible_id || null;
+    const candidatos = preciosDespacho
+      .filter(p => p.tipo_consumidor_id === tcId && p.fecha_desde <= fecha)
+      .sort((a, b) => b.fecha_desde.localeCompare(a.fecha_desde));
+    return candidatos.find(p => p.combustible_id === combId)
+        ?? candidatos.find(p => !p.combustible_id)
+        ?? null;
+  }, [tipo, consumidorSeleccionado, form.fecha, form.combustible_id, preciosDespacho]);
+
+  const montoDespachoCalculado = useMemo(() => {
+    if (!precioDespachoVigente || !form.litros) return null;
+    return parseFloat(form.litros) * precioDespachoVigente.precio_por_litro;
+  }, [precioDespachoVigente, form.litros]);
 
   // Flag por consumidor individual: vehículos sin control de km/odómetro
   const consumidorSinOdometro = !!consumidorSeleccionado?.datos_vehiculo?.sin_odometro;
@@ -295,6 +318,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['movimientos'] });
       toast.success('Movimiento registrado correctamente');
+      setAdjuntoFile(null);
       onSuccess?.();
     },
     onError: (error) => {
@@ -384,7 +408,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     return Object.keys(e).length === 0;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!validate()) return;
     const tarjeta = tarjetas.find(t => t.id === form.tarjeta_id);
     const consumidor = consumidores.find(c => c.id === form.consumidor_id);
@@ -457,7 +481,27 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       }
       if (form.nivel_tanque) data.nivel_tanque = parseFloat(form.nivel_tanque);
       data.referencia = form.referencia;
+      if (precioDespachoVigente) {
+        data.precio = precioDespachoVigente.precio_por_litro;
+        if (montoDespachoCalculado != null) data.monto = montoDespachoCalculado;
+      } else if (form.monto) {
+        data.monto = parseFloat(form.monto);
+      }
     }
+    if (adjuntoFile) {
+      setIsUploading(true);
+      const ext = adjuntoFile.name.split('.').pop();
+      const path = `${crypto.randomUUID()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('movimiento-adjuntos')
+        .upload(path, adjuntoFile);
+      setIsUploading(false);
+      if (uploadError) { toast.error('Error al subir adjunto'); return; }
+      const { data: { publicUrl } } = supabase.storage.from('movimiento-adjuntos').getPublicUrl(path);
+      data.adjunto_url = publicUrl;
+      data.adjunto_nombre = adjuntoFile.name;
+    }
+
     createMutation.mutate(data);
   };
 
@@ -945,9 +989,40 @@ export default function NuevoMovimientoForm({ onSuccess }) {
         )}
       </div>
 
+      {/* Precio de despacho calculado */}
+      {tipo === 'DESPACHO' && precioDespachoVigente && (
+        <div className="rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-2 text-xs text-violet-700 flex items-center gap-2">
+          <Tag className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            Precio despacho: <strong>{Number(precioDespachoVigente.precio_por_litro).toFixed(4)} {precioDespachoVigente.moneda}/L</strong>
+            {montoDespachoCalculado != null && <> · Monto: <strong>{formatMonto(montoDespachoCalculado)}</strong></>}
+          </span>
+        </div>
+      )}
+
+      {/* Adjunto */}
+      <div>
+        <label className="text-xs text-slate-500 font-medium block mb-1">Adjunto (opcional)</label>
+        {adjuntoFile ? (
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+            <Paperclip className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="text-xs text-slate-700 truncate flex-1">{adjuntoFile.name}</span>
+            <button type="button" onClick={() => setAdjuntoFile(null)} className="text-slate-400 hover:text-red-500">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <label className="flex items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 cursor-pointer hover:bg-slate-50 transition-colors">
+            <Paperclip className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-xs text-slate-400">Seleccionar archivo…</span>
+            <input type="file" className="hidden" onChange={e => setAdjuntoFile(e.target.files?.[0] ?? null)} />
+          </label>
+        )}
+      </div>
+
       <Button
         onClick={handleSubmit}
-        disabled={createMutation.isPending}
+        disabled={createMutation.isPending || isUploading}
         className={`w-full h-11 text-sm font-semibold rounded-xl ${
           tipo === 'RECARGA'
             ? 'bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700'
@@ -958,8 +1033,8 @@ export default function NuevoMovimientoForm({ onSuccess }) {
             : 'bg-gradient-to-r from-purple-500 to-violet-600 hover:from-purple-600 hover:to-violet-700'
         }`}
       >
-        {createMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-        Guardar {tipo === 'RECARGA' ? 'Recarga' : tipo === 'COMPRA' ? 'Compra' : tipo === 'DEPOSITO' ? 'Depósito' : 'Despacho'}
+        {(createMutation.isPending || isUploading) ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+        {isUploading ? 'Subiendo archivo…' : `Guardar ${tipo === 'RECARGA' ? 'Recarga' : tipo === 'COMPRA' ? 'Compra' : tipo === 'DEPOSITO' ? 'Depósito' : 'Despacho'}`}
       </Button>
     </div>
   );

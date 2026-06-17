@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertTriangle, TrendingDown, TrendingUp, Users, CalendarDays, User, ChevronDown, Warehouse, Navigation, Clock } from 'lucide-react';
+import { AlertTriangle, TrendingDown, TrendingUp, Users, CalendarDays, User, ChevronDown, Warehouse, Navigation, Clock, DollarSign, Fuel, BarChart3 } from 'lucide-react';
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
@@ -73,6 +73,20 @@ export default function Dashboard() {
       return data ?? [];
     },
     staleTime: 5 * 60_000,
+  });
+
+  const { data: ventasAllTime = [] } = useQuery({
+    queryKey: ['ventas-logistica-economico'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('venta_trabajador')
+        .select('id, estado, litros, monto, combustible_nombre, fecha_venta')
+        .neq('estado', 'CANCELADO')
+        .neq('estado', 'ANULADO');
+      return data ?? [];
+    },
+    staleTime: 5 * 60_000,
+    enabled: isEconomico,
   });
 
   const opcionesMes = useMemo(() => {
@@ -176,10 +190,12 @@ export default function Dashboard() {
 
       const litrosCompras = comprasPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
       const montoCompras = comprasPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
-      // Excluir despachos a surtidores: son transferencias internas, no consumo final
-      const despachosPeriodoConsumo = despachosPeriodo.filter(m => !consumidoresSurtidorIds.has(m.consumidor_id));
+      // Excluir surtidores (transferencias internas) y Uso Logístico/VD del consumo de flota
+      const despachosPeriodoConsumo = despachosPeriodo.filter(m => !consumidoresSurtidorIds.has(m.consumidor_id) && m.consumidor_nombre !== 'Uso Logístico');
       const litrosConsumo = despachosPeriodoConsumo.reduce((s, m) => s + (m.litros || 0), 0);
       const montoConsumo = despachosPeriodoConsumo.reduce((s, m) => s + (m.monto || 0), 0);
+      // Salidas VD (Uso Logístico) — reducen el stock pero no son consumo de flota
+      const litrosOtrosSalidas = despachosPeriodo.filter(m => m.consumidor_nombre === 'Uso Logístico').reduce((s, m) => s + (m.litros || 0), 0);
       const comprasOpsMes = comprasPeriodo.length;
       const despachosOpsCombMes = despachosPeriodoConsumo.length;
       const recargasOpsMes = comprasReservaPeriodo.length;
@@ -218,7 +234,7 @@ export default function Dashboard() {
         [...reservaTankIdsParaCombustible].reduce((total, tankId) => {
           const tank = consumidores.find(c => c.id === tankId);
           const ini      = obtenerLitrosInicialesConsumidor(tank, combustibleIdRef, nombreCombustible);
-          const entradas = movimientos.filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO') && m.consumidor_id === tankId && m.combustible_nombre === nombreCombustible).reduce((s, m) => s + (m.litros || 0), 0);
+          const entradas = movimientos.filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === tankId && m.combustible_nombre === nombreCombustible).reduce((s, m) => s + (m.litros || 0), 0);
           const salidas  = movimientos.filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === tankId).reduce((s, m) => s + (m.litros || 0), 0);
           return total + ini + entradas - salidas;
         }, 0)
@@ -256,6 +272,8 @@ export default function Dashboard() {
       despachosPeriodo.forEach(m => {
         // Los surtidores externos no son consumidores finales — se muestran en su propia sección
         if (consumidoresSurtidorIds.has(m.consumidor_id)) return;
+        // Salidas VD (Uso Logístico) no son consumo de flota
+        if (m.consumidor_nombre === 'Uso Logístico') return;
         const key = m.consumidor_id || m.consumidor_nombre || 'Sin identificar';
         if (!detalleConsumoMap[key]) detalleConsumoMap[key] = {
           nombre: m.consumidor_nombre || 'Sin identificar',
@@ -286,7 +304,7 @@ export default function Dashboard() {
         litrosConsumo,
         montoConsumo,
         despachosOpsCombMes,
-        litrosSaldoFinal: Math.max(0, litrosInicio + litrosCompras - litrosConsumo),
+        litrosSaldoFinal: Math.max(0, litrosInicio + litrosCompras - litrosConsumo - litrosOtrosSalidas),
         montoSaldoFinal: Math.max(0, montoInicio + montoCompras - montoConsumo),
         capacidadTotalReserva,
         litrosEnTanqueEstimado,
@@ -393,6 +411,93 @@ export default function Dashboard() {
       };
     });
   }, [consumidores, consumidoresSurtidorIds, movimientos, tarjetas]);
+
+  const economicoStats = useMemo(() => {
+    if (!isEconomico) return null;
+
+    // Inventario por tanque (stock actual por consumidor de tipo reserva/tanque)
+    const tanques = consumidores
+      .filter(c => consumidoresReservaIds.has(c.id) && c.activo !== false)
+      .map(c => {
+        const ini = Number(c.litros_iniciales) || 0;
+        const entradas = movimientos
+          .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === c.id)
+          .reduce((s, m) => s + (m.litros || 0), 0);
+        const salidas = movimientos
+          .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === c.id)
+          .reduce((s, m) => s + (m.litros || 0), 0);
+        const stockActual = Math.max(0, ini + entradas - salidas);
+        const cap = (() => {
+          const t = Number(c?.datos_tanque?.capacidad_litros);
+          if (Number.isFinite(t) && t > 0) return t;
+          const v = Number(c?.datos_vehiculo?.capacidad_tanque);
+          return Number.isFinite(v) && v > 0 ? v : 0;
+        })();
+        const pct = cap > 0 ? Math.min(100, (stockActual / cap) * 100) : null;
+        return { id: c.id, nombre: c.nombre || 'Tanque', combustibleNombre: c.combustible_nombre || null, stockActual, capacidad: cap, pct };
+      })
+      .sort((a, b) => b.stockActual - a.stockActual);
+
+    // Logística VD — acumulado histórico total
+    const litrosDestinadosVD = movimientos
+      .filter(m => m.tipo === 'DESPACHO' && m.consumidor_nombre === 'Uso Logístico')
+      .reduce((s, m) => s + (m.litros || 0), 0);
+    const litrosTotalComprado = movimientos.filter(m => m.tipo === 'COMPRA').reduce((s, m) => s + (m.litros || 0), 0);
+
+    const entregadas = ventasAllTime.filter(v => ['ENTREGADO', 'RETIRADO', 'PAGADO_FINALIZADO', 'PAGADO'].includes(v.estado));
+    const cobradas   = ventasAllTime.filter(v => ['PAGADO_FINALIZADO', 'PAGADO'].includes(v.estado));
+    const porCobrarL = ventasAllTime.filter(v => ['ENTREGADO', 'RETIRADO'].includes(v.estado));
+    const pendientesL = ventasAllTime.filter(v => v.estado === 'PENDIENTE');
+
+    const litrosEntregados   = entregadas.reduce((s, v) => s + (v.litros || 0), 0);
+    const litrosPendientesVD = pendientesL.reduce((s, v) => s + (v.litros || 0), 0);
+    const montoCobradoVD     = cobradas.reduce((s, v) => s + (v.monto || 0), 0);
+    const montoPorCobrarVD   = porCobrarL.reduce((s, v) => s + (v.monto || 0), 0);
+    const litrosDisponiblesVD = Math.max(0, litrosDestinadosVD - litrosEntregados - litrosPendientesVD);
+    const pctDestinadoDelTotal = litrosTotalComprado > 0 ? (litrosDestinadosVD / litrosTotalComprado) * 100 : 0;
+
+    // Clasificación de salidas del período (filtrado por mesFiltro)
+    const comprasPer = movimientosFiltrados.filter(m => m.tipo === 'COMPRA');
+    const litrosCompradosPer = comprasPer.reduce((s, m) => s + (m.litros || 0), 0);
+    const costoCompradoPer   = comprasPer.reduce((s, m) => s + (m.monto || 0), 0);
+    const precioPromPer = litrosCompradosPer > 0 ? costoCompradoPer / litrosCompradosPer : 0;
+
+    const despachosPer = movimientosFiltrados.filter(m => m.tipo === 'DESPACHO');
+    const litrosAlmacenPer = despachosPer
+      .filter(m => m.consumidor_nombre === 'Uso Logístico')
+      .reduce((s, m) => s + (m.litros || 0), 0);
+    const litrosServiciosPer = despachosPer
+      .filter(m => m.consumidor_nombre !== 'Uso Logístico' && !consumidoresSurtidorIds.has(m.consumidor_id))
+      .reduce((s, m) => s + (m.litros || 0), 0);
+    const litrosTotalSalidaPer = litrosAlmacenPer + litrosServiciosPer;
+
+    // P&L del período usando ventas del mismo período
+    const mesPrefix = mesFiltro !== 'ALL' ? mesFiltro : null;
+    const ventasPer = mesPrefix
+      ? ventasAllTime.filter(v => (v.fecha_venta || '').startsWith(mesPrefix))
+      : ventasAllTime;
+    const ventasCobradasPer = ventasPer.filter(v => ['PAGADO_FINALIZADO', 'PAGADO'].includes(v.estado));
+    const ventasPorCobrarPer = ventasPer.filter(v => ['ENTREGADO', 'RETIRADO'].includes(v.estado));
+    const ingresosCobradosPer   = ventasCobradasPer.reduce((s, v) => s + (v.monto || 0), 0);
+    const ingresosPorCobrarPer  = ventasPorCobrarPer.reduce((s, v) => s + (v.monto || 0), 0);
+    const litrosVendidosCobrados = ventasCobradasPer.reduce((s, v) => s + (v.litros || 0), 0);
+    const costoVentasPer    = litrosVendidosCobrados * precioPromPer;
+    const gananciaBrutaPer  = ingresosCobradosPer - costoVentasPer;
+    const costoServiciosPer = litrosServiciosPer * precioPromPer;
+    const resultadoNetoPer  = gananciaBrutaPer - costoServiciosPer;
+
+    return {
+      tanques,
+      litrosDestinadosVD, litrosEntregados, litrosPendientesVD, litrosDisponiblesVD,
+      montoCobradoVD, montoPorCobrarVD, pctDestinadoDelTotal,
+      cobradasVD: cobradas.length, porCobrarVD: porCobrarL.length, pendientesVD: pendientesL.length,
+      litrosCompradosPer, costoCompradoPer, litrosAlmacenPer, litrosServiciosPer, litrosTotalSalidaPer,
+      pctAlmacenPer: litrosTotalSalidaPer > 0 ? (litrosAlmacenPer / litrosTotalSalidaPer) * 100 : 0,
+      pctServiciosPer: litrosTotalSalidaPer > 0 ? (litrosServiciosPer / litrosTotalSalidaPer) * 100 : 0,
+      precioPromPer, ingresosCobradosPer, ingresosPorCobrarPer,
+      costoVentasPer, gananciaBrutaPer, costoServiciosPer, resultadoNetoPer,
+    };
+  }, [isEconomico, consumidores, consumidoresReservaIds, movimientos, movimientosFiltrados, ventasAllTime, consumidoresSurtidorIds, mesFiltro]);
 
   // Resumen del mes
   const comprasMes = movimientosFiltrados.filter(m => m.tipo === 'COMPRA');
@@ -570,9 +675,12 @@ export default function Dashboard() {
             </Select>
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className={`grid gap-3 ${isEconomico ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4'}`}>
           {/* Litros consumidos por tipo */}
-          <Card className="border-0 shadow-sm cursor-pointer hover:ring-1 hover:ring-sky-200 transition" onClick={() => setStatModal({ open: true, tipo: 'consumo' })}>
+          <Card
+            className={`border-0 shadow-sm transition ${!isEconomico ? 'cursor-pointer hover:ring-1 hover:ring-sky-200' : ''}`}
+            onClick={!isEconomico ? () => setStatModal({ open: true, tipo: 'consumo' }) : undefined}
+          >
             <CardContent className="p-4">
               <p className="text-[11px] text-slate-400 uppercase tracking-wide">Litros consumidos</p>
               {litrosConsumosPorTipo.length === 0 ? (
@@ -619,38 +727,42 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {/* Km recorridos GPS */}
-          <Card className="border-0 shadow-sm hover:ring-1 hover:ring-sky-200 transition">
-            <CardContent className="p-4">
-              <p className="text-[11px] text-slate-400 uppercase tracking-wide">Km recorridos</p>
-              {kmStats.totalKm > 0 ? (
-                <>
-                  <p className="text-lg font-bold text-sky-700 mt-1 leading-tight tabular-nums">
-                    {Math.round(kmStats.totalKm).toLocaleString('es-CU')} km
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1">
-                    {kmStats.vehiculosConKm} veh · prom. {Math.round(kmStats.promedio).toLocaleString('es-CU')} km
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="text-lg font-bold text-slate-300 mt-1 leading-tight">— km</p>
-                  <p className="text-xs text-slate-400 mt-1">sin registros GPS</p>
-                </>
-              )}
-            </CardContent>
-          </Card>
+          {/* Km recorridos GPS — solo operacional */}
+          {!isEconomico && (
+            <Card className="border-0 shadow-sm hover:ring-1 hover:ring-sky-200 transition">
+              <CardContent className="p-4">
+                <p className="text-[11px] text-slate-400 uppercase tracking-wide">Km recorridos</p>
+                {kmStats.totalKm > 0 ? (
+                  <>
+                    <p className="text-lg font-bold text-sky-700 mt-1 leading-tight tabular-nums">
+                      {Math.round(kmStats.totalKm).toLocaleString('es-CU')} km
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">
+                      {kmStats.vehiculosConKm} veh · prom. {Math.round(kmStats.promedio).toLocaleString('es-CU')} km
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-lg font-bold text-slate-300 mt-1 leading-tight">— km</p>
+                    <p className="text-xs text-slate-400 mt-1">sin registros GPS</p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
-          {/* Nivel bajo */}
-          <Card className={`border-0 shadow-sm cursor-pointer transition hover:ring-1 hover:ring-sky-200 ${alertasConsumo.length > 0 ? 'ring-1 ring-red-200 bg-red-50/20' : ''}`} onClick={() => setStatModal({ open: true, tipo: 'alertas' })}>
-            <CardContent className="p-4">
-              <p className="text-[11px] text-slate-400 uppercase tracking-wide">Nivel bajo</p>
-              <p className={`text-lg font-bold mt-1 leading-tight ${alertasNivel.length > 0 ? 'text-red-500' : 'text-slate-400'}`}>
-                {alertasNivel.length}
-              </p>
-              <p className="text-xs text-slate-400 mt-1">tanques por recargar</p>
-            </CardContent>
-          </Card>
+          {/* Nivel bajo — solo operacional */}
+          {!isEconomico && (
+            <Card className={`border-0 shadow-sm cursor-pointer transition hover:ring-1 hover:ring-sky-200 ${alertasConsumo.length > 0 ? 'ring-1 ring-red-200 bg-red-50/20' : ''}`} onClick={() => setStatModal({ open: true, tipo: 'alertas' })}>
+              <CardContent className="p-4">
+                <p className="text-[11px] text-slate-400 uppercase tracking-wide">Nivel bajo</p>
+                <p className={`text-lg font-bold mt-1 leading-tight ${alertasNivel.length > 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                  {alertasNivel.length}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">tanques por recargar</p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 
@@ -692,8 +804,221 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Resumen GPS del mes */}
-      {(gpsResumenMes.kmGps > 0 || gpsResumenMes.kmReg > 0) && (
+      {/* ═══════════════════════════════════════════════════════════════
+           SECCIONES EXCLUSIVAS PARA ECONOMICO
+      ═══════════════════════════════════════════════════════════════ */}
+      {isEconomico && economicoStats && (
+        <>
+          {/* Inventario actual por tanque */}
+          {economicoStats.tanques.length > 0 && (
+            <div>
+              <SectionTitle icon={Fuel} title="Inventario actual por tanque" iconColor="text-sky-500" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {economicoStats.tanques.map(t => (
+                  <Card key={t.id} className="border-0 shadow-sm">
+                    <CardContent className="p-4 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{t.nombre}</p>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {t.combustibleNombre && (
+                            <Badge variant="outline" className="text-[10px] px-1.5">{t.combustibleNombre}</Badge>
+                          )}
+                          {t.pct !== null && (
+                            <Badge variant="outline" className={`text-[10px] px-1.5 ${t.pct < 20 ? 'bg-red-50 border-red-200 text-red-600' : t.pct < 50 ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'}`}>
+                              {Math.round(t.pct)}%
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      {t.pct !== null && (
+                        <div className="w-full bg-slate-100 rounded-full h-1.5">
+                          <div
+                            className={`h-1.5 rounded-full transition-all ${t.pct < 20 ? 'bg-red-500' : t.pct < 50 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                            style={{ width: `${t.pct}%` }}
+                          />
+                        </div>
+                      )}
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-500">Stock actual</span>
+                        <span className="font-bold text-slate-800">{t.stockActual.toFixed(1)} L</span>
+                      </div>
+                      {t.capacidad > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-400">Capacidad</span>
+                          <span className="text-slate-500">{t.capacidad.toFixed(0)} L</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Operaciones Logísticas VD */}
+          <div>
+            <SectionTitle icon={Users} title="Operaciones Logísticas VD" iconColor="text-violet-500" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Columna litros */}
+              <Card className="border-0 shadow-sm">
+                <CardContent className="p-4 space-y-2">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">Distribución de litros</p>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Total destinado</span>
+                      <span className="font-bold text-slate-800">{economicoStats.litrosDestinadosVD.toFixed(1)} L</span>
+                    </div>
+                    <div className="flex justify-between pl-3 border-l-2 border-violet-200">
+                      <span className="text-slate-400">Vendido / Entregado</span>
+                      <span className="font-medium text-slate-700">{economicoStats.litrosEntregados.toFixed(1)} L</span>
+                    </div>
+                    {economicoStats.litrosPendientesVD > 0 && (
+                      <div className="flex justify-between pl-3 border-l-2 border-amber-200">
+                        <span className="text-amber-600">Pendiente de entrega</span>
+                        <span className="font-medium text-amber-700">{economicoStats.litrosPendientesVD.toFixed(1)} L</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between border-t border-slate-100 pt-1.5">
+                      <span className="font-semibold text-violet-700">Disponible en almacén</span>
+                      <span className="font-bold text-violet-700">{economicoStats.litrosDisponiblesVD.toFixed(1)} L</span>
+                    </div>
+                  </div>
+                  {economicoStats.pctDestinadoDelTotal > 0 && (
+                    <p className="text-[10px] text-slate-400 pt-0.5">
+                      Representa el <span className="font-semibold text-slate-600">{economicoStats.pctDestinadoDelTotal.toFixed(1)}%</span> del total comprado
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Columna cobros */}
+              <Card className="border-0 shadow-sm">
+                <CardContent className="p-4 space-y-2">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">Estado de cobros</p>
+                  <div className="space-y-1.5 text-xs">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Cobrado ({economicoStats.cobradasVD} ventas)</span>
+                      <span className="font-bold text-emerald-700">{formatMoneySymbol(economicoStats.montoCobradoVD)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Por cobrar ({economicoStats.porCobrarVD} ventas)</span>
+                      <span className="font-bold text-amber-700">{formatMoneySymbol(economicoStats.montoPorCobrarVD)}</span>
+                    </div>
+                    {economicoStats.pendientesVD > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400">Sin entregar ({economicoStats.pendientesVD})</span>
+                        <span className="text-slate-500">Pendiente</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between border-t border-slate-100 pt-1.5">
+                      <span className="font-semibold text-slate-700">Total facturado</span>
+                      <span className="font-bold text-slate-800">{formatMoneySymbol(economicoStats.montoCobradoVD + economicoStats.montoPorCobrarVD)}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+
+          {/* Análisis del período */}
+          <div>
+            <SectionTitle icon={BarChart3} title={`Análisis del período${mesFiltro !== 'ALL' ? ` — ${mesFiltro}` : ' — acumulado'}`} iconColor="text-teal-500" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Clasificación de salidas */}
+              <Card className="border-0 shadow-sm">
+                <CardContent className="p-4 space-y-2">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">Destino de salidas</p>
+                  {economicoStats.litrosTotalSalidaPer > 0 ? (
+                    <>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex justify-between items-center">
+                          <span className="flex items-center gap-1.5 text-emerald-700">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                            Almacén VD (ingreso)
+                          </span>
+                          <span className="font-medium text-emerald-700">
+                            {economicoStats.litrosAlmacenPer.toFixed(1)} L · {Math.round(economicoStats.pctAlmacenPer)}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-2">
+                          <div className="h-2 rounded-full bg-emerald-500" style={{ width: `${economicoStats.pctAlmacenPer}%` }} />
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="flex items-center gap-1.5 text-rose-600">
+                            <span className="w-2 h-2 rounded-full bg-rose-400 inline-block" />
+                            Servicios / Flota (gasto)
+                          </span>
+                          <span className="font-medium text-rose-600">
+                            {economicoStats.litrosServiciosPer.toFixed(1)} L · {Math.round(economicoStats.pctServiciosPer)}%
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-100 rounded-full h-2">
+                          <div className="h-2 rounded-full bg-rose-400" style={{ width: `${economicoStats.pctServiciosPer}%` }} />
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-slate-400 pt-0.5">
+                        Total salidas: {economicoStats.litrosTotalSalidaPer.toFixed(1)} L
+                        {economicoStats.litrosCompradosPer > 0 && ` de ${economicoStats.litrosCompradosPer.toFixed(1)} L comprados`}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-slate-400 py-2">Sin despachos en el período</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Resultado financiero estimado */}
+              <Card className="border-0 shadow-sm">
+                <CardContent className="p-4 space-y-1.5">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">Resultado financiero estimado</p>
+                  {economicoStats.precioPromPer > 0 ? (
+                    <div className="space-y-1 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">+ Ingresos cobrados</span>
+                        <span className="font-medium text-emerald-700">{formatMoneySymbol(economicoStats.ingresosCobradosPer)}</span>
+                      </div>
+                      {economicoStats.ingresosPorCobrarPer > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">  (+ por cobrar)</span>
+                          <span className="text-amber-600">{formatMoneySymbol(economicoStats.ingresosPorCobrarPer)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">− Costo de lo vendido</span>
+                        <span className="font-medium text-slate-600">−{formatMoneySymbol(economicoStats.costoVentasPer)}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-slate-100 pt-1">
+                        <span className="font-medium text-slate-700">= Margen en ventas</span>
+                        <span className={`font-bold ${economicoStats.gananciaBrutaPer >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                          {economicoStats.gananciaBrutaPer >= 0 ? '' : '−'}{formatMoneySymbol(Math.abs(economicoStats.gananciaBrutaPer))}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">− Gasto servicios/flota</span>
+                        <span className="font-medium text-rose-600">−{formatMoneySymbol(economicoStats.costoServiciosPer)}</span>
+                      </div>
+                      <div className="flex justify-between border-t border-slate-200 pt-1.5 mt-0.5">
+                        <span className="font-semibold text-slate-800">= Resultado neto</span>
+                        <span className={`font-bold text-base ${economicoStats.resultadoNetoPer >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                          {economicoStats.resultadoNetoPer >= 0 ? '' : '−'}{formatMoneySymbol(Math.abs(economicoStats.resultadoNetoPer))}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 pt-0.5">
+                        Precio prom. compra: {economicoStats.precioPromPer.toFixed(4)}/L (estimado)
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 py-2">Sin compras en el período para estimar costos</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Resumen GPS del mes — solo operacional */}
+      {!isEconomico && (gpsResumenMes.kmGps > 0 || gpsResumenMes.kmReg > 0) && (
         <div>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <SectionTitle icon={Navigation} title={`Flota GPS — ${mesGpsLabel}`} iconColor="text-violet-500" />
@@ -860,24 +1185,28 @@ export default function Dashboard() {
                       {/* Consumo por consumidor (solo litros — DESPACHO no lleva importe) */}
                       {res.detalleConsumo.length > 0 && (
                         <div className="pt-1">
-                          <p className="text-[10px] text-slate-400 uppercase tracking-wide pb-0.5">Consumo por consumidor</p>
-                          {visibleConsumers.map(d => (
-                            <div key={`${d.nombre}-${d.chapa}`} className="flex items-center justify-between py-1 border-b border-slate-50">
-                              <span className="text-slate-500 truncate max-w-[65%]">
-                                {d.nombre}
-                                {d.chapa && <span className="text-slate-400 ml-1 font-mono text-[10px]">[{d.chapa}]</span>}
-                              </span>
-                              <span className="text-slate-700 font-medium shrink-0">{d.litros.toFixed(1)} L</span>
-                            </div>
-                          ))}
-                          {hasMore && (
-                            <button
-                              onClick={() => toggleComb(res.nombreCombustible)}
-                              className="flex items-center gap-1 text-[10px] text-sky-600 mt-0.5 hover:underline"
-                            >
-                              <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                              {isExpanded ? 'Ver menos' : `Ver ${res.detalleConsumo.length - CONSUMER_PREVIEW} más`}
-                            </button>
+                          {!isEconomico && (
+                            <>
+                              <p className="text-[10px] text-slate-400 uppercase tracking-wide pb-0.5">Consumo por consumidor</p>
+                              {visibleConsumers.map(d => (
+                                <div key={`${d.nombre}-${d.chapa}`} className="flex items-center justify-between py-1 border-b border-slate-50">
+                                  <span className="text-slate-500 truncate max-w-[65%]">
+                                    {d.nombre}
+                                    {d.chapa && <span className="text-slate-400 ml-1 font-mono text-[10px]">[{d.chapa}]</span>}
+                                  </span>
+                                  <span className="text-slate-700 font-medium shrink-0">{d.litros.toFixed(1)} L</span>
+                                </div>
+                              ))}
+                              {hasMore && (
+                                <button
+                                  onClick={() => toggleComb(res.nombreCombustible)}
+                                  className="flex items-center gap-1 text-[10px] text-sky-600 mt-0.5 hover:underline"
+                                >
+                                  <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                  {isExpanded ? 'Ver menos' : `Ver ${res.detalleConsumo.length - CONSUMER_PREVIEW} más`}
+                                </button>
+                              )}
+                            </>
                           )}
                           {/* Total consumo */}
                           <div className="flex items-center justify-between py-1.5 border-t border-slate-200 mt-0.5">

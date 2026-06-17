@@ -355,14 +355,15 @@ CREATE INDEX IF NOT EXISTS idx_config_alerta_consumidor_id ON config_alerta(cons
 -- ─────────────────────────────────────────────────────────────
 --  10. USER_ROLES
 --      Roles de acceso por usuario de Supabase Auth.
---      Roles: superadmin | operador | auditor | economico
+--      Roles: superadmin | operador | auditor | economico | cajero
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS user_roles (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id      UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   email        TEXT,
   full_name    TEXT,
-  role         TEXT        NOT NULL DEFAULT 'operador',
+  role         TEXT        NOT NULL DEFAULT 'operador'
+                 CHECK (role IN ('superadmin', 'operador', 'auditor', 'economico', 'cajero')),
   created_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (user_id)
 );
@@ -370,6 +371,9 @@ CREATE TABLE IF NOT EXISTS user_roles (
 ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS email        TEXT;
 ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS full_name    TEXT;
 ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS role         TEXT NOT NULL DEFAULT 'operador';
+ALTER TABLE user_roles DROP CONSTRAINT IF EXISTS user_roles_role_check;
+ALTER TABLE user_roles ADD CONSTRAINT user_roles_role_check
+  CHECK (role IN ('superadmin', 'operador', 'auditor', 'economico', 'cajero'));
 ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS created_date TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
@@ -522,10 +526,18 @@ ALTER TABLE movimiento         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE config_alerta      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_roles         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_log          ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ruta               ENABLE ROW LEVEL SECURITY;
-ALTER TABLE asignacion_ruta    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ruta                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE asignacion_ruta       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE precio_despacho_tipo  ENABLE ROW LEVEL SECURITY;
 
--- ── Políticas: acceso total a usuarios autenticados ──────────
+-- ── Función auxiliar de roles (SECURITY DEFINER) ─────────────
+-- Evita dependencia circular de RLS al consultar user_roles desde políticas.
+CREATE OR REPLACE FUNCTION get_my_role()
+RETURNS TEXT AS $$
+  SELECT role FROM user_roles WHERE user_id = auth.uid()
+$$ LANGUAGE sql SECURITY DEFINER STABLE;
+
+-- ── Políticas base: tablas de catálogo (acceso total autenticados) ────────────
 -- (Se eliminan antes de crear para evitar duplicados en re-ejecución)
 
 DO $$ BEGIN
@@ -544,29 +556,9 @@ DO $$ BEGIN
   CREATE POLICY "Authenticated full access" ON precio_combustible
     FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
-  -- tarjeta
-  DROP POLICY IF EXISTS "Authenticated full access" ON tarjeta;
-  CREATE POLICY "Authenticated full access" ON tarjeta
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
   -- vehiculo
   DROP POLICY IF EXISTS "Authenticated full access" ON vehiculo;
   CREATE POLICY "Authenticated full access" ON vehiculo
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-  -- conductor
-  DROP POLICY IF EXISTS "Authenticated full access" ON conductor;
-  CREATE POLICY "Authenticated full access" ON conductor
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-  -- consumidor
-  DROP POLICY IF EXISTS "Authenticated full access" ON consumidor;
-  CREATE POLICY "Authenticated full access" ON consumidor
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-  -- movimiento
-  DROP POLICY IF EXISTS "Authenticated full access" ON movimiento;
-  CREATE POLICY "Authenticated full access" ON movimiento
     FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
   -- config_alerta
@@ -574,34 +566,113 @@ DO $$ BEGIN
   CREATE POLICY "Authenticated full access" ON config_alerta
     FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
-  -- user_roles: solo superadmin debería escribir, pero SELECT libre para autenticados
-  DROP POLICY IF EXISTS "Authenticated read access" ON user_roles;
-  CREATE POLICY "Authenticated read access" ON user_roles
-    FOR SELECT TO authenticated USING (true);
-
-  DROP POLICY IF EXISTS "Authenticated write access" ON user_roles;
-  CREATE POLICY "Authenticated write access" ON user_roles
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-  -- audit_log: solo lectura para autenticados; escritura via service_role (triggers/edge functions)
+  -- audit_log: SELECT libre; INSERT solo con user_id = propio (evita falsificación)
   DROP POLICY IF EXISTS "Authenticated read access" ON audit_log;
   CREATE POLICY "Authenticated read access" ON audit_log
     FOR SELECT TO authenticated USING (true);
-
-  DROP POLICY IF EXISTS "Service role write access" ON audit_log;
-  CREATE POLICY "Service role write access" ON audit_log
-    FOR INSERT TO authenticated WITH CHECK (true);
 
   -- ruta
   DROP POLICY IF EXISTS "Authenticated full access" ON ruta;
   CREATE POLICY "Authenticated full access" ON ruta
     FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
-  -- asignacion_ruta
-  DROP POLICY IF EXISTS "Authenticated full access" ON asignacion_ruta;
-  CREATE POLICY "Authenticated full access" ON asignacion_ruta
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
 END $$;
+
+-- ── Políticas granulares por rol ──────────────────────────────
+-- Las tablas sensibles usan políticas por operación (SELECT/INSERT/UPDATE/DELETE).
+-- Ver migración 2026-06-16_fix_rls_policies.sql para la versión definitiva.
+
+-- user_roles — CRÍTICA: evitar escalada de privilegios
+DROP POLICY IF EXISTS "Authenticated read access"        ON user_roles;
+DROP POLICY IF EXISTS "Authenticated write access"       ON user_roles;
+DROP POLICY IF EXISTS "user_roles_select_own"            ON user_roles;
+DROP POLICY IF EXISTS "user_roles_select_superadmin"     ON user_roles;
+DROP POLICY IF EXISTS "user_roles_insert_bootstrap"      ON user_roles;
+DROP POLICY IF EXISTS "user_roles_insert_superadmin"     ON user_roles;
+DROP POLICY IF EXISTS "user_roles_update_superadmin"     ON user_roles;
+DROP POLICY IF EXISTS "user_roles_delete_superadmin"     ON user_roles;
+
+CREATE POLICY "user_roles_select_own"        ON user_roles FOR SELECT TO authenticated USING (auth.uid() = user_id);
+CREATE POLICY "user_roles_select_superadmin" ON user_roles FOR SELECT TO authenticated USING (get_my_role() = 'superadmin');
+CREATE POLICY "user_roles_insert_bootstrap"  ON user_roles FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id AND role = 'auditor' AND NOT EXISTS (SELECT 1 FROM user_roles WHERE user_id = auth.uid()));
+CREATE POLICY "user_roles_insert_superadmin" ON user_roles FOR INSERT TO authenticated WITH CHECK (get_my_role() = 'superadmin');
+CREATE POLICY "user_roles_update_superadmin" ON user_roles FOR UPDATE TO authenticated USING (get_my_role() = 'superadmin') WITH CHECK (get_my_role() = 'superadmin');
+CREATE POLICY "user_roles_delete_superadmin" ON user_roles FOR DELETE TO authenticated USING (get_my_role() = 'superadmin');
+
+-- movimiento — ALTA: evitar fabricación de registros
+DROP POLICY IF EXISTS "Authenticated full access"    ON movimiento;
+DROP POLICY IF EXISTS "movimiento_select_all"        ON movimiento;
+DROP POLICY IF EXISTS "movimiento_insert_ops"        ON movimiento;
+DROP POLICY IF EXISTS "movimiento_update_ops"        ON movimiento;
+DROP POLICY IF EXISTS "movimiento_delete_superadmin" ON movimiento;
+
+CREATE POLICY "movimiento_select_all"        ON movimiento FOR SELECT TO authenticated USING (true);
+CREATE POLICY "movimiento_insert_ops"        ON movimiento FOR INSERT TO authenticated WITH CHECK (get_my_role() IN ('superadmin', 'operador') OR (get_my_role() = 'cajero' AND tipo = 'DESPACHO'));
+CREATE POLICY "movimiento_update_ops"        ON movimiento FOR UPDATE TO authenticated USING (get_my_role() IN ('superadmin', 'operador', 'cajero')) WITH CHECK (get_my_role() IN ('superadmin', 'operador', 'cajero'));
+CREATE POLICY "movimiento_delete_superadmin" ON movimiento FOR DELETE TO authenticated USING (get_my_role() = 'superadmin');
+
+-- audit_log — ALTA: evitar falsificación de entradas de auditoría
+DROP POLICY IF EXISTS "Service role write access" ON audit_log;
+DROP POLICY IF EXISTS "audit_log_insert_own"      ON audit_log;
+CREATE POLICY "audit_log_insert_own" ON audit_log FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+
+-- precio_despacho_tipo — ALTA: tabla sin RLS permitía inyectar precios arbitrarios
+DROP POLICY IF EXISTS "precio_despacho_select_all" ON precio_despacho_tipo;
+DROP POLICY IF EXISTS "precio_despacho_insert_eco" ON precio_despacho_tipo;
+DROP POLICY IF EXISTS "precio_despacho_update_eco" ON precio_despacho_tipo;
+DROP POLICY IF EXISTS "precio_despacho_delete_eco" ON precio_despacho_tipo;
+CREATE POLICY "precio_despacho_select_all" ON precio_despacho_tipo FOR SELECT TO authenticated USING (true);
+CREATE POLICY "precio_despacho_insert_eco" ON precio_despacho_tipo FOR INSERT TO authenticated WITH CHECK (get_my_role() IN ('superadmin', 'economico'));
+CREATE POLICY "precio_despacho_update_eco" ON precio_despacho_tipo FOR UPDATE TO authenticated USING (get_my_role() IN ('superadmin', 'economico')) WITH CHECK (get_my_role() IN ('superadmin', 'economico'));
+CREATE POLICY "precio_despacho_delete_eco" ON precio_despacho_tipo FOR DELETE TO authenticated USING (get_my_role() = 'superadmin');
+
+-- tarjeta
+DROP POLICY IF EXISTS "Authenticated full access" ON tarjeta;
+DROP POLICY IF EXISTS "tarjeta_select_all"        ON tarjeta;
+DROP POLICY IF EXISTS "tarjeta_insert_ops"        ON tarjeta;
+DROP POLICY IF EXISTS "tarjeta_update_ops"        ON tarjeta;
+DROP POLICY IF EXISTS "tarjeta_delete_superadmin" ON tarjeta;
+
+CREATE POLICY "tarjeta_select_all"        ON tarjeta FOR SELECT TO authenticated USING (true);
+CREATE POLICY "tarjeta_insert_ops"        ON tarjeta FOR INSERT TO authenticated WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
+CREATE POLICY "tarjeta_update_ops"        ON tarjeta FOR UPDATE TO authenticated USING (get_my_role() IN ('superadmin', 'operador')) WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
+CREATE POLICY "tarjeta_delete_superadmin" ON tarjeta FOR DELETE TO authenticated USING (get_my_role() = 'superadmin');
+
+-- consumidor
+DROP POLICY IF EXISTS "Authenticated full access"   ON consumidor;
+DROP POLICY IF EXISTS "consumidor_select_all"        ON consumidor;
+DROP POLICY IF EXISTS "consumidor_insert_ops"        ON consumidor;
+DROP POLICY IF EXISTS "consumidor_update_ops"        ON consumidor;
+DROP POLICY IF EXISTS "consumidor_delete_superadmin" ON consumidor;
+
+CREATE POLICY "consumidor_select_all"        ON consumidor FOR SELECT TO authenticated USING (true);
+CREATE POLICY "consumidor_insert_ops"        ON consumidor FOR INSERT TO authenticated WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
+CREATE POLICY "consumidor_update_ops"        ON consumidor FOR UPDATE TO authenticated USING (get_my_role() IN ('superadmin', 'operador')) WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
+CREATE POLICY "consumidor_delete_superadmin" ON consumidor FOR DELETE TO authenticated USING (get_my_role() = 'superadmin');
+
+-- conductor
+DROP POLICY IF EXISTS "Authenticated full access"   ON conductor;
+DROP POLICY IF EXISTS "conductor_select_all"        ON conductor;
+DROP POLICY IF EXISTS "conductor_insert_ops"        ON conductor;
+DROP POLICY IF EXISTS "conductor_update_ops"        ON conductor;
+DROP POLICY IF EXISTS "conductor_delete_superadmin" ON conductor;
+
+CREATE POLICY "conductor_select_all"        ON conductor FOR SELECT TO authenticated USING (true);
+CREATE POLICY "conductor_insert_ops"        ON conductor FOR INSERT TO authenticated WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
+CREATE POLICY "conductor_update_ops"        ON conductor FOR UPDATE TO authenticated USING (get_my_role() IN ('superadmin', 'operador')) WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
+CREATE POLICY "conductor_delete_superadmin" ON conductor FOR DELETE TO authenticated USING (get_my_role() = 'superadmin');
+
+-- asignacion_ruta
+DROP POLICY IF EXISTS "Authenticated full access"       ON asignacion_ruta;
+DROP POLICY IF EXISTS "asignacion_ruta_select_all"        ON asignacion_ruta;
+DROP POLICY IF EXISTS "asignacion_ruta_insert_ops"        ON asignacion_ruta;
+DROP POLICY IF EXISTS "asignacion_ruta_update_ops"        ON asignacion_ruta;
+DROP POLICY IF EXISTS "asignacion_ruta_delete_superadmin" ON asignacion_ruta;
+
+CREATE POLICY "asignacion_ruta_select_all"        ON asignacion_ruta FOR SELECT TO authenticated USING (true);
+CREATE POLICY "asignacion_ruta_insert_ops"        ON asignacion_ruta FOR INSERT TO authenticated WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
+CREATE POLICY "asignacion_ruta_update_ops"        ON asignacion_ruta FOR UPDATE TO authenticated USING (get_my_role() IN ('superadmin', 'operador')) WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
+CREATE POLICY "asignacion_ruta_delete_superadmin" ON asignacion_ruta FOR DELETE TO authenticated USING (get_my_role() = 'superadmin');
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -1001,6 +1072,78 @@ WHERE  LOWER(TRIM(pc.combustible_nombre)) = LOWER(TRIM(tc.nombre))
 -- 23.4  Índice de soporte para búsquedas por nombre
 CREATE INDEX IF NOT EXISTS idx_precio_combustible_nombre
   ON precio_combustible (combustible_nombre);
+
+-- ─────────────────────────────────────────────────────────────
+--  TRIGGERS DE INTEGRIDAD (2026-06-16)
+-- ─────────────────────────────────────────────────────────────
+
+-- venta_trabajador: inmutabilidad de campos + transiciones de estado válidas
+CREATE OR REPLACE FUNCTION validate_venta_update()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.registrado_por IS DISTINCT FROM OLD.registrado_por THEN
+    RAISE EXCEPTION 'Campo registrado_por es inmutable';
+  END IF;
+  IF OLD.movimiento_id IS NOT NULL AND NEW.movimiento_id IS DISTINCT FROM OLD.movimiento_id THEN
+    RAISE EXCEPTION 'Campo movimiento_id no puede modificarse una vez establecido';
+  END IF;
+  IF OLD.estado NOT IN ('PENDIENTE') THEN
+    IF NEW.litros IS DISTINCT FROM OLD.litros OR NEW.precio_por_litro IS DISTINCT FROM OLD.precio_por_litro OR
+       NEW.monto IS DISTINCT FROM OLD.monto OR NEW.combustible_id IS DISTINCT FROM OLD.combustible_id OR
+       NEW.tanque_origen_id IS DISTINCT FROM OLD.tanque_origen_id OR NEW.beneficiario_id IS DISTINCT FROM OLD.beneficiario_id THEN
+      RAISE EXCEPTION 'Campos financieros inmutables en estado "%"', OLD.estado;
+    END IF;
+  END IF;
+  IF NEW.estado IS DISTINCT FROM OLD.estado THEN
+    IF OLD.estado IN ('CANCELADO','ANULADO','PAGADO_FINALIZADO','PAGADO') THEN
+      RAISE EXCEPTION 'La venta en estado "%" no puede modificarse', OLD.estado;
+    END IF;
+    IF OLD.estado = 'PENDIENTE' AND NEW.estado NOT IN ('ENTREGADO','RETIRADO','PAGADO_FINALIZADO','PAGADO','CANCELADO','ANULADO') THEN
+      RAISE EXCEPTION 'Transición inválida: PENDIENTE → %', NEW.estado;
+    END IF;
+    IF OLD.estado IN ('ENTREGADO','RETIRADO') AND NEW.estado NOT IN ('PAGADO_FINALIZADO','PAGADO','CANCELADO','ANULADO') THEN
+      RAISE EXCEPTION 'Transición inválida: % → %', OLD.estado, NEW.estado;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY INVOKER;
+
+DROP TRIGGER IF EXISTS trg_validate_venta_update ON venta_trabajador;
+CREATE TRIGGER trg_validate_venta_update
+  BEFORE UPDATE ON venta_trabajador
+  FOR EACH ROW EXECUTE FUNCTION validate_venta_update();
+
+-- movimiento: validar stock disponible antes de DESPACHO
+CREATE OR REPLACE FUNCTION validate_despacho_stock()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_ini   NUMERIC := 0;
+  v_stock NUMERIC := 0;
+BEGIN
+  IF NEW.tipo != 'DESPACHO' OR NEW.consumidor_origen_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+  SELECT COALESCE(litros_iniciales, 0) INTO v_ini FROM consumidor WHERE id = NEW.consumidor_origen_id;
+  SELECT v_ini + COALESCE(SUM(
+    CASE
+      WHEN tipo IN ('COMPRA','DEPOSITO') AND consumidor_id = NEW.consumidor_origen_id THEN litros
+      WHEN tipo = 'DESPACHO' AND consumidor_id = NEW.consumidor_origen_id THEN litros
+      WHEN tipo = 'DESPACHO' AND consumidor_origen_id = NEW.consumidor_origen_id THEN -litros
+      ELSE 0
+    END), 0)
+  INTO v_stock FROM movimiento;
+  IF v_stock < COALESCE(NEW.litros, 0) THEN
+    RAISE EXCEPTION 'Stock insuficiente en origen: disponible %.1f L, solicitado %.1f L', v_stock, COALESCE(NEW.litros, 0);
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_validate_despacho_stock ON movimiento;
+CREATE TRIGGER trg_validate_despacho_stock
+  BEFORE INSERT ON movimiento
+  FOR EACH ROW EXECUTE FUNCTION validate_despacho_stock();
 
 -- ─────────────────────────────────────────────────────────────
 --  FIN DE MIGRACIÓN

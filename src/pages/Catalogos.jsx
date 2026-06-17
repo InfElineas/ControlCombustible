@@ -635,6 +635,7 @@ function TabConductores({ canDelete }) {
 
 const emptyDepositoForm = {
   nombre: '', codigo_interno: '',
+  tipo_consumidor_id: '', tipo_consumidor_nombre: '',
   combustible_id: '', combustible_nombre: '',
   activo: true, observaciones: '',
   litros_iniciales: 0,
@@ -679,6 +680,7 @@ function TabDepositos({ canWrite, canDelete }) {
   const qc = useQueryClient();
   const { data: consumidores = [], isLoading } = useQuery({ queryKey: ['consumidores'],  queryFn: () => base44.entities.Consumidor.list() });
   const { data: combustibles = []             } = useQuery({ queryKey: ['combustibles'], queryFn: () => base44.entities.TipoCombustible.list() });
+  const { data: tiposConsumidor = []          } = useQuery({ queryKey: ['tiposConsumidor'], queryFn: () => base44.entities.TipoConsumidor.list() });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing]       = useState(null);
@@ -713,6 +715,8 @@ function TabDepositos({ canWrite, canDelete }) {
     setForm({
       nombre: c.nombre || '',
       codigo_interno: c.codigo_interno || '',
+      tipo_consumidor_id: c.tipo_consumidor_id || '',
+      tipo_consumidor_nombre: c.tipo_consumidor_nombre || '',
       combustible_id: c.combustible_id || '',
       combustible_nombre: c.combustible_nombre || '',
       activo: c.activo !== false,
@@ -728,12 +732,16 @@ function TabDepositos({ canWrite, canDelete }) {
   };
 
   const handleSave = () => {
-    if (!form.nombre.trim())  { toast.error('Nombre requerido'); return; }
-    if (!form.combustible_id) { toast.error('Combustible requerido'); return; }
+    if (!form.nombre.trim())        { toast.error('Nombre requerido'); return; }
+    if (!form.combustible_id)       { toast.error('Combustible requerido'); return; }
+    if (!form.tipo_consumidor_id)   { toast.error('Seleccione un tipo de depósito'); return; }
     const comb = combustibles.find(c => c.id === form.combustible_id);
+    const tipo = tiposConsumidor.find(t => t.id === form.tipo_consumidor_id);
     const payload = {
       nombre: form.nombre.trim(),
       codigo_interno: form.codigo_interno || '',
+      tipo_consumidor_id: form.tipo_consumidor_id,
+      tipo_consumidor_nombre: tipo?.nombre || form.tipo_consumidor_nombre,
       combustible_id: form.combustible_id,
       combustible_nombre: comb?.nombre || form.combustible_nombre,
       activo: form.activo,
@@ -782,6 +790,17 @@ function TabDepositos({ canWrite, canDelete }) {
               <div className="col-span-2">
                 <Label className="text-xs text-slate-500">Nombre *</Label>
                 <Input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Isotanque principal" className="mt-1" />
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs text-slate-500">Tipo de depósito *</Label>
+                <Select value={form.tipo_consumidor_id} onValueChange={v => setForm(f => ({ ...f, tipo_consumidor_id: v }))}>
+                  <SelectTrigger className="mt-1"><SelectValue placeholder="Seleccionar tipo" /></SelectTrigger>
+                  <SelectContent>
+                    {tiposConsumidor
+                      .filter(t => t.activo !== false && (t.nombre || '').toLowerCase().match(/iso|tanque|reserva|almac/))
+                      .map(t => <SelectItem key={t.id} value={t.id}>{t.nombre}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <Label className="text-xs text-slate-500">Código interno</Label>

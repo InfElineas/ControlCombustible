@@ -18,13 +18,14 @@ import {
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 
-const ROLES = ['superadmin', 'operador', 'auditor', 'economico'];
+const ROLES = ['superadmin', 'operador', 'auditor', 'economico', 'cajero'];
 
 const ROLE_META = {
   superadmin: { label: 'Super Admin', color: 'bg-sky-100 text-sky-700 border-sky-200' },
   operador:   { label: 'Operador',    color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
   auditor:    { label: 'Auditor',     color: 'bg-violet-100 text-violet-700 border-violet-200' },
   economico:  { label: 'Económico',   color: 'bg-amber-100 text-amber-700 border-amber-200' },
+  cajero:     { label: 'Cajero',      color: 'bg-rose-100 text-rose-700 border-rose-200' },
 };
 
 const PERMISOS_TABLA = [

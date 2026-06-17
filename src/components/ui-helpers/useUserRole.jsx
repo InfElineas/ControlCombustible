@@ -71,6 +71,7 @@ export function useUserRole() {
   const isOperador    = role === 'operador';
   const isAuditor     = role === 'auditor';
   const isEconomico   = role === 'economico';
+  const isCajero      = role === 'cajero';
   const isAdmin       = isSuperAdmin;
 
   return {
@@ -82,6 +83,7 @@ export function useUserRole() {
     isOperador,
     isAuditor,
     isEconomico,
+    isCajero,
     canWrite:               isSuperAdmin || isOperador,
     canManageCatalogos:     isSuperAdmin || isOperador,
     canManageFlota:         isSuperAdmin || isOperador,
@@ -98,5 +100,10 @@ export function useUserRole() {
     canComprar:             isSuperAdmin || isOperador,
     canDespachar:           isSuperAdmin || isOperador,
     canComprarDespachar:    isSuperAdmin || isOperador,
+    // Ventas trabajadores
+    canVerVentas:           isSuperAdmin || isOperador || isEconomico || isAuditor || isCajero,
+    canRegistrarVentas:     isSuperAdmin || isOperador || isCajero,
+    canCobrarVentas:        isSuperAdmin || isEconomico || isCajero,
+    canGestionarBeneficiarios: isSuperAdmin || isOperador || isCajero,
   };
 }
