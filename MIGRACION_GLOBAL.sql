@@ -1146,5 +1146,50 @@ CREATE TRIGGER trg_validate_despacho_stock
   FOR EACH ROW EXECUTE FUNCTION validate_despacho_stock();
 
 -- ─────────────────────────────────────────────────────────────
+--  PEDIDO 3 — Precio costo, precio venta, CPP por tanque ISO
+-- ─────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS concepto_precio (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nombre      TEXT NOT NULL UNIQUE,
+  descripcion TEXT,
+  activo      BOOLEAN DEFAULT true,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+INSERT INTO concepto_precio (nombre, descripcion) VALUES
+  ('Uso logístico',           'Combustible para operaciones logísticas de la empresa'),
+  ('Bonificación trabajador', 'Beneficio de combustible al personal'),
+  ('Uso almacén',             'Combustible para equipos y maquinaria del almacén')
+ON CONFLICT (nombre) DO NOTHING;
+
+ALTER TABLE tipo_consumidor ADD COLUMN IF NOT EXISTS concepto_id UUID REFERENCES concepto_precio(id);
+ALTER TABLE precio_despacho_tipo ADD COLUMN IF NOT EXISTS concepto_id UUID REFERENCES concepto_precio(id);
+ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS precio_costo_unitario NUMERIC(10,4);
+ALTER TABLE venta_trabajador ADD COLUMN IF NOT EXISTS precio_venta_unitario NUMERIC(10,4);
+
+CREATE OR REPLACE VIEW v_cpp_por_tanque AS
+SELECT
+  consumidor_id,
+  SUM(litros * precio_costo_unitario) /
+    NULLIF(SUM(CASE WHEN precio_costo_unitario IS NOT NULL THEN litros ELSE 0 END), 0) AS cpp,
+  COUNT(*) AS num_entradas,
+  SUM(CASE WHEN precio_costo_unitario IS NOT NULL THEN litros ELSE 0 END) AS litros_con_precio
+FROM movimiento
+WHERE tipo IN ('COMPRA', 'DEPOSITO')
+  AND precio_costo_unitario IS NOT NULL
+GROUP BY consumidor_id;
+
+ALTER TABLE concepto_precio ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "concepto_select_all" ON concepto_precio;
+DROP POLICY IF EXISTS "concepto_manage_eco" ON concepto_precio;
+CREATE POLICY "concepto_select_all" ON concepto_precio
+  FOR SELECT TO authenticated USING (true);
+CREATE POLICY "concepto_manage_eco" ON concepto_precio
+  FOR ALL TO authenticated
+  USING (get_my_role() IN ('superadmin', 'economico'))
+  WITH CHECK (get_my_role() IN ('superadmin', 'economico'));
+
+-- ─────────────────────────────────────────────────────────────
 --  FIN DE MIGRACIÓN
 -- ─────────────────────────────────────────────────────────────

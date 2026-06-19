@@ -93,11 +93,25 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
   [movimientos, consumidor.id]);
 
   // ── Despachos recibidos (para "Uso de almacén" / Autorizo) ────────────────
-  const despachosRecibidos = React.useMemo(() =>
-    movimientos
-      .filter(m => m.tipo === 'DESPACHO' && m.consumidor_id === consumidor.id)
-      .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')),
-  [movimientos, consumidor.id]);
+  const despachosRecibidos = React.useMemo(() => {
+    const cNom = (consumidor.nombre || '').toLowerCase();
+    const esLogist = cNom.includes('logist');
+    return movimientos
+      .filter(m => {
+        if (m.tipo !== 'DESPACHO') return false;
+        if (m.consumidor_id === consumidor.id) return true;
+        // Legado: bonificaciones con consumidor_id=null y nombre "Uso Logístico"
+        if (esLogist && !m.consumidor_id) {
+          const mNom = (m.consumidor_nombre || '').toLowerCase();
+          if (mNom !== 'uso logístico' && !mNom.includes('logist')) return false;
+          if (consumidor.combustible_id) return m.combustible_id === consumidor.combustible_id;
+          if (consumidor.combustible_nombre) return m.combustible_nombre === consumidor.combustible_nombre;
+          return true;
+        }
+        return false;
+      })
+      .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  }, [movimientos, consumidor.id, consumidor.nombre, consumidor.combustible_id, consumidor.combustible_nombre]);
 
   const ultimaCarga = React.useMemo(() => {
     const c = compras[0] ?? null;

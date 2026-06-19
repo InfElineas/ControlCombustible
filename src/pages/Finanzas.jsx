@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import VentaEstadoBadge from '@/components/ui-helpers/VentaEstadoBadge';
 import {
@@ -87,6 +88,63 @@ export default function Finanzas() {
     .filter(v => v.estado === 'PAGADO_FINALIZADO' || v.estado === 'PAGADO')
     .reduce((s, v) => s + (v.monto || 0), 0);
   const flujoNeto = cobradoBonus - gastoCompras;
+
+  // KPIs por tipo de combustible
+  const comprasPorCombustible = useMemo(() => {
+    const map = {};
+    compras.forEach(m => {
+      const key = m.combustible_nombre || 'Sin clasificar';
+      if (!map[key]) map[key] = { nombre: key, litros: 0, monto: 0 };
+      map[key].litros += m.litros || 0;
+      map[key].monto  += m.monto  || 0;
+    });
+    return Object.values(map).sort((a, b) => b.litros - a.litros);
+  }, [compras]);
+
+  const bonusPorCombustible = useMemo(() => {
+    const map = {};
+    ventasActivas.forEach(v => {
+      const key = v.combustible_nombre || 'Sin clasificar';
+      if (!map[key]) map[key] = { nombre: key, litros: 0, monto: 0, cobrado: 0, pendiente: 0 };
+      map[key].litros  += v.litros || 0;
+      map[key].monto   += v.monto  || 0;
+      if (v.estado === 'PAGADO_FINALIZADO' || v.estado === 'PAGADO') map[key].cobrado   += v.monto || 0;
+      if (v.estado === 'PENDIENTE' || v.estado === 'ENTREGADO')      map[key].pendiente += v.monto || 0;
+    });
+    return Object.values(map).sort((a, b) => b.litros - a.litros);
+  }, [ventasActivas]);
+
+  // CPP por tanque ISO (costo promedio ponderado acumulado)
+  const { data: cppTanques = [] } = useQuery({
+    queryKey: ['cpp-tanques'],
+    queryFn: async () => {
+      const { data } = await supabase.from('v_cpp_por_tanque').select('*');
+      return data ?? [];
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  const cppMap = useMemo(() => {
+    const m = {};
+    cppTanques.forEach(r => { m[r.consumidor_id] = r.cpp; });
+    return m;
+  }, [cppTanques]);
+
+  // Ganancia bruta: ventas cobradas con precio_venta_unitario registrado
+  const gananciaBruta = useMemo(() => {
+    return ventasPeriodo
+      .filter(v => v.estado === 'PAGADO_FINALIZADO' && v.precio_venta_unitario != null)
+      .reduce((s, v) => {
+        const cpp = cppMap[v.tanque_origen_id] ?? 0;
+        return s + (v.precio_venta_unitario - cpp) * (v.litros || 0);
+      }, 0);
+  }, [ventasPeriodo, cppMap]);
+
+  const ventasCobradas = ventasPeriodo.filter(v => v.estado === 'PAGADO_FINALIZADO');
+  const ingresoVentas = ventasCobradas.reduce((s, v) => s + (v.monto || 0), 0);
+  const costoVentas   = ventasCobradas
+    .filter(v => v.precio_venta_unitario != null)
+    .reduce((s, v) => s + ((cppMap[v.tanque_origen_id] ?? 0) * (v.litros || 0)), 0);
 
   async function handleExport() {
     try {
@@ -175,13 +233,6 @@ export default function Finanzas() {
     );
   }
 
-  const kpis = [
-    { label: 'Gasto compras', desc: 'Compras en surtidores externos', value: formatMonto(gastoCompras), icon: DollarSign, color: 'text-sky-600 bg-sky-50' },
-    { label: 'Litros comprados', desc: 'Total litros adquiridos', value: `${fmtL(litrosComprados)} L`, icon: Fuel, color: 'text-amber-600 bg-amber-50' },
-    { label: 'Bonificaciones', desc: 'Monto total del período', value: formatMonto(montoBonus), icon: Users, color: 'text-violet-600 bg-violet-50' },
-    { label: 'Pendiente cobro', desc: 'Bonificaciones sin cobrar', value: formatMonto(pendienteBonus), icon: Clock, color: 'text-orange-600 bg-orange-50' },
-  ];
-
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -213,22 +264,92 @@ export default function Finanzas() {
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {kpis.map(k => (
-          <Card key={k.label} className="border-0 shadow-sm">
-            <CardContent className="p-3 flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${k.color}`}>
-                <k.icon className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] text-slate-400 uppercase tracking-wide">{k.label}</p>
-                <p className="text-sm font-bold text-slate-800 truncate">{k.value}</p>
-                {k.desc && <p className="text-[10px] text-slate-400 leading-tight mt-0.5 hidden sm:block">{k.desc}</p>}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      {/* KPIs por tipo de combustible */}
+      <div className="space-y-3">
+        {/* Compras */}
+        <div>
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2 px-0.5">Compras en surtidores externos</p>
+          {comprasPorCombustible.length === 0 ? (
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-3 text-xs text-slate-400 text-center">Sin compras en el período</CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {comprasPorCombustible.map(c => (
+                <Card key={c.nombre} className="border-0 shadow-sm">
+                  <CardContent className="p-3 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-50 text-amber-600">
+                      <Fuel className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide truncate">{c.nombre}</p>
+                      <p className="text-sm font-bold text-slate-800">{fmtL(c.litros)} L</p>
+                      <p className="text-[11px] text-slate-500">{formatMonto(c.monto)}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+              {comprasPorCombustible.length > 1 && (
+                <Card className="border-0 shadow-sm bg-slate-50/60">
+                  <CardContent className="p-3 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-slate-200 text-slate-500">
+                      <TrendingUp className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Total compras</p>
+                      <p className="text-sm font-bold text-slate-800">{fmtL(litrosComprados)} L</p>
+                      <p className="text-[11px] text-slate-500">{formatMonto(gastoCompras)}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Bonificaciones */}
+        <div>
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2 px-0.5">Bonificaciones a trabajadores</p>
+          {bonusPorCombustible.length === 0 ? (
+            <Card className="border-0 shadow-sm">
+              <CardContent className="p-3 text-xs text-slate-400 text-center">Sin bonificaciones en el período</CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {bonusPorCombustible.map(c => (
+                <Card key={c.nombre} className="border-0 shadow-sm">
+                  <CardContent className="p-3 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-violet-50 text-violet-600">
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide truncate">{c.nombre}</p>
+                      <p className="text-sm font-bold text-slate-800">{fmtL(c.litros)} L</p>
+                      <div className="flex gap-2 mt-0.5 flex-wrap">
+                        {c.cobrado > 0 && <p className="text-[11px] text-emerald-600">Cobrado: {formatMonto(c.cobrado)}</p>}
+                        {c.pendiente > 0 && <p className="text-[11px] text-orange-500">Pendiente: {formatMonto(c.pendiente)}</p>}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+              {bonusPorCombustible.length > 1 && (
+                <Card className="border-0 shadow-sm bg-slate-50/60">
+                  <CardContent className="p-3 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-slate-200 text-slate-500">
+                      <TrendingUp className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Total bonificaciones</p>
+                      <p className="text-sm font-bold text-slate-800">{fmtL(ventasActivas.reduce((s,v) => s+(v.litros||0),0))} L</p>
+                      <p className="text-[11px] text-slate-500">{formatMonto(montoBonus)}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Balance financiero del período */}
@@ -266,6 +387,7 @@ export default function Finanzas() {
           <TabsTrigger value="tarjetas" className="text-xs px-3 h-7">Tarjetas</TabsTrigger>
           <TabsTrigger value="bonificaciones" className="text-xs px-3 h-7">Bonificaciones</TabsTrigger>
           <TabsTrigger value="precios" className="text-xs px-3 h-7">Precios</TabsTrigger>
+          <TabsTrigger value="conceptos" className="text-xs px-3 h-7">Conceptos</TabsTrigger>
         </TabsList>
 
         <TabsContent value="tarjetas" className="mt-4 space-y-4">
@@ -273,12 +395,23 @@ export default function Finanzas() {
         </TabsContent>
 
         <TabsContent value="bonificaciones" className="mt-4">
-          <BonificacionesTab ventas={ventasPeriodo} loading={loadingVentas} />
+          <BonificacionesTab
+            ventas={ventasPeriodo}
+            loading={loadingVentas}
+            gananciaBruta={gananciaBruta}
+            ingresoVentas={ingresoVentas}
+            costoVentas={costoVentas}
+            cppMap={cppMap}
+          />
         </TabsContent>
 
         <TabsContent value="precios" className="mt-4 space-y-4">
           <ResumenPrecios />
           <PreciosDespacho />
+        </TabsContent>
+
+        <TabsContent value="conceptos" className="mt-4">
+          <ConceptosPanel />
         </TabsContent>
       </Tabs>
     </div>
@@ -495,7 +628,7 @@ function TarjetasTab({ movPeriodo, tarjetas, periodo, loading }) {
 // ── Bonificaciones tab ────────────────────────────────────────────────────────
 
 
-function BonificacionesTab({ ventas, loading }) {
+function BonificacionesTab({ ventas, loading, gananciaBruta = 0, ingresoVentas = 0, costoVentas = 0, cppMap = {} }) {
   const activas = ventas.filter(v => v.estado !== 'CANCELADO' && v.estado !== 'ANULADO');
   const totalMonto = activas.reduce((s, v) => s + (v.monto || 0), 0);
   const totalLitros = activas.reduce((s, v) => s + (v.litros || 0), 0);
@@ -503,6 +636,7 @@ function BonificacionesTab({ ventas, loading }) {
     .reduce((s, v) => s + (v.monto || 0), 0);
   const pendiente = ventas.filter(v => v.estado === 'PENDIENTE' || v.estado === 'ENTREGADO')
     .reduce((s, v) => s + (v.monto || 0), 0);
+  const tieneGanancia = ingresoVentas > 0 || costoVentas > 0;
 
   const kpis = [
     { label: 'Total bonificaciones', value: formatMonto(totalMonto), icon: DollarSign, color: 'text-violet-600 bg-violet-50' },
@@ -529,6 +663,36 @@ function BonificacionesTab({ ventas, loading }) {
         ))}
       </div>
 
+      {tieneGanancia && (
+        <Card className="border-0 shadow-sm bg-gradient-to-r from-emerald-50 to-teal-50">
+          <CardHeader className="p-4 pb-2">
+            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-emerald-600" />
+              Ganancia bruta del período
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 pt-2">
+            <div className="grid grid-cols-3 gap-4 text-sm">
+              <div>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Ingreso ventas</p>
+                <p className="font-bold text-slate-800">{formatMonto(ingresoVentas)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Costo (CPP)</p>
+                <p className="font-bold text-slate-800">{formatMonto(costoVentas)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Ganancia</p>
+                <p className={`font-bold text-lg ${gananciaBruta >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                  {formatMonto(gananciaBruta)}
+                </p>
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-400 mt-2">Solo incluye ventas cobradas con precio de venta registrado.</p>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="border-0 shadow-sm">
         <CardHeader className="p-4 pb-2 flex flex-row items-center gap-2">
           <Users className="w-4 h-4 text-violet-400" />
@@ -551,6 +715,7 @@ function BonificacionesTab({ ventas, loading }) {
                     <th className="text-left px-4 py-2 text-slate-500 font-medium">Combustible</th>
                     <th className="text-right px-4 py-2 text-slate-500 font-medium">Litros</th>
                     <th className="text-right px-4 py-2 text-slate-500 font-medium">Monto</th>
+                    {tieneGanancia && <th className="text-right px-4 py-2 text-slate-500 font-medium">Ganancia</th>}
                     <th className="text-center px-4 py-2 text-slate-500 font-medium">Estado</th>
                   </tr>
                 </thead>
@@ -566,6 +731,14 @@ function BonificacionesTab({ ventas, loading }) {
                         <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">{v.combustible_nombre}</td>
                         <td className="px-4 py-2.5 text-right tabular-nums text-slate-600">{fmtL(v.litros)} L</td>
                         <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-800">{formatMonto(v.monto)}</td>
+                        {tieneGanancia && (() => {
+                          const cpp = cppMap[v.tanque_origen_id];
+                          if (v.precio_venta_unitario != null && cpp != null) {
+                            const g = (v.precio_venta_unitario - cpp) * (v.litros || 0);
+                            return <td className={`px-4 py-2.5 text-right tabular-nums text-xs font-medium ${g >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{formatMonto(g)}</td>;
+                          }
+                          return <td className="px-4 py-2.5 text-right text-slate-300 text-xs">—</td>;
+                        })()}
                         <td className="px-4 py-2.5 text-center">
                           <VentaEstadoBadge estado={v.estado} />
                         </td>
@@ -577,6 +750,7 @@ function BonificacionesTab({ ventas, loading }) {
                       <td className="px-4 py-2.5 text-slate-500 font-medium text-xs" colSpan={3}>Total (excluye canceladas)</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-bold text-slate-700 text-xs">{fmtL(totalLitros)} L</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-bold text-slate-800 text-xs">{formatMonto(totalMonto)}</td>
+                      {tieneGanancia && <td className={`px-4 py-2.5 text-right tabular-nums font-bold text-xs ${gananciaBruta >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatMonto(gananciaBruta)}</td>}
                       <td className="px-4 py-2.5" />
                     </tr>
                   )}
@@ -862,6 +1036,141 @@ function PreciosDespacho() {
           loading={eliminarMut.isPending}
         />
       )}
+    </Card>
+  );
+}
+
+// ── Conceptos de precio ───────────────────────────────────────────────────────
+
+const emptyConceptoForm = { nombre: '', descripcion: '', activo: true };
+
+function ConceptosPanel() {
+  const qc = useQueryClient();
+  const { canManageFinanzas } = useUserRole();
+
+  const { data: conceptos = [], isLoading } = useQuery({
+    queryKey: ['conceptos-precio'],
+    queryFn: () => base44.entities.ConceptoPrecio.list(),
+  });
+
+  const [form, setForm]         = useState(emptyConceptoForm);
+  const [editId, setEditId]     = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [toDelete, setToDelete] = useState(null);
+
+  const crearMut = useMutation({
+    mutationFn: d => base44.entities.ConceptoPrecio.create(d),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['conceptos-precio'] }); setForm(emptyConceptoForm); setShowForm(false); setEditId(null); toast.success('Concepto creado'); },
+    onError: () => toast.error('Error al guardar'),
+  });
+
+  const editarMut = useMutation({
+    mutationFn: ({ id, d }) => base44.entities.ConceptoPrecio.update(id, d),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['conceptos-precio'] }); setForm(emptyConceptoForm); setShowForm(false); setEditId(null); toast.success('Concepto actualizado'); },
+    onError: () => toast.error('Error al guardar'),
+  });
+
+  const eliminarMut = useMutation({
+    mutationFn: id => base44.entities.ConceptoPrecio.delete(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['conceptos-precio'] }); setToDelete(null); toast.success('Eliminado'); },
+    onError: () => toast.error('Error al eliminar'),
+  });
+
+  function openEdit(c) {
+    setForm({ nombre: c.nombre, descripcion: c.descripcion ?? '', activo: c.activo });
+    setEditId(c.id);
+    setShowForm(true);
+  }
+
+  function handleSave(e) {
+    e.preventDefault();
+    if (!form.nombre.trim()) { toast.error('Nombre requerido'); return; }
+    const payload = { nombre: form.nombre.trim(), descripcion: form.descripcion.trim() || null, activo: form.activo };
+    if (editId) editarMut.mutate({ id: editId, d: payload });
+    else crearMut.mutate(payload);
+  }
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between">
+        <CardTitle className="text-sm font-semibold text-slate-700">Conceptos de precio</CardTitle>
+        {canManageFinanzas && (
+          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => { setForm(emptyConceptoForm); setEditId(null); setShowForm(true); }}>
+            <Plus className="w-3.5 h-3.5" /> Nuevo
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent className="p-4 pt-2 space-y-2">
+        <p className="text-xs text-slate-400">
+          Los conceptos agrupan tipos de consumidor bajo un mismo precio de despacho. Se asignan desde Catálogos → Tipos de consumidor.
+        </p>
+        {isLoading ? (
+          <div className="py-4 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-slate-300" /></div>
+        ) : conceptos.length === 0 ? (
+          <p className="text-sm text-slate-400 text-center py-6">Sin conceptos registrados</p>
+        ) : (
+          <div className="space-y-1.5 mt-2">
+            {conceptos.map(c => (
+              <div key={c.id} className="flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
+                <Tag className="w-3.5 h-3.5 text-violet-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-slate-800">{c.nombre}</span>
+                  {c.descripcion && <span className="text-xs text-slate-400 ml-2">{c.descripcion}</span>}
+                </div>
+                <Badge variant="outline" className={`text-[10px] px-1.5 ${c.activo ? 'text-emerald-700 border-emerald-200' : 'text-slate-400'}`}>
+                  {c.activo ? 'Activo' : 'Inactivo'}
+                </Badge>
+                {canManageFinanzas && (
+                  <>
+                    <Button size="icon" variant="ghost" className="h-6 w-6 text-slate-300 hover:text-sky-500" onClick={() => openEdit(c)}>
+                      <Pencil className="w-3 h-3" />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-6 w-6 text-slate-300 hover:text-red-500" onClick={() => setToDelete(c)}>
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Dialog open={showForm} onOpenChange={open => { if (!open) setShowForm(false); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-sm">{editId ? 'Editar concepto' : 'Nuevo concepto'}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSave} className="space-y-3">
+              <div>
+                <Label className="text-xs">Nombre</Label>
+                <Input className="h-8 text-sm mt-1" value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Ej: Uso logístico" />
+              </div>
+              <div>
+                <Label className="text-xs">Descripción (opcional)</Label>
+                <Input className="h-8 text-sm mt-1" value={form.descripcion} onChange={e => setForm(f => ({ ...f, descripcion: e.target.value }))} />
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="concepto-activo" checked={form.activo} onChange={e => setForm(f => ({ ...f, activo: e.target.checked }))} />
+                <Label htmlFor="concepto-activo" className="text-xs">Activo</Label>
+              </div>
+              <Button type="submit" size="sm" className="w-full" disabled={crearMut.isPending || editarMut.isPending}>
+                {crearMut.isPending || editarMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Guardar'}
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {toDelete && (
+          <ConfirmDialog
+            open
+            title="Eliminar concepto"
+            description={`¿Eliminar el concepto "${toDelete.nombre}"?`}
+            onConfirm={() => eliminarMut.mutate(toDelete.id)}
+            onCancel={() => setToDelete(null)}
+            loading={eliminarMut.isPending}
+          />
+        )}
+      </CardContent>
     </Card>
   );
 }

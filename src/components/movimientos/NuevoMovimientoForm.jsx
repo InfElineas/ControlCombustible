@@ -16,7 +16,7 @@ import { gpsApi, metersToKm } from '@/api/gpsClient';
 
 export default function NuevoMovimientoForm({ onSuccess }) {
   const queryClient = useQueryClient();
-  const { canRecargar, canDepositar, canComprar, canDespachar } = useUserRole();
+  const { canRecargar, canDepositar, canComprar, canDespachar, canVerPrecios } = useUserRole();
 
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
@@ -61,6 +61,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     horas_uso: '',
     nivel_tanque: '',
     referencia: '',
+    precio_costo_unitario: '',
   });
   const [errors, setErrors] = useState({});
   const [filtroTipoConsumidor, setFiltroTipoConsumidor] = useState('all');
@@ -434,6 +435,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       data.combustible_estimado_post = auditoriaCompra?.combustibleEstimadoPost ?? null;
       data.capacidad_tanque = capacidadTanque;
       data.auditoria_combustible_estado = auditoriaCompra?.estado || AUDITORIA_ESTADO.SIN_ESTIMACION;
+      if (canVerPrecios && form.precio_costo_unitario) data.precio_costo_unitario = parseFloat(form.precio_costo_unitario);
       if (consumidorEsEquipo) {
         if (form.horas_uso) data.horas_uso = parseFloat(form.horas_uso);
       } else {
@@ -462,6 +464,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       } else if (form.referencia) {
         data.referencia = form.referencia;
       }
+      if (canVerPrecios && form.precio_costo_unitario) data.precio_costo_unitario = parseFloat(form.precio_costo_unitario);
     } else if (tipo === 'DESPACHO') {
       data.consumidor_origen_id = consumidorOrigen.id;
       data.consumidor_origen_nombre = consumidorOrigen.nombre;
@@ -997,6 +1000,23 @@ export default function NuevoMovimientoForm({ onSuccess }) {
             Precio despacho: <strong>{Number(precioDespachoVigente.precio_por_litro).toFixed(4)} {precioDespachoVigente.moneda}/L</strong>
             {montoDespachoCalculado != null && <> · Monto: <strong>{formatMonto(montoDespachoCalculado)}</strong></>}
           </span>
+        </div>
+      )}
+
+      {/* Precio de costo (solo COMPRA/DEPOSITO, solo economico/superadmin) */}
+      {canVerPrecios && (tipo === 'COMPRA' || tipo === 'DEPOSITO') && (
+        <div>
+          <Label className="text-xs text-slate-500 font-medium block mb-1">Precio de costo/L (opcional)</Label>
+          <Input
+            type="number"
+            step="0.0001"
+            min="0"
+            placeholder="Ej: 25.5000"
+            className="h-9 text-sm"
+            value={form.precio_costo_unitario}
+            onChange={e => setForm(f => ({ ...f, precio_costo_unitario: e.target.value }))}
+          />
+          <p className="text-[11px] text-slate-400 mt-0.5">Se usa para calcular el costo promedio ponderado del tanque.</p>
         </div>
       )}
 

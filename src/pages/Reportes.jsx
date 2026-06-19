@@ -18,7 +18,7 @@ import ReporteConsumo from '@/components/reportes/ReporteConsumo';
 import ReporteVehiculos from '@/components/reportes/ReporteVehiculos';
 
 export default function Reportes() {
-  const { isOperador, isCajero, isEconomico, role } = useUserRole();
+  const { isOperador, isCajero, isEconomico, role, canVerPrecios } = useUserRole();
   const [tab, setTab] = useState('tarjetas');
   const [exportandoFinanciero, setExportandoFinanciero] = useState(false);
 
@@ -328,7 +328,7 @@ export default function Reportes() {
                     <TableRow className="bg-slate-50/50">
                       <TableHead className="text-xs">Tarjeta</TableHead>
                       <TableHead className="text-xs">Moneda</TableHead>
-                      <TableHead className="text-xs text-right">Comprado</TableHead>
+                      {canVerPrecios && <TableHead className="text-xs text-right">Comprado</TableHead>}
                       <TableHead className="text-xs text-right">Litros</TableHead>
                       <TableHead className="text-xs text-right">#Movs</TableHead>
                     </TableRow>
@@ -338,7 +338,7 @@ export default function Reportes() {
                       <TableRow key={r.id}>
                         <TableCell className="text-sm font-medium">{r.tarjeta}</TableCell>
                         <TableCell><Badge variant="outline" className="text-xs">{r.moneda}</Badge></TableCell>
-                        <TableCell className="text-right text-sm text-orange-600">{formatMonto(r.total_comprado)}</TableCell>
+                        {canVerPrecios && <TableCell className="text-right text-sm text-orange-600">{formatMonto(r.total_comprado)}</TableCell>}
                         <TableCell className="text-right text-sm text-slate-700">{r.litros_total > 0 ? `${r.litros_total.toFixed(1)} L` : '—'}</TableCell>
                         <TableCell className="text-right text-sm text-slate-500">{r.movimientos}</TableCell>
                       </TableRow>
@@ -394,13 +394,14 @@ export default function Reportes() {
                       <TableHead className="text-xs">Área</TableHead>
                       <TableHead className="text-xs">Combustible</TableHead>
                       <TableHead className="text-xs text-right">Litros</TableHead>
-                      <TableHead className="text-xs text-right">Monto</TableHead>
+                      {canVerPrecios && <TableHead className="text-xs text-right">P. Venta/L</TableHead>}
+                      {canVerPrecios && <TableHead className="text-xs text-right">Monto</TableHead>}
                       <TableHead className="text-xs">Estado</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {ventasFiltradas.length === 0 ? (
-                      <TableRow><TableCell colSpan={8} className="text-center text-slate-400 py-8">Sin datos en el período seleccionado</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={canVerPrecios ? 9 : 7} className="text-center text-slate-400 py-8">Sin datos en el período seleccionado</TableCell></TableRow>
                     ) : ventasFiltradas.map(v => (
                       <TableRow key={v.id}>
                         <TableCell className="text-xs text-slate-500">{v.fecha_venta}</TableCell>
@@ -409,7 +410,8 @@ export default function Reportes() {
                         <TableCell className="text-xs text-slate-500">{v.beneficiario_area ?? '—'}</TableCell>
                         <TableCell className="text-xs">{v.combustible_nombre}</TableCell>
                         <TableCell className="text-right text-sm text-sky-700">{Number(v.litros).toFixed(1)} L</TableCell>
-                        <TableCell className="text-right text-sm font-medium">{formatMonto(v.monto)} <span className="text-xs text-slate-400">{v.moneda}</span></TableCell>
+                        {canVerPrecios && <TableCell className="text-right text-sm text-slate-500">{v.precio_venta_unitario != null ? `${Number(v.precio_venta_unitario).toFixed(4)}` : '—'}</TableCell>}
+                        {canVerPrecios && <TableCell className="text-right text-sm font-medium">{formatMonto(v.monto)} <span className="text-xs text-slate-400">{v.moneda}</span></TableCell>}
                         <TableCell>
                           <VentaEstadoBadge estado={v.estado} />
                         </TableCell>
@@ -423,14 +425,17 @@ export default function Reportes() {
                       const montoPendiente = porCobrar.reduce((s, v) => s + (v.monto || 0), 0);
                       return (
                         <TableRow className="bg-slate-50 border-t-2 border-slate-200">
-                          <TableCell colSpan={5} className="text-sm font-bold text-slate-800">
+                          <TableCell colSpan={canVerPrecios ? 5 : 4} className="text-sm font-bold text-slate-800">
                             Total — {ventasFiltradas.length} registros
                           </TableCell>
                           <TableCell className="text-right text-sm font-bold text-sky-700">{totalL.toFixed(1)} L</TableCell>
-                          <TableCell className="text-right text-xs text-slate-600">
-                            <span className="font-bold text-emerald-700">{formatMonto(montoCobrado)}</span>
-                            {montoPendiente > 0 && <span className="text-amber-600 ml-1">(+{formatMonto(montoPendiente)} pdte)</span>}
-                          </TableCell>
+                          {canVerPrecios && <TableCell />}
+                          {canVerPrecios && (
+                            <TableCell className="text-right text-xs text-slate-600">
+                              <span className="font-bold text-emerald-700">{formatMonto(montoCobrado)}</span>
+                              {montoPendiente > 0 && <span className="text-amber-600 ml-1">(+{formatMonto(montoPendiente)} pdte)</span>}
+                            </TableCell>
+                          )}
                           <TableCell />
                         </TableRow>
                       );

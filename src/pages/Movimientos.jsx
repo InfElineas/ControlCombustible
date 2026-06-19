@@ -30,7 +30,7 @@ const TIPO_CONFIG = {
 };
 
 export default function Movimientos() {
-  const { canDelete, canWrite, canRecargar, isEconomico } = useUserRole();
+  const { canDelete, canWrite, canRecargar, isEconomico, canVerPrecios } = useUserRole();
   const queryClient = useQueryClient();
 
   const { data: movimientos = [], isLoading } = useQuery({
@@ -109,11 +109,22 @@ export default function Movimientos() {
       if (filters.fechaHasta && m.fecha > filters.fechaHasta) return false;
       if (filters.tipo !== 'all' && m.tipo !== filters.tipo) return false;
       if (filters.tarjeta !== 'all' && m.tarjeta_id !== filters.tarjeta) return false;
-      if (filters.consumidor !== 'all' && m.consumidor_id !== filters.consumidor) return false;
+      if (filters.consumidor !== 'all') {
+        if (m.consumidor_id !== filters.consumidor) {
+          // Movimientos sin consumidor_id (bonificaciones): comparar por nombre
+          if (!m.consumidor_id) {
+            const sel = consumidorById[filters.consumidor];
+            if (!sel || (m.consumidor_nombre || '') !== sel.nombre) return false;
+          } else {
+            return false;
+          }
+        }
+      }
       const identificador = String(m.vehiculo_chapa || consumidorById[m.consumidor_id]?.codigo_interno || '').toLowerCase();
       if (filters.chapa && !identificador.includes(String(filters.chapa).toLowerCase())) return false;
       if (filters.tipoConsumidor !== 'all') {
-        const con = consumidores.find(c => c.id === m.consumidor_id);
+        const con = consumidorById[m.consumidor_id]
+          ?? (!m.consumidor_id ? consumidores.find(c => c.nombre === m.consumidor_nombre) : null);
         if (!con || con.tipo_consumidor_id !== filters.tipoConsumidor) return false;
       }
       return true;
@@ -270,7 +281,7 @@ export default function Movimientos() {
               <span className="text-xs font-bold text-orange-700">{resumen.litros.toFixed(1)} L</span>
             </div>
           )}
-          {resumen.gasto > 0 && (
+          {resumen.gasto > 0 && canVerPrecios && (
             <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 flex items-center gap-2">
               <span className="text-xs text-slate-500 font-medium">Gasto total</span>
               <span className="text-xs font-bold text-slate-700">{formatMonto(resumen.gasto)}</span>
@@ -339,8 +350,8 @@ export default function Movimientos() {
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Destino / Consumidor</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden md:table-cell">Chapa/Código</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Litros</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">Precio/L</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Monto</th>
+                  {canVerPrecios && <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide hidden lg:table-cell">Precio/L</th>}
+                  {canVerPrecios && <th className="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Monto</th>}
                   <th className="px-2 py-3 w-8"></th>
                   <th className="px-2 py-3 w-10"></th>
                 </tr>
@@ -419,16 +430,20 @@ export default function Movimientos() {
                       <td className="px-4 py-3 text-right text-slate-700 font-medium whitespace-nowrap text-xs">
                         {m.litros != null ? `${Number(m.litros).toFixed(1)} L` : '—'}
                       </td>
-                      <td className="px-4 py-3 text-right text-slate-500 text-xs whitespace-nowrap hidden lg:table-cell">
-                        {m.precio != null ? `$${Number(m.precio).toFixed(2)}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {m.tipo !== 'DESPACHO' && m.monto != null ? (
-                          <span className={`text-xs font-bold ${m.tipo === 'RECARGA' ? 'text-emerald-600' : 'text-slate-800'}`}>
-                            {m.tipo === 'RECARGA' ? '+' : ''}{formatMonto(m.monto)}
-                          </span>
-                        ) : '—'}
-                      </td>
+                      {canVerPrecios && (
+                        <td className="px-4 py-3 text-right text-slate-500 text-xs whitespace-nowrap hidden lg:table-cell">
+                          {m.precio != null ? `$${Number(m.precio).toFixed(2)}` : '—'}
+                        </td>
+                      )}
+                      {canVerPrecios && (
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          {m.tipo !== 'DESPACHO' && m.monto != null ? (
+                            <span className={`text-xs font-bold ${m.tipo === 'RECARGA' ? 'text-emerald-600' : 'text-slate-800'}`}>
+                              {m.tipo === 'RECARGA' ? '+' : ''}{formatMonto(m.monto)}
+                            </span>
+                          ) : '—'}
+                        </td>
+                      )}
                       <td className="px-2 py-3 text-center">
                         {m.adjunto_url && (
                           <a href={m.adjunto_url} target="_blank" rel="noreferrer" title={m.adjunto_nombre || 'Ver adjunto'}
@@ -465,20 +480,35 @@ export default function Movimientos() {
                 if (lC > 0)   detalles.push(`${lC.toFixed(1)} L comprados`);
                 if (lD > 0)   detalles.push(`${lD.toFixed(1)} L despachados`);
                 if (lDep > 0) detalles.push(`${lDep.toFixed(1)} L depositados`);
+                // Desglose por combustible
+                const porCombustible = {};
+                filteredByTab.forEach(m => {
+                  const k = m.combustible_nombre || 'Sin tipo';
+                  porCombustible[k] = (porCombustible[k] || 0) + (Number(m.litros) || 0);
+                });
+                const combustibleEntries = Object.entries(porCombustible).sort((a, b) => b[1] - a[1]);
+                const fmtL = n => n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1);
                 return (
                   <tfoot>
                     <tr className="bg-slate-100 border-t-2 border-slate-300">
                       <td colSpan={6} className="px-4 py-2.5 text-xs font-bold text-slate-700">
                         Total — {filteredByTab.length} registro{filteredByTab.length !== 1 ? 's' : ''}
                         {detalles.length > 1 && <span className="font-normal text-slate-500 ml-2">({detalles.join(' · ')})</span>}
+                        {combustibleEntries.length > 1 && (
+                          <span className="font-normal text-slate-400 ml-2">
+                            · {combustibleEntries.map(([nom, l]) => `${nom}: ${fmtL(l)} L`).join(' · ')}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 text-right text-xs font-bold text-slate-800 whitespace-nowrap">
                         {totalLitros.toFixed(1)} L
                       </td>
-                      <td className="px-4 py-2.5 hidden lg:table-cell" />
-                      <td className="px-4 py-2.5 text-right text-xs font-bold text-slate-800 whitespace-nowrap">
-                        {totalMonto > 0 ? formatMonto(totalMonto) : '—'}
-                      </td>
+                      {canVerPrecios && <td className="px-4 py-2.5 hidden lg:table-cell" />}
+                      {canVerPrecios && (
+                        <td className="px-4 py-2.5 text-right text-xs font-bold text-slate-800 whitespace-nowrap">
+                          {totalMonto > 0 ? formatMonto(totalMonto) : '—'}
+                        </td>
+                      )}
                       <td colSpan={2} />
                     </tr>
                   </tfoot>

@@ -9,8 +9,11 @@ export function useUserRole() {
   useEffect(() => {
     let active = true;
 
-    async function loadUser() {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
+    async function loadUser(sessionArg) {
+      // getSession() lee localStorage sin adquirir Web Lock — evita contención
+      // cuando múltiples componentes montan useUserRole() simultáneamente.
+      const authUser = sessionArg?.user
+        ?? (await supabase.auth.getSession()).data.session?.user;
       if (!authUser) {
         if (active) setLoading(false);
         return;
@@ -52,14 +55,13 @@ export function useUserRole() {
 
     loadUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         if (active) { setUser(null); setRole(null); setLoading(false); }
         return;
       }
-      // Cualquier otro evento (SIGNED_IN, TOKEN_REFRESHED, INITIAL_SESSION, etc.)
-      // recarga silenciosamente sin mostrar el spinner de carga.
-      loadUser();
+      // Pasar la sesión del evento para evitar una nueva llamada getSession()
+      loadUser(session);
     });
 
     return () => {
@@ -106,5 +108,6 @@ export function useUserRole() {
     canRegistrarVentas:     isSuperAdmin || isOperador || isCajero,
     canCobrarVentas:        isSuperAdmin || isEconomico || isCajero,
     canGestionarBeneficiarios: isSuperAdmin || isOperador || isCajero,
+    canVerPrecios:             isSuperAdmin || isEconomico || isAuditor,
   };
 }

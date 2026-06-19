@@ -413,6 +413,31 @@ export default function Dashboard() {
     });
   }, [consumidores, consumidoresSurtidorIds, movimientos, tarjetas]);
 
+  // Stock de tanques de reserva — visible a todos los roles (economico usa economicoStats)
+  const stockTanquesReserva = useMemo(() => {
+    return consumidores
+      .filter(c => consumidoresReservaIds.has(c.id) && c.activo !== false)
+      .map(c => {
+        const ini = Number(c.litros_iniciales) || 0;
+        const entradas = movimientos
+          .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === c.id)
+          .reduce((s, m) => s + (m.litros || 0), 0);
+        const salidas = movimientos
+          .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === c.id)
+          .reduce((s, m) => s + (m.litros || 0), 0);
+        const stockActual = Math.max(0, ini + entradas - salidas);
+        const cap = (() => {
+          const t = Number(c?.datos_tanque?.capacidad_litros);
+          if (Number.isFinite(t) && t > 0) return t;
+          const v = Number(c?.datos_vehiculo?.capacidad_tanque);
+          return Number.isFinite(v) && v > 0 ? v : 0;
+        })();
+        const pct = cap > 0 ? Math.min(100, (stockActual / cap) * 100) : null;
+        return { id: c.id, nombre: c.nombre || 'Tanque', combustibleNombre: c.combustible_nombre || null, stockActual, capacidad: cap, pct };
+      })
+      .sort((a, b) => b.stockActual - a.stockActual);
+  }, [consumidores, consumidoresReservaIds, movimientos]);
+
   const economicoStats = useMemo(() => {
     if (!isEconomico) return null;
 
@@ -1316,6 +1341,41 @@ export default function Dashboard() {
                       </span>
                     </div>
                   </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Stock de tanques de reserva — para operador y demás roles (economico ya tiene su panel completo) */}
+      {!isEconomico && stockTanquesReserva.length > 0 && (
+        <div>
+          <SectionTitle icon={Warehouse} title="Stock en depósitos" iconColor="text-sky-500" />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {stockTanquesReserva.map(t => (
+              <Card key={t.id} className="border-0 shadow-sm ring-1 ring-sky-100">
+                <CardContent className="p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-slate-700 truncate leading-snug">{t.nombre}</p>
+                  {t.combustibleNombre && (
+                    <Badge variant="outline" className="text-[10px] px-1.5">{t.combustibleNombre}</Badge>
+                  )}
+                  <div className="flex items-baseline justify-between gap-1 pt-0.5">
+                    <span className={`text-base font-bold ${t.stockActual <= 0 ? 'text-red-600' : 'text-sky-700'}`}>
+                      {t.stockActual % 1 === 0 ? Math.round(t.stockActual) : t.stockActual.toFixed(1)} L
+                    </span>
+                    {t.pct !== null && (
+                      <span className="text-[10px] text-slate-400">{t.pct.toFixed(0)}%</span>
+                    )}
+                  </div>
+                  {t.capacidad > 0 && (
+                    <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className={`h-1.5 rounded-full ${t.pct < 20 ? 'bg-red-500' : t.pct < 50 ? 'bg-amber-400' : 'bg-sky-500'}`}
+                        style={{ width: `${t.pct ?? 0}%` }}
+                      />
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))}

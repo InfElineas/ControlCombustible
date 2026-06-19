@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import VentaEstadoBadge, { ESTADOS_VENTA as ESTADOS, LEGACY_ESTADO, normalizeEstado } from '@/components/ui-helpers/VentaEstadoBadge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
@@ -127,9 +127,9 @@ const emptyForm = {
   litros: '', referencia: '', fecha_venta: new Date().toISOString().slice(0, 10),
 };
 
-function FormBonificacion({ onClose, ventasPendientes }) {
+function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [] }) {
   const qc = useQueryClient();
-  const { user } = useUserRole();
+  const { user, canVerPrecios } = useUserRole();
   const [form, setForm] = useState(emptyForm);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -199,6 +199,10 @@ function FormBonificacion({ onClose, ventasPendientes }) {
     const ben = beneficiarios.find(b => b.id === form.beneficiario_id);
     const tanque = consumidores.find(c => c.id === form.tanque_origen_id);
     const comb = combustibles.find(c => c.id === form.combustible_id);
+    const nums = ventasRaw
+      .map(v => parseInt((v.numero_factura || '').slice(1), 10))
+      .filter(n => !isNaN(n) && n > 0);
+    const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
     crearMut.mutate({
       beneficiario_id:     form.beneficiario_id,
       beneficiario_nombre: ben.nombre,
@@ -216,6 +220,7 @@ function FormBonificacion({ onClose, ventasPendientes }) {
       fecha_venta:         form.fecha_venta,
       registrado_por:      user?.id ?? null,
       referencia:          form.referencia || null,
+      numero_factura:      `C${nextNum}`,
     });
   }
 
@@ -330,7 +335,7 @@ function FormBonificacion({ onClose, ventasPendientes }) {
       </div>
 
       {/* Precio calculado */}
-      {precioVigente && form.litros && montoCalculado != null && (
+      {canVerPrecios && precioVigente && form.litros && montoCalculado != null && (
         <div className="rounded-xl bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-100 px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs text-violet-600">
             <BadgeDollarSign className="w-4 h-4" />
@@ -663,10 +668,17 @@ function PanelBeneficiarios({ onClose }) {
 // ── Fila de bonificación ──────────────────────────────────────────────────────
 
 function VentaRow({ v, canOperar, canDelete, canEditar, onCambiarEstado, onDelete, onEdit, loading }) {
+  const { canVerPrecios } = useUserRole();
   const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
   const [editEstado, setEditEstado] = useState(false);
   const isCancelado = v.estado === 'CANCELADO' || v.estado === 'ANULADO';
   const estadoNormalizado = normalizeEstado(v.estado);
+  const isTerminal = estadoNormalizado === 'PAGADO_FINALIZADO' || estadoNormalizado === 'CANCELADO';
+  const estadosSiguientes = isTerminal ? [] :
+    estadoNormalizado === 'PENDIENTE'
+      ? ESTADOS.filter(e => e.value !== 'PENDIENTE')
+      : ESTADOS.filter(e => e.value === 'PAGADO_FINALIZADO' || e.value === 'CANCELADO');
+  const puedeEditar = canOperar && !isTerminal;
 
   return (
     <div className={`flex items-start gap-3 px-4 py-3.5 hover:bg-slate-50/70 transition-colors ${isCancelado ? 'opacity-50' : ''}`}>
@@ -675,19 +687,22 @@ function VentaRow({ v, canOperar, canDelete, canEditar, onCambiarEstado, onDelet
       <div className="flex-1 min-w-0 space-y-1">
         {/* Nombre + estado */}
         <div className="flex items-center gap-2 flex-wrap">
+          {v.numero_factura && (
+            <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-md leading-none">{v.numero_factura}</span>
+          )}
           <span className="text-sm font-semibold text-slate-800 leading-tight">{v.beneficiario_nombre}</span>
           {v.beneficiario_ci && (
             <span className="text-[10px] text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded-md leading-none">{v.beneficiario_ci}</span>
           )}
           {/* Badge editable */}
-          {canOperar && editEstado ? (
+          {puedeEditar && editEstado ? (
             <div className="flex items-center gap-1">
               <Select value={estadoNormalizado} onValueChange={val => { onCambiarEstado(val); setEditEstado(false); }}>
                 <SelectTrigger className="h-6 text-[10px] w-36 px-2 py-0 overflow-hidden [&>span]:truncate [&>span]:flex-1 [&>span]:min-w-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ESTADOS.map(e => (
+                  {estadosSiguientes.map(e => (
                     <SelectItem key={e.value} value={e.value} className="text-xs">{e.label}</SelectItem>
                   ))}
                 </SelectContent>
@@ -698,9 +713,9 @@ function VentaRow({ v, canOperar, canDelete, canEditar, onCambiarEstado, onDelet
             </div>
           ) : (
             <button
-              onClick={() => canOperar && setEditEstado(true)}
-              title={canOperar ? 'Cambiar estado' : undefined}
-              className={canOperar ? 'hover:opacity-70 transition-opacity' : 'cursor-default'}
+              onClick={() => puedeEditar && setEditEstado(true)}
+              title={puedeEditar ? 'Cambiar estado' : undefined}
+              className={puedeEditar ? 'hover:opacity-70 transition-opacity' : 'cursor-default'}
             >
               <VentaEstadoBadge estado={v.estado} />
             </button>
@@ -723,12 +738,16 @@ function VentaRow({ v, canOperar, canDelete, canEditar, onCambiarEstado, onDelet
             <Fuel className="w-3 h-3 text-amber-400" />
             <strong className="text-slate-700">{fmtL(v.litros)} L</strong> {v.combustible_nombre}
           </span>
-          <span className="text-slate-200">·</span>
-          <span className="flex items-center gap-1">
-            <Banknote className="w-3 h-3 text-emerald-400" />
-            <strong className="text-slate-700">{formatMonto(v.monto)}</strong>
-            <span className="text-slate-400">{v.moneda}</span>
-          </span>
+          {canVerPrecios && (
+            <>
+              <span className="text-slate-200">·</span>
+              <span className="flex items-center gap-1">
+                <Banknote className="w-3 h-3 text-emerald-400" />
+                <strong className="text-slate-700">{formatMonto(v.monto)}</strong>
+                <span className="text-slate-400">{v.moneda}</span>
+              </span>
+            </>
+          )}
           {v.tanque_origen_nombre && (
             <>
               <span className="text-slate-200">·</span>
@@ -772,6 +791,7 @@ function FormEditBonificacion({ venta, onClose }) {
     litros:           String(venta.litros),
     precio_por_litro: String(venta.precio_por_litro),
     referencia:       venta.referencia ?? '',
+    numero_factura:   venta.numero_factura ?? '',
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -835,6 +855,7 @@ function FormEditBonificacion({ venta, onClose }) {
       precio_por_litro:     precio,
       monto:                litros * precio,
       referencia:           form.referencia || null,
+      numero_factura:       form.numero_factura || null,
     });
   }
 
@@ -940,6 +961,13 @@ function FormEditBonificacion({ venta, onClose }) {
         </div>
       </div>
 
+      {/* Número de factura */}
+      <div className="space-y-1">
+        <Label className="text-xs text-slate-500">Número de factura</Label>
+        <Input className="h-9 text-sm font-mono" placeholder="C1, C2…"
+          value={form.numero_factura} onChange={e => set('numero_factura', e.target.value)} />
+      </div>
+
       {/* Referencia */}
       <div className="space-y-1">
         <Label className="text-xs text-slate-500">Referencia (opcional)</Label>
@@ -977,13 +1005,15 @@ const FILTRO_ESTADOS = [
 
 export default function Ventas() {
   const qc = useQueryClient();
-  const { user, canVerVentas, canRegistrarVentas, canCobrarVentas, canGestionarBeneficiarios, canManageFinanzas, isSuperAdmin, isCajero } = useUserRole();
+  const { user, canVerVentas, canRegistrarVentas, canCobrarVentas, canGestionarBeneficiarios, canManageFinanzas, isSuperAdmin, isCajero, canVerPrecios } = useUserRole();
   const canEditar = isSuperAdmin || isCajero;
 
   const [showFormVenta, setShowFormVenta] = useState(false);
   const [showBeneficiarios, setShowBeneficiarios] = useState(false);
   const [toEliminar, setToEliminar] = useState(null);
   const [toEditar, setToEditar] = useState(null);
+  const [toCobrar, setToCobrar] = useState(null);
+  const [precioVentaInput, setPrecioVentaInput] = useState('');
   const [filtroMes, setFiltroMes] = useState(new Date().toISOString().slice(0, 7));
   const [filtroBen, setFiltroBen] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('PENDIENTE');
@@ -1045,13 +1075,20 @@ export default function Ventas() {
   });
 
   const transicionMut = useMutation({
-    mutationFn: async ({ venta, nuevoEstado }) => {
+    mutationFn: async ({ venta, nuevoEstado, precio_venta_unitario }) => {
       const updates = { estado: nuevoEstado };
       // Crear DESPACHO al entregar, o al pagar directamente desde PENDIENTE (entrega+cobro simultáneo)
       const needsDespacho = nuevoEstado === 'ENTREGADO' ||
         (nuevoEstado === 'PAGADO_FINALIZADO' && venta.estado === 'PENDIENTE');
       if (needsDespacho) {
         updates.fecha_retiro = new Date().toISOString().slice(0, 10);
+        // Buscar el consumidor logístico real que corresponde al combustible de la bonificación
+        const logistConsumidor = consumidores.find(c =>
+          (c.nombre || '').toLowerCase().includes('logist') && c.combustible_id === venta.combustible_id
+        ) ?? consumidores.find(c =>
+          (c.nombre || '').toLowerCase().includes('logist') &&
+          (c.combustible_nombre || '').toLowerCase() === (venta.combustible_nombre || '').toLowerCase()
+        ) ?? consumidores.find(c => (c.nombre || '').toLowerCase().includes('logist'));
         const { data: mov, error: movErr } = await supabase
           .from('movimiento')
           .insert({
@@ -1061,10 +1098,10 @@ export default function Ventas() {
             consumidor_origen_nombre: venta.tanque_origen_nombre,
             vehiculo_origen_chapa: venta.tanque_origen_nombre,
             vehiculo_origen_alias: venta.tanque_origen_nombre,
-            consumidor_id: null,
-            consumidor_nombre: 'Uso Logístico',
-            vehiculo_chapa: null,
-            vehiculo_alias: null,
+            consumidor_id: logistConsumidor?.id ?? null,
+            consumidor_nombre: logistConsumidor?.nombre ?? 'Uso Logístico',
+            vehiculo_chapa: logistConsumidor?.codigo_interno ?? null,
+            vehiculo_alias: logistConsumidor?.nombre ?? null,
             combustible_id: venta.combustible_id,
             combustible_nombre: venta.combustible_nombre,
             litros: venta.litros,
@@ -1080,6 +1117,10 @@ export default function Ventas() {
       if (nuevoEstado === 'PAGADO_FINALIZADO') {
         updates.fecha_pago = new Date().toISOString().slice(0, 10);
         updates.cobrado_por = user?.id ?? null;
+        if (precio_venta_unitario) {
+          updates.precio_venta_unitario = precio_venta_unitario;
+          updates.monto = +(precio_venta_unitario * venta.litros).toFixed(4);
+        }
       }
       const { error } = await supabase
         .from('venta_trabajador')
@@ -1172,7 +1213,7 @@ export default function Ventas() {
             { label: 'Bonificaciones', value: kpis.total,                    icon: ListFilter, iconCls: 'text-slate-600 bg-slate-100 dark:bg-slate-700',  valueCls: '' },
             { label: 'Pendientes',     value: kpis.pendientes,               icon: Clock,      iconCls: kpis.pendientes > 0 ? 'text-amber-600 bg-amber-50 dark:bg-amber-900/40' : 'text-slate-500 bg-slate-100 dark:bg-slate-700', valueCls: kpis.pendientes > 0 ? 'text-amber-700 dark:text-amber-400' : '' },
             { label: 'Litros',         value: `${kpis.litros.toFixed(1)} L`, icon: Fuel,       iconCls: 'text-sky-600 bg-sky-50 dark:bg-sky-900/40',       valueCls: 'text-sky-700 dark:text-sky-400' },
-            { label: 'Monto total',    value: formatMonto(kpis.monto),       icon: TrendingUp, iconCls: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/40', valueCls: 'text-emerald-700 dark:text-emerald-400' },
+            ...(canVerPrecios ? [{ label: 'Monto total', value: formatMonto(kpis.monto), icon: TrendingUp, iconCls: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/40', valueCls: 'text-emerald-700 dark:text-emerald-400' }] : []),
           ].map(k => {
             const Icon = k.icon;
             return (
@@ -1271,7 +1312,14 @@ export default function Ventas() {
                   canOperar={canManageFinanzas}
                   canDelete={isSuperAdmin}
                   canEditar={canEditar}
-                  onCambiarEstado={(nuevoEstado) => transicionMut.mutate({ venta: v, nuevoEstado })}
+                  onCambiarEstado={(nuevoEstado) => {
+                    if (nuevoEstado === 'PAGADO_FINALIZADO') {
+                      setPrecioVentaInput(v.precio_por_litro ? String(v.precio_por_litro) : '');
+                      setToCobrar(v);
+                    } else {
+                      transicionMut.mutate({ venta: v, nuevoEstado });
+                    }
+                  }}
                   onDelete={() => setToEliminar(v)}
                   onEdit={() => setToEditar(v)}
                   loading={transicionMut.isPending}
@@ -1293,7 +1341,7 @@ export default function Ventas() {
               Registrar bonificación de combustible
             </DialogTitle>
           </DialogHeader>
-          <FormBonificacion onClose={() => setShowFormVenta(false)} ventasPendientes={ventasPendientes} />
+          <FormBonificacion onClose={() => setShowFormVenta(false)} ventasPendientes={ventasPendientes} ventasRaw={ventasRaw} />
         </DialogContent>
       </Dialog>
 
@@ -1326,6 +1374,61 @@ export default function Ventas() {
             </DialogTitle>
           </DialogHeader>
           {toEditar && <FormEditBonificacion venta={toEditar} onClose={() => setToEditar(null)} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog cobro con precio de venta */}
+      <Dialog open={!!toCobrar} onOpenChange={open => { if (!open) setToCobrar(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              Registrar cobro
+            </DialogTitle>
+          </DialogHeader>
+          {toCobrar && (
+            <div className="space-y-4 py-1">
+              <p className="text-sm text-slate-600">
+                <span className="font-medium">{toCobrar.beneficiario_nombre}</span> — {toCobrar.litros} L de {toCobrar.combustible_nombre}
+              </p>
+              <div>
+                <Label className="text-xs text-slate-500 font-medium block mb-1">Precio de venta / L</Label>
+                <Input
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  placeholder="Ej: 30.0000"
+                  className="h-9 text-sm"
+                  value={precioVentaInput}
+                  onChange={e => setPrecioVentaInput(e.target.value)}
+                  autoFocus
+                />
+                {precioVentaInput && !isNaN(+precioVentaInput) && +precioVentaInput > 0 && (
+                  <p className="text-xs text-emerald-700 mt-1 font-medium">
+                    Monto: {formatMonto(+precioVentaInput * toCobrar.litros)} {toCobrar.moneda}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setToCobrar(null)}>Cancelar</Button>
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={transicionMut.isPending || !precioVentaInput || isNaN(+precioVentaInput) || +precioVentaInput <= 0}
+              onClick={() => {
+                transicionMut.mutate({
+                  venta: toCobrar,
+                  nuevoEstado: 'PAGADO_FINALIZADO',
+                  precio_venta_unitario: +precioVentaInput,
+                });
+                setToCobrar(null);
+              }}
+            >
+              {transicionMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirmar cobro'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
