@@ -167,7 +167,6 @@ export default function Finanzas() {
   const ventasCobradas = ventasPeriodo.filter(v => v.estado === 'PAGADO_FINALIZADO');
   const ingresoVentas  = ventasCobradas.reduce((s, v) => s + (v.monto || 0), 0);
   const costoVentas    = ventasCobradas
-    .filter(v => v.precio_venta_unitario != null)
     .reduce((s, v) => s + ((cppMap[v.tanque_origen_id] ?? 0) * (v.litros || 0)), 0);
   const gananciaBruta  = ingresoVentas - costoVentas;
 
