@@ -130,21 +130,50 @@ export default function Finanzas() {
     return m;
   }, [cppTanques]);
 
-  // Ganancia bruta: ventas cobradas con precio_venta_unitario registrado
-  const gananciaBruta = useMemo(() => {
-    return ventasPeriodo
-      .filter(v => v.estado === 'PAGADO_FINALIZADO' && v.precio_venta_unitario != null)
-      .reduce((s, v) => {
-        const cpp = cppMap[v.tanque_origen_id] ?? 0;
-        return s + (v.precio_venta_unitario - cpp) * (v.litros || 0);
-      }, 0);
-  }, [ventasPeriodo, cppMap]);
+  // CPP por tipo de combustible (promedio ponderado de todos los tanques ISO)
+  const { data: cppCombustibles = [] } = useQuery({
+    queryKey: ['cpp-combustibles'],
+    queryFn: async () => {
+      const { data } = await supabase.from('v_cpp_por_combustible').select('*');
+      return data ?? [];
+    },
+    staleTime: 5 * 60_000,
+  });
 
+  const cppCombMap = useMemo(() => {
+    const m = {};
+    cppCombustibles.forEach(r => { m[r.combustible_id] = r.cpp; });
+    return m;
+  }, [cppCombustibles]);
+
+  // Gasto flota: COMPRAs del período × CPP del combustible
+  const gastoFlotaPorCombustible = useMemo(() => {
+    const map = {};
+    compras.forEach(m => {
+      const key  = m.combustible_nombre || 'Sin clasificar';
+      const cpp  = cppCombMap[m.combustible_id] ?? null;
+      const gasto = cpp != null ? (m.litros || 0) * cpp : null;
+      if (!map[key]) map[key] = { nombre: key, litros: 0, gasto: 0, sinCpp: 0 };
+      map[key].litros += m.litros || 0;
+      if (gasto != null) map[key].gasto += gasto;
+      else map[key].sinCpp += m.litros || 0;
+    });
+    return Object.values(map).sort((a, b) => b.litros - a.litros);
+  }, [compras, cppCombMap]);
+
+  const totalGastoFlota = gastoFlotaPorCombustible.reduce((s, g) => s + g.gasto, 0);
+
+  // Bonificaciones cobradas
   const ventasCobradas = ventasPeriodo.filter(v => v.estado === 'PAGADO_FINALIZADO');
-  const ingresoVentas = ventasCobradas.reduce((s, v) => s + (v.monto || 0), 0);
-  const costoVentas   = ventasCobradas
+  const ingresoVentas  = ventasCobradas.reduce((s, v) => s + (v.monto || 0), 0);
+  const costoVentas    = ventasCobradas
     .filter(v => v.precio_venta_unitario != null)
     .reduce((s, v) => s + ((cppMap[v.tanque_origen_id] ?? 0) * (v.litros || 0)), 0);
+  const gananciaBruta  = ingresoVentas - costoVentas;
+
+  // Resumen período
+  const totalGastos  = totalGastoFlota + costoVentas;
+  const resultadoNeto = ingresoVentas - totalGastos;
 
   async function handleExport() {
     try {
@@ -264,120 +293,106 @@ export default function Finanzas() {
         </div>
       </div>
 
-      {/* KPIs por tipo de combustible */}
-      <div className="space-y-3">
-        {/* Compras */}
-        <div>
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2 px-0.5">Compras en surtidores externos</p>
-          {comprasPorCombustible.length === 0 ? (
-            <Card className="border-0 shadow-sm">
-              <CardContent className="p-3 text-xs text-slate-400 text-center">Sin compras en el período</CardContent>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {comprasPorCombustible.map(c => (
-                <Card key={c.nombre} className="border-0 shadow-sm">
-                  <CardContent className="p-3 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-amber-50 text-amber-600">
-                      <Fuel className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] text-slate-400 uppercase tracking-wide truncate">{c.nombre}</p>
-                      <p className="text-sm font-bold text-slate-800">{fmtL(c.litros)} L</p>
-                      <p className="text-[11px] text-slate-500">{formatMonto(c.monto)}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-              {comprasPorCombustible.length > 1 && (
-                <Card className="border-0 shadow-sm bg-slate-50/60">
-                  <CardContent className="p-3 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-slate-200 text-slate-500">
-                      <TrendingUp className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Total compras</p>
-                      <p className="text-sm font-bold text-slate-800">{fmtL(litrosComprados)} L</p>
-                      <p className="text-[11px] text-slate-500">{formatMonto(gastoCompras)}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Bonificaciones */}
-        <div>
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2 px-0.5">Bonificaciones a trabajadores</p>
-          {bonusPorCombustible.length === 0 ? (
-            <Card className="border-0 shadow-sm">
-              <CardContent className="p-3 text-xs text-slate-400 text-center">Sin bonificaciones en el período</CardContent>
-            </Card>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {bonusPorCombustible.map(c => (
-                <Card key={c.nombre} className="border-0 shadow-sm">
-                  <CardContent className="p-3 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-violet-50 text-violet-600">
-                      <Users className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] text-slate-400 uppercase tracking-wide truncate">{c.nombre}</p>
-                      <p className="text-sm font-bold text-slate-800">{fmtL(c.litros)} L</p>
-                      <div className="flex gap-2 mt-0.5 flex-wrap">
-                        {c.cobrado > 0 && <p className="text-[11px] text-emerald-600">Cobrado: {formatMonto(c.cobrado)}</p>}
-                        {c.pendiente > 0 && <p className="text-[11px] text-orange-500">Pendiente: {formatMonto(c.pendiente)}</p>}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-              {bonusPorCombustible.length > 1 && (
-                <Card className="border-0 shadow-sm bg-slate-50/60">
-                  <CardContent className="p-3 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-slate-200 text-slate-500">
-                      <TrendingUp className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Total bonificaciones</p>
-                      <p className="text-sm font-bold text-slate-800">{fmtL(ventasActivas.reduce((s,v) => s+(v.litros||0),0))} L</p>
-                      <p className="text-[11px] text-slate-500">{formatMonto(montoBonus)}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Balance financiero del período */}
-      <Card className="border-0 shadow-sm">
-        <CardContent className="p-4">
-          <p className="text-[10px] text-slate-400 uppercase tracking-wide font-medium mb-3">Balance financiero — {periodo}</p>
-          <div className="flex flex-wrap gap-x-8 gap-y-2 items-end">
-            <div>
-              <p className="text-[10px] text-slate-400">Gasto en compras</p>
-              <p className="text-lg font-bold text-rose-600 tabular-nums">−{formatMonto(gastoCompras)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-slate-400">Cobrado en bonificaciones</p>
-              <p className="text-lg font-bold text-emerald-600 tabular-nums">+{formatMonto(cobradoBonus)}</p>
-            </div>
-            <div className="border-l border-slate-200 pl-8">
-              <p className="text-[10px] text-slate-400">Flujo neto de caja</p>
-              <p className={`text-lg font-bold tabular-nums ${flujoNeto >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {flujoNeto >= 0 ? `+${formatMonto(flujoNeto)}` : `−${formatMonto(Math.abs(flujoNeto))}`}
-              </p>
-            </div>
-            {pendienteBonus > 0 && (
-              <div className="ml-auto text-right">
-                <p className="text-[10px] text-orange-400">Aún por cobrar</p>
-                <p className="text-base font-bold text-orange-600 tabular-nums">{formatMonto(pendienteBonus)}</p>
-              </div>
+      {/* Bloque 1: Gasto flota */}
+      <div>
+        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2 px-0.5">Gasto flota (compras en cupet)</p>
+        {gastoFlotaPorCombustible.length === 0 ? (
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-3 text-xs text-slate-400 text-center">Sin compras en el período</CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {gastoFlotaPorCombustible.map(c => (
+              <Card key={c.nombre} className="border-0 shadow-sm">
+                <CardContent className="p-3 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-rose-50 text-rose-600">
+                    <Fuel className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wide truncate">{c.nombre}</p>
+                    <p className="text-sm font-bold text-slate-800">{fmtL(c.litros)} L</p>
+                    {c.gasto > 0
+                      ? <p className="text-[11px] text-rose-600 font-medium">−{formatMonto(c.gasto)}</p>
+                      : <p className="text-[11px] text-slate-400">Sin CPP definido</p>}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+            {gastoFlotaPorCombustible.length > 1 && totalGastoFlota > 0 && (
+              <Card className="border-0 shadow-sm bg-rose-50/40">
+                <CardContent className="p-3 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-rose-100 text-rose-600">
+                    <TrendingUp className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wide">Total gasto flota</p>
+                    <p className="text-sm font-bold text-rose-700">−{formatMonto(totalGastoFlota)}</p>
+                  </div>
+                </CardContent>
+              </Card>
             )}
           </div>
+        )}
+      </div>
+
+      {/* Bloque 2: Bonificaciones */}
+      <div>
+        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2 px-0.5">Bonificaciones a trabajadores</p>
+        {bonusPorCombustible.length === 0 ? (
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-3 text-xs text-slate-400 text-center">Sin bonificaciones en el período</CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {bonusPorCombustible.map(c => (
+              <Card key={c.nombre} className="border-0 shadow-sm">
+                <CardContent className="p-3 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-violet-50 text-violet-600">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wide truncate">{c.nombre}</p>
+                    <p className="text-sm font-bold text-slate-800">{fmtL(c.litros)} L</p>
+                    <div className="flex gap-2 mt-0.5 flex-wrap">
+                      {c.cobrado > 0 && <p className="text-[11px] text-emerald-600">+{formatMonto(c.cobrado)}</p>}
+                      {c.pendiente > 0 && <p className="text-[11px] text-orange-500">pdte: {formatMonto(c.pendiente)}</p>}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Bloque 3: Resumen período */}
+      <Card className="border-0 shadow-sm bg-slate-50/60">
+        <CardContent className="p-4">
+          <p className="text-[10px] text-slate-400 uppercase tracking-wide font-semibold mb-3">Resumen financiero — {periodo}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div>
+              <p className="text-[10px] text-slate-400">Gasto flota</p>
+              <p className="text-base font-bold text-rose-600 tabular-nums">−{formatMonto(totalGastoFlota)}</p>
+              {totalGastoFlota === 0 && <p className="text-[10px] text-slate-300">Sin CPP</p>}
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400">Costo bonificaciones</p>
+              <p className="text-base font-bold text-rose-500 tabular-nums">−{formatMonto(costoVentas)}</p>
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400">Ingreso bonificaciones</p>
+              <p className="text-base font-bold text-emerald-600 tabular-nums">+{formatMonto(ingresoVentas)}</p>
+            </div>
+            <div className="border-l border-slate-200 pl-4">
+              <p className="text-[10px] text-slate-400">Ganancia bruta</p>
+              <p className={`text-lg font-bold tabular-nums ${gananciaBruta >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                {gananciaBruta >= 0 ? '+' : '−'}{formatMonto(Math.abs(gananciaBruta))}
+              </p>
+            </div>
+          </div>
+          {(totalGastoFlota === 0 || costoVentas === 0) && (
+            <p className="text-[10px] text-slate-300 mt-2">Los valores con CPP 0 requieren definir precio de costo en los depósitos del ISO tank.</p>
+          )}
         </CardContent>
       </Card>
 
@@ -408,6 +423,7 @@ export default function Finanzas() {
         <TabsContent value="precios" className="mt-4 space-y-4">
           <ResumenPrecios />
           <PreciosDespacho />
+          <CppAjustePanel />
         </TabsContent>
 
         <TabsContent value="conceptos" className="mt-4">
@@ -1170,6 +1186,194 @@ function ConceptosPanel() {
             loading={eliminarMut.isPending}
           />
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── CPP Ajuste manual ────────────────────────────────────────────────────────
+
+function CppAjustePanel() {
+  const qc = useQueryClient();
+  const { canManageFinanzas } = useUserRole();
+
+  const { data: tanques = [] } = useQuery({
+    queryKey: ['consumidores'],
+    queryFn: () => base44.entities.Consumidor.list(),
+    staleTime: 5 * 60_000,
+    select: data => data.filter(c =>
+      c.categoria === 'deposito' ||
+      (c.tipo_consumidor_nombre || '').toLowerCase().match(/tanque|iso|reserva|almac/)
+    ),
+  });
+
+  const { data: cppTanques = [] } = useQuery({
+    queryKey: ['cpp-tanques'],
+    queryFn: async () => {
+      const { data } = await supabase.from('v_cpp_por_tanque').select('*');
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+  const { data: ajustes = [] } = useQuery({
+    queryKey: ['cpp-ajustes'],
+    queryFn: () => base44.entities.CppAjuste.list('-fecha', 100),
+  });
+
+  const [form, setForm] = useState({ consumidor_id: '', cpp_manual: '', motivo: '', fecha: new Date().toISOString().slice(0, 10) });
+  const [showForm, setShowForm] = useState(false);
+
+  const crearMut = useMutation({
+    mutationFn: d => base44.entities.CppAjuste.create(d),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cpp-ajustes'] });
+      qc.invalidateQueries({ queryKey: ['cpp-tanques'] });
+      qc.invalidateQueries({ queryKey: ['cpp-combustibles'] });
+      setForm({ consumidor_id: '', cpp_manual: '', motivo: '', fecha: new Date().toISOString().slice(0, 10) });
+      setShowForm(false);
+      toast.success('Ajuste de CPP registrado');
+    },
+    onError: () => toast.error('Error al guardar'),
+  });
+
+  const eliminarMut = useMutation({
+    mutationFn: id => base44.entities.CppAjuste.delete(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cpp-ajustes'] });
+      qc.invalidateQueries({ queryKey: ['cpp-tanques'] });
+      qc.invalidateQueries({ queryKey: ['cpp-combustibles'] });
+      toast.success('Ajuste eliminado — CPP vuelve al cálculo automático');
+    },
+    onError: () => toast.error('Error al eliminar'),
+  });
+
+  const cppCalcMap = useMemo(() => {
+    const m = {};
+    cppTanques.forEach(r => { m[r.consumidor_id] = { cpp: r.cpp, cpp_calc: r.cpp_calc }; });
+    return m;
+  }, [cppTanques]);
+
+  function handleSave(e) {
+    e.preventDefault();
+    if (!form.consumidor_id) { toast.error('Seleccione un tanque'); return; }
+    if (!form.cpp_manual || isNaN(+form.cpp_manual) || +form.cpp_manual <= 0) { toast.error('CPP inválido'); return; }
+    crearMut.mutate({
+      consumidor_id: form.consumidor_id,
+      cpp_manual:    +form.cpp_manual,
+      motivo:        form.motivo || null,
+      fecha:         form.fecha,
+    });
+  }
+
+  const tanqueNombre = id => tanques.find(t => t.id === id)?.nombre ?? id;
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader className="p-4 pb-2 flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="text-sm font-semibold text-slate-700">Ajuste manual de CPP</CardTitle>
+          <p className="text-xs text-slate-400 mt-0.5">Sobreescribe el costo promedio calculado para un tanque ISO.</p>
+        </div>
+        {canManageFinanzas && (
+          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setShowForm(true)}>
+            <Plus className="w-3.5 h-3.5" /> Nuevo ajuste
+          </Button>
+        )}
+      </CardHeader>
+      <CardContent className="p-4 pt-2 space-y-3">
+
+        {/* CPP actual por tanque */}
+        {tanques.length > 0 && (
+          <div className="space-y-1.5">
+            {tanques.map(t => {
+              const info = cppCalcMap[t.id];
+              const tieneAjuste = ajustes.some(a => a.consumidor_id === t.id);
+              return (
+                <div key={t.id} className="flex items-center gap-3 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2">
+                  <Fuel className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium text-slate-800">{t.nombre}</span>
+                    {t.combustible_nombre && <span className="text-xs text-slate-400 ml-2">{t.combustible_nombre}</span>}
+                  </div>
+                  {info ? (
+                    <div className="text-right shrink-0">
+                      <p className={`text-sm font-bold ${tieneAjuste ? 'text-amber-700' : 'text-teal-700'}`}>
+                        {Number(info.cpp).toFixed(4)} /L
+                      </p>
+                      {tieneAjuste && info.cpp_calc != null && (
+                        <p className="text-[10px] text-slate-400">calc: {Number(info.cpp_calc).toFixed(4)}</p>
+                      )}
+                      {tieneAjuste && <Badge variant="outline" className="text-[10px] px-1 text-amber-600 border-amber-200">Ajustado</Badge>}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-300">Sin depósitos con precio</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Historial de ajustes */}
+        {ajustes.length > 0 && (
+          <div className="mt-2">
+            <p className="text-[10px] text-slate-400 uppercase tracking-wide font-medium mb-1.5">Historial de ajustes</p>
+            <div className="space-y-1">
+              {ajustes.slice(0, 10).map(a => (
+                <div key={a.id} className="flex items-center gap-2 text-xs text-slate-600 bg-amber-50/50 rounded-lg px-3 py-1.5 border border-amber-100">
+                  <span className="font-medium text-slate-700 flex-1 truncate">{tanqueNombre(a.consumidor_id)}</span>
+                  <span className="text-amber-700 font-bold tabular-nums">{Number(a.cpp_manual).toFixed(4)} /L</span>
+                  <span className="text-slate-400">{a.fecha}</span>
+                  {a.motivo && <span className="text-slate-400 truncate max-w-[120px]">{a.motivo}</span>}
+                  {canManageFinanzas && (
+                    <Button size="icon" variant="ghost" className="h-5 w-5 text-slate-300 hover:text-red-500 shrink-0"
+                      onClick={() => eliminarMut.mutate(a.id)}>
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <Dialog open={showForm} onOpenChange={open => { if (!open) setShowForm(false); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-sm">Ajuste manual de CPP</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSave} className="space-y-3">
+              <div>
+                <Label className="text-xs">Tanque ISO</Label>
+                <Select value={form.consumidor_id} onValueChange={v => setForm(f => ({ ...f, consumidor_id: v }))}>
+                  <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Seleccionar…" /></SelectTrigger>
+                  <SelectContent>
+                    {tanques.map(t => <SelectItem key={t.id} value={t.id}>{t.nombre}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Nuevo CPP (costo por litro)</Label>
+                <Input type="number" step="0.0001" min="0" placeholder="Ej: 25.5000" className="h-8 text-sm mt-1"
+                  value={form.cpp_manual} onChange={e => setForm(f => ({ ...f, cpp_manual: e.target.value }))} />
+              </div>
+              <div>
+                <Label className="text-xs">Fecha efectiva</Label>
+                <Input type="date" className="h-8 text-sm mt-1" value={form.fecha}
+                  onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))} />
+              </div>
+              <div>
+                <Label className="text-xs">Motivo (opcional)</Label>
+                <Input className="h-8 text-sm mt-1" placeholder="Ej: Corrección por diferencia de factura"
+                  value={form.motivo} onChange={e => setForm(f => ({ ...f, motivo: e.target.value }))} />
+              </div>
+              <Button type="submit" size="sm" className="w-full" disabled={crearMut.isPending}>
+                {crearMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Guardar ajuste'}
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );

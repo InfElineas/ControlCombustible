@@ -435,7 +435,6 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       data.combustible_estimado_post = auditoriaCompra?.combustibleEstimadoPost ?? null;
       data.capacidad_tanque = capacidadTanque;
       data.auditoria_combustible_estado = auditoriaCompra?.estado || AUDITORIA_ESTADO.SIN_ESTIMACION;
-      if (canVerPrecios && form.precio_costo_unitario) data.precio_costo_unitario = parseFloat(form.precio_costo_unitario);
       if (consumidorEsEquipo) {
         if (form.horas_uso) data.horas_uso = parseFloat(form.horas_uso);
       } else {
@@ -1004,7 +1003,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       )}
 
       {/* Precio de costo (solo COMPRA/DEPOSITO, solo economico/superadmin) */}
-      {canVerPrecios && (tipo === 'COMPRA' || tipo === 'DEPOSITO') && (
+      {canVerPrecios && tipo === 'DEPOSITO' && (
         <div>
           <Label className="text-xs text-slate-500 font-medium block mb-1">Precio de costo/L (opcional)</Label>
           <Input

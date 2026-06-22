@@ -94,6 +94,7 @@ export const base44 = {
     ReporteChatTransporte:  createEntity('reporte_chat_transporte',  'ReporteChatTransporte'),
     PrecioDespachoTipo:     createEntity('precio_despacho_tipo',     'PrecioDespachoTipo'),
     ConceptoPrecio:         createEntity('concepto_precio',          'ConceptoPrecio'),
+    CppAjuste:              createEntity('cpp_ajuste',               'CppAjuste'),
     Beneficiario:           createEntity('beneficiario',             'Beneficiario'),
     VentaTrabajador:        createEntity('venta_trabajador',         'VentaTrabajador'),
   },

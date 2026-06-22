@@ -43,6 +43,15 @@ export default function Reportes() {
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
   const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
+  const { data: cppTanquesR = [] } = useQuery({
+    queryKey: ['cpp-tanques'],
+    queryFn: async () => { const { data } = await supabase.from('v_cpp_por_tanque').select('*'); return data ?? []; },
+    staleTime: 5 * 60_000,
+    enabled: canVerPrecios,
+  });
+  const cppMapR = useMemo(() => {
+    const m = {}; cppTanquesR.forEach(r => { m[r.consumidor_id] = r.cpp; }); return m;
+  }, [cppTanquesR]);
 
   const [fechaDesde, setFechaDesde] = useState('');
   const [fechaHasta, setFechaHasta] = useState('');
@@ -394,14 +403,16 @@ export default function Reportes() {
                       <TableHead className="text-xs">Área</TableHead>
                       <TableHead className="text-xs">Combustible</TableHead>
                       <TableHead className="text-xs text-right">Litros</TableHead>
+                      {canVerPrecios && <TableHead className="text-xs text-right">Costo/L (CPP)</TableHead>}
                       {canVerPrecios && <TableHead className="text-xs text-right">P. Venta/L</TableHead>}
+                      {canVerPrecios && <TableHead className="text-xs text-right">Ganancia</TableHead>}
                       {canVerPrecios && <TableHead className="text-xs text-right">Monto</TableHead>}
                       <TableHead className="text-xs">Estado</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {ventasFiltradas.length === 0 ? (
-                      <TableRow><TableCell colSpan={canVerPrecios ? 9 : 7} className="text-center text-slate-400 py-8">Sin datos en el período seleccionado</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={canVerPrecios ? 11 : 7} className="text-center text-slate-400 py-8">Sin datos en el período seleccionado</TableCell></TableRow>
                     ) : ventasFiltradas.map(v => (
                       <TableRow key={v.id}>
                         <TableCell className="text-xs text-slate-500">{v.fecha_venta}</TableCell>
@@ -410,7 +421,20 @@ export default function Reportes() {
                         <TableCell className="text-xs text-slate-500">{v.beneficiario_area ?? '—'}</TableCell>
                         <TableCell className="text-xs">{v.combustible_nombre}</TableCell>
                         <TableCell className="text-right text-sm text-sky-700">{Number(v.litros).toFixed(1)} L</TableCell>
-                        {canVerPrecios && <TableCell className="text-right text-sm text-slate-500">{v.precio_venta_unitario != null ? `${Number(v.precio_venta_unitario).toFixed(4)}` : '—'}</TableCell>}
+                        {canVerPrecios && (() => {
+                          const cpp = cppMapR[v.tanque_origen_id];
+                          return <TableCell className="text-right text-xs text-slate-400">{cpp != null ? Number(cpp).toFixed(4) : '—'}</TableCell>;
+                        })()}
+                        {canVerPrecios && <TableCell className="text-right text-sm text-slate-500">{v.precio_venta_unitario != null ? Number(v.precio_venta_unitario).toFixed(4) : '—'}</TableCell>}
+                        {canVerPrecios && (() => {
+                          const cpp = cppMapR[v.tanque_origen_id];
+                          const pvu = v.precio_venta_unitario;
+                          if (cpp != null && pvu != null) {
+                            const g = (pvu - cpp) * (v.litros || 0);
+                            return <TableCell className={`text-right text-xs font-medium ${g >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{formatMonto(g)}</TableCell>;
+                          }
+                          return <TableCell className="text-right text-xs text-slate-300">—</TableCell>;
+                        })()}
                         {canVerPrecios && <TableCell className="text-right text-sm font-medium">{formatMonto(v.monto)} <span className="text-xs text-slate-400">{v.moneda}</span></TableCell>}
                         <TableCell>
                           <VentaEstadoBadge estado={v.estado} />
@@ -429,6 +453,8 @@ export default function Reportes() {
                             Total — {ventasFiltradas.length} registros
                           </TableCell>
                           <TableCell className="text-right text-sm font-bold text-sky-700">{totalL.toFixed(1)} L</TableCell>
+                          {canVerPrecios && <TableCell />}
+                          {canVerPrecios && <TableCell />}
                           {canVerPrecios && <TableCell />}
                           {canVerPrecios && (
                             <TableCell className="text-right text-xs text-slate-600">
