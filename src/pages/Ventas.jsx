@@ -21,6 +21,7 @@ import {
   PackageCheck, ShieldAlert, Upload, Banknote, ListFilter,
   CalendarDays, UserCircle2, TrendingUp, AlertTriangle,
 } from 'lucide-react';
+import { logAudit } from '@/api/auditLog';
 
 
 function WorkerAvatar({ nombre }) {
@@ -1128,6 +1129,7 @@ export default function Ventas() {
           .single();
         if (movErr) throw movErr;
         updates.movimiento_id = mov.id;
+        logAudit({ action: 'DESPACHO_BON_CREADO', entityType: 'Movimiento', entityId: mov.id, entityLabel: `Bonificación: ${venta.beneficiario_nombre} — ${venta.litros}L ${venta.combustible_nombre}`, metadata: { venta_id: venta.id, tanque_origen_id: venta.tanque_origen_id, litros: venta.litros } });
       }
       if (nuevoEstado === 'PAGADO_FINALIZADO') {
         updates.fecha_pago = new Date().toISOString().slice(0, 10);
@@ -1149,7 +1151,9 @@ export default function Ventas() {
       if (movToDelete) {
         const { error: delErr } = await supabase.from('movimiento').delete().eq('id', movToDelete);
         if (delErr) throw delErr;
+        logAudit({ action: 'DESPACHO_BON_ELIMINADO', entityType: 'Movimiento', entityId: movToDelete, entityLabel: `Cancelación bonificación: ${venta.beneficiario_nombre}`, metadata: { venta_id: venta.id, motivo: 'cancelacion_bonificacion' } });
       }
+      logAudit({ action: 'ESTADO_VENTA', entityType: 'VentaTrabajador', entityId: venta.id, entityLabel: `${venta.beneficiario_nombre} — ${venta.litros}L ${venta.combustible_nombre}`, metadata: { estado_anterior: venta.estado, estado_nuevo: nuevoEstado } });
     },
     onSuccess: (_, { nuevoEstado }) => {
       qc.invalidateQueries({ queryKey: ['ventas'] });

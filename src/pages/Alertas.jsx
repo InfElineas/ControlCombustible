@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertTriangle, Settings2, Mail, ChevronDown, ChevronUp, Send, Fuel } from 'lucide-react';
+import { AlertTriangle, Settings2, Mail, ChevronDown, ChevronUp, Send, Fuel, ShieldAlert, Trash2, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import { toast } from 'sonner';
 
 // Stock real de un tanque de bonificación (excluye DESPACHOs de bonificación como entradas)
@@ -364,7 +365,134 @@ function ConfigAlertaDialog({ consumidor, config, onClose }) {
   );
 }
 
+function IntegridadDatos() {
+  const qc = useQueryClient();
+
+  const { data: huerfanos = [], isFetching: fetchingH } = useQuery({
+    queryKey: ['integridad-despachos-huerfanos'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_despachos_bon_huerfanos').select ? null : null;
+      // fallback: query directa
+      const { data: rows } = await supabase
+        .from('movimiento')
+        .select('id, fecha, litros, referencia, consumidor_origen_id, consumidor_origen_nombre')
+        .eq('tipo', 'DESPACHO')
+        .ilike('referencia', 'Bonificación combustible:%');
+      if (!rows) return [];
+      // filtrar los que no tienen venta
+      const { data: ventas } = await supabase.from('venta_trabajador').select('movimiento_id').not('movimiento_id', 'is', null);
+      const ventaMovIds = new Set((ventas ?? []).map(v => v.movimiento_id));
+      return rows.filter(m => !ventaMovIds.has(m.id));
+    },
+    staleTime: 60_000,
+  });
+
+  const { data: canceladasConMov = [], isFetching: fetchingC } = useQuery({
+    queryKey: ['integridad-ventas-canceladas-con-mov'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('venta_trabajador')
+        .select('id, beneficiario_nombre, litros, combustible_nombre, estado, movimiento_id')
+        .in('estado', ['CANCELADO', 'ANULADO'])
+        .not('movimiento_id', 'is', null);
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+  const limpiarMut = useMutation({
+    mutationFn: async () => {
+      // 1. Eliminar DESPACHOs huérfanos
+      for (const m of huerfanos) {
+        await supabase.from('movimiento').delete().eq('id', m.id);
+      }
+      // 2. Ventas canceladas con movimiento_id: borrar el DESPACHO y limpiar referencia
+      for (const v of canceladasConMov) {
+        await supabase.from('venta_trabajador').update({ movimiento_id: null }).eq('id', v.id);
+        await supabase.from('movimiento').delete().eq('id', v.movimiento_id);
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['integridad-despachos-huerfanos'] });
+      qc.invalidateQueries({ queryKey: ['integridad-ventas-canceladas-con-mov'] });
+      qc.invalidateQueries({ queryKey: ['movimientos'] });
+      qc.invalidateQueries({ queryKey: ['ventas'] });
+      qc.invalidateQueries({ queryKey: ['ventas-pendientes'] });
+      toast.success('Datos saneados correctamente');
+    },
+    onError: (e) => toast.error(e.message ?? 'Error al sanear datos'),
+  });
+
+  const totalProblemas = huerfanos.length + canceladasConMov.length;
+  const isFetching = fetchingH || fetchingC;
+
+  return (
+    <div className={`rounded-xl border p-4 space-y-3 ${totalProblemas > 0 ? 'border-orange-200 bg-orange-50/60 dark:bg-orange-950/20 dark:border-orange-800' : 'border-slate-100 bg-slate-50/40 dark:border-slate-700'}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className={`w-4 h-4 shrink-0 ${totalProblemas > 0 ? 'text-orange-500' : 'text-slate-400'}`} />
+          <div>
+            <p className={`text-sm font-semibold ${totalProblemas > 0 ? 'text-orange-700 dark:text-orange-400' : 'text-slate-600 dark:text-slate-300'}`}>
+              Integridad de datos
+            </p>
+            <p className="text-[10px] text-slate-400">
+              {totalProblemas === 0 ? 'Sin problemas detectados' : `${totalProblemas} problema${totalProblemas > 1 ? 's' : ''} detectado${totalProblemas > 1 ? 's' : ''}`}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-slate-600"
+            onClick={() => { qc.invalidateQueries({ queryKey: ['integridad-despachos-huerfanos'] }); qc.invalidateQueries({ queryKey: ['integridad-ventas-canceladas-con-mov'] }); }}
+            disabled={isFetching}>
+            <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+          </Button>
+          {totalProblemas > 0 && (
+            <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700 text-white gap-1.5"
+              onClick={() => limpiarMut.mutate()} disabled={limpiarMut.isPending}>
+              {limpiarMut.isPending ? <><RefreshCw className="w-3 h-3 animate-spin" />Saneando…</> : <><Trash2 className="w-3 h-3" />Sanear todo</>}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {totalProblemas === 0 && !isFetching && (
+        <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400">
+          <CheckCircle2 className="w-3.5 h-3.5" /> Sin DESPACHOs huérfanos ni inconsistencias detectadas
+        </div>
+      )}
+
+      {huerfanos.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-orange-600 uppercase tracking-wide">DESPACHOs de bonificación sin venta asociada ({huerfanos.length})</p>
+          {huerfanos.map(m => (
+            <div key={m.id} className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg px-3 py-2 border border-orange-100 dark:border-orange-900 text-xs gap-2">
+              <span className="font-mono text-slate-400 shrink-0">{m.fecha}</span>
+              <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{(m.referencia || '').replace('Bonificación combustible: ', '')}</span>
+              <span className="text-orange-600 font-semibold shrink-0">{m.litros} L</span>
+              <span className="text-slate-400 truncate max-w-[140px] shrink-0">{m.consumidor_origen_nombre}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {canceladasConMov.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-orange-600 uppercase tracking-wide">Ventas canceladas con DESPACHO pendiente ({canceladasConMov.length})</p>
+          {canceladasConMov.map(v => (
+            <div key={v.id} className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg px-3 py-2 border border-orange-100 dark:border-orange-900 text-xs gap-2">
+              <span className="flex-1 font-medium text-slate-700 dark:text-slate-200 truncate">{v.beneficiario_nombre}</span>
+              <span className="text-slate-500 shrink-0">{v.litros} L {v.combustible_nombre}</span>
+              <span className="text-orange-600 font-semibold shrink-0">DESPACHO vivo</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Alertas() {
+  const { isSuperAdmin } = useUserRole();
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
   const { data: movimientos = [] }  = useQuery({ queryKey: ['movimientos'],  queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
   const { data: configAlertas = [] } = useQuery({ queryKey: ['configAlertas'], queryFn: () => base44.entities.ConfigAlerta.list() });
@@ -438,6 +566,9 @@ export default function Alertas() {
         <h1 className="text-xl font-bold text-slate-800">Nivel de combustible</h1>
         <p className="text-xs text-slate-400">Nivel estimado por consumidor — cuánto queda y cuánto recargar</p>
       </div>
+
+      {/* Integridad de datos — solo superadmin */}
+      {isSuperAdmin && <IntegridadDatos />}
 
       {/* Bonificaciones bloqueadas por stock insuficiente */}
       {bonsBloqueadas.length > 0 && (
