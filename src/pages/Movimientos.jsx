@@ -95,6 +95,7 @@ export default function Movimientos() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['movimientos'] });
       queryClient.invalidateQueries({ queryKey: ['ventas'] });
+      queryClient.invalidateQueries({ queryKey: ['ventas-pendientes'] });
       toast.success('Movimiento eliminado');
       setDeleteId(null);
     },

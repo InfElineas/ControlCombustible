@@ -1113,7 +1113,7 @@ export default function Ventas() {
             consumidor_origen_nombre: venta.tanque_origen_nombre,
             vehiculo_origen_chapa: venta.tanque_origen_nombre,
             vehiculo_origen_alias: venta.tanque_origen_nombre,
-            consumidor_id: logistConsumidor?.id ?? null,
+            consumidor_id: null,
             consumidor_nombre: logistConsumidor?.nombre ?? 'Uso Logístico',
             vehiculo_chapa: logistConsumidor?.codigo_interno ?? null,
             vehiculo_alias: logistConsumidor?.nombre ?? null,
@@ -1154,6 +1154,7 @@ export default function Ventas() {
     onSuccess: (_, { nuevoEstado }) => {
       qc.invalidateQueries({ queryKey: ['ventas'] });
       qc.invalidateQueries({ queryKey: ['movimientos'] });
+      qc.invalidateQueries({ queryKey: ['ventas-pendientes'] });
       const msgs = {
         ENTREGADO:         'Marcado como entregado — se registró el despacho',
         PAGADO_FINALIZADO: 'Pagado y finalizado — despacho registrado',
@@ -1165,6 +1166,7 @@ export default function Ventas() {
     onError: (e) => {
       qc.invalidateQueries({ queryKey: ['ventas'] });
       qc.invalidateQueries({ queryKey: ['movimientos'] });
+      qc.invalidateQueries({ queryKey: ['ventas-pendientes'] });
       toast.error(e.message ?? 'Error al actualizar');
     },
   });
