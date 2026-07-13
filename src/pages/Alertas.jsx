@@ -507,6 +507,14 @@ export default function Alertas() {
     },
     staleTime: 60_000,
   });
+  const { data: stockView = [] } = useQuery({
+    queryKey: ['v-stock-tanques'],
+    queryFn: async () => {
+      const { data } = await supabase.from('v_stock_tanques').select('*');
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
 
   const [editando, setEditando] = useState(null);
   const [tab, setTab] = useState('todas');
@@ -536,11 +544,15 @@ export default function Alertas() {
   const sinDatos  = consumidoresConEstado.filter(c => !c.estado);
 
   const bonsBloqueadas = useMemo(() =>
-    ventasPendientes.map(v => ({
-      ...v,
-      stockOrigen: calcStockOrigen(v.tanque_origen_id, v.combustible_id, v.combustible_nombre, movimientos, consumidores),
-    })).filter(v => v.stockOrigen !== null && v.stockOrigen < v.litros),
-    [ventasPendientes, movimientos, consumidores]
+    ventasPendientes.map(v => {
+      const row = stockView.find(r =>
+        r.consumidor_id === v.tanque_origen_id &&
+        (r.combustible_id === v.combustible_id || r.combustible_id == null || v.combustible_id == null)
+      );
+      const stockOrigen = row ? Number(row.stock_actual) : null;
+      return { ...v, stockOrigen };
+    }).filter(v => v.stockOrigen !== null && v.stockOrigen < v.litros),
+    [ventasPendientes, stockView]
   );
 
   const sections = useMemo(() => {
