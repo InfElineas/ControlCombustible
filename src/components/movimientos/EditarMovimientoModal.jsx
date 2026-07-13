@@ -164,6 +164,7 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['movimientos'] });
+      queryClient.invalidateQueries({ queryKey: ['v-stock-tanques'] });
       toast.success('Movimiento actualizado');
       onClose();
     },

@@ -318,6 +318,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     mutationFn: (data) => base44.entities.Movimiento.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['movimientos'] });
+      queryClient.invalidateQueries({ queryKey: ['v-stock-tanques'] });
       toast.success('Movimiento registrado correctamente');
       setAdjuntoFile(null);
       onSuccess?.();

@@ -1049,10 +1049,16 @@ export default function Ventas() {
     staleTime: 60_000,
   });
 
-  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
   const { data: combustibles = [] } = useQuery({ queryKey: ['combustibles'], queryFn: () => base44.entities.TipoCombustible.list(), staleTime: 5 * 60_000 });
-  const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list(), staleTime: 5 * 60_000 });
+  const { data: stockView = [] } = useQuery({
+    queryKey: ['v-stock-tanques'],
+    queryFn: async () => {
+      const { data } = await supabase.from('v_stock_tanques').select('*');
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
 
   const ventasPendientes = ventasRaw.filter(v => v.estado === 'PENDIENTE');
 
@@ -1067,16 +1073,27 @@ export default function Ventas() {
             if (admitidos.length) return combustibles.filter(c => admitidos.some(a => a === c.nombre || a === c.id));
             return combustibles.filter(c => c.activa !== false);
           })();
-      return combsDelTanque.map(c => ({
-        tanqueId: t.id,
-        tanqueNombre: t.nombre,
-        codigoInterno: t.codigo_interno || null,
-        combustibleId: c.id,
-        combustibleNombre: c.nombre,
-        ...calcStockTanque(t, c.nombre, c.id, movimientos, ventasPendientes, tarjetas),
-      }));
+      return combsDelTanque.map(c => {
+        const viewRow = stockView.find(r =>
+          r.consumidor_id === t.id &&
+          (r.combustible_id === c.id || r.combustible_id == null || c.id == null)
+        );
+        const stockReal = viewRow ? Number(viewRow.stock_actual) : 0;
+        const reservadas = ventasPendientes
+          .filter(v => v.tanque_origen_id === t.id && v.combustible_id === c.id)
+          .reduce((s, v) => s + (v.litros || 0), 0);
+        return {
+          tanqueId: t.id,
+          tanqueNombre: t.nombre,
+          codigoInterno: t.codigo_interno || null,
+          combustibleId: c.id,
+          combustibleNombre: c.nombre,
+          stock: Math.max(stockReal - reservadas, 0),
+          stockReal,
+        };
+      });
     });
-  }, [consumidores, combustibles, movimientos, ventasPendientes, tarjetas]);
+  }, [consumidores, combustibles, stockView, ventasPendientes]);
 
   const eliminarMut = useMutation({
     mutationFn: async (id) => {
@@ -1159,6 +1176,7 @@ export default function Ventas() {
       qc.invalidateQueries({ queryKey: ['ventas'] });
       qc.invalidateQueries({ queryKey: ['movimientos'] });
       qc.invalidateQueries({ queryKey: ['ventas-pendientes'] });
+      qc.invalidateQueries({ queryKey: ['v-stock-tanques'] });
       const msgs = {
         ENTREGADO:         'Marcado como entregado — se registró el despacho',
         PAGADO_FINALIZADO: 'Pagado y finalizado — despacho registrado',
@@ -1171,6 +1189,7 @@ export default function Ventas() {
       qc.invalidateQueries({ queryKey: ['ventas'] });
       qc.invalidateQueries({ queryKey: ['movimientos'] });
       qc.invalidateQueries({ queryKey: ['ventas-pendientes'] });
+      qc.invalidateQueries({ queryKey: ['v-stock-tanques'] });
       toast.error(e.message ?? 'Error al actualizar');
     },
   });

@@ -96,6 +96,7 @@ export default function Movimientos() {
       queryClient.invalidateQueries({ queryKey: ['movimientos'] });
       queryClient.invalidateQueries({ queryKey: ['ventas'] });
       queryClient.invalidateQueries({ queryKey: ['ventas-pendientes'] });
+      queryClient.invalidateQueries({ queryKey: ['v-stock-tanques'] });
       toast.success('Movimiento eliminado');
       setDeleteId(null);
     },
