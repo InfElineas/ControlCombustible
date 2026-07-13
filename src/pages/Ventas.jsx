@@ -19,7 +19,7 @@ import {
   Droplets, Plus, Users, Fuel, Clock, CheckCircle2, Check,
   X, XCircle, Loader2, Pencil, Trash2, Search, BadgeDollarSign,
   PackageCheck, ShieldAlert, Upload, Banknote, ListFilter,
-  CalendarDays, UserCircle2, TrendingUp,
+  CalendarDays, UserCircle2, TrendingUp, AlertTriangle,
 } from 'lucide-react';
 
 
@@ -41,6 +41,10 @@ function WorkerAvatar({ nombre }) {
 }
 
 // ── Calcula stock disponible de un tanque (stock real − reservas pendientes) ──
+// DESPACHOs generados automáticamente por bonificaciones no representan
+// entradas físicas al tanque — se excluyen del cálculo de stock.
+const ES_BON = m => m.tipo === 'DESPACHO' && (m.referencia || '').startsWith('Bonificación combustible:');
+
 function useStockDisponible(tanqueId, combustibleId, movimientos, ventasPendientes, consumidores) {
   return useMemo(() => {
     if (!tanqueId || !combustibleId) return null;
@@ -51,7 +55,7 @@ function useStockDisponible(tanqueId, combustibleId, movimientos, ventasPendient
     const movsTanque = movimientos.filter(m => m.combustible_id === combustibleId);
 
     const entradas = movsTanque
-      .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === tanqueId)
+      .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === tanqueId && !ES_BON(m))
       .reduce((s, m) => s + (m.litros || 0), 0);
 
     const salidas = movsTanque
@@ -84,13 +88,15 @@ function calcStockTanque(tanque, combustibleNombre, combustibleId, movimientos, 
   if (esSurtidor) {
     const tarjetaVinculadaId = tanque.datos_tanque?.tarjeta_vinculada_id;
     const entradas = movimientos
-      .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DESPACHO' || m.tipo === 'DEPOSITO') && m.consumidor_id === tanque.id)
+      .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DESPACHO' || m.tipo === 'DEPOSITO') && m.consumidor_id === tanque.id && !ES_BON(m))
       .reduce((s, m) => s + (m.litros || 0), 0);
     const salidasDespacho = movimientos
-      .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === tanque.id)
+      .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === tanque.id
+        && (!m.combustible_id || m.combustible_id === combustibleId))
       .reduce((s, m) => s + (m.litros || 0), 0);
     const salidasCompra = tarjetaVinculadaId
-      ? movimientos.filter(m => m.tipo === 'COMPRA' && m.tarjeta_id === tarjetaVinculadaId)
+      ? movimientos.filter(m => m.tipo === 'COMPRA' && m.tarjeta_id === tarjetaVinculadaId
+          && (!m.combustible_id || m.combustible_id === combustibleId))
           .reduce((s, m) => s + (m.litros || 0), 0)
       : 0;
     stockReal = ini + entradas - salidasDespacho - salidasCompra;
@@ -98,10 +104,12 @@ function calcStockTanque(tanque, combustibleNombre, combustibleId, movimientos, 
     const entradas = movimientos
       .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO')
         && m.consumidor_id === tanque.id
-        && (m.combustible_nombre === combustibleNombre || m.combustible_id === combustibleId))
+        && (m.combustible_nombre === combustibleNombre || m.combustible_id === combustibleId)
+        && !ES_BON(m))
       .reduce((s, m) => s + (m.litros || 0), 0);
     const salidas = movimientos
-      .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === tanque.id)
+      .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === tanque.id
+        && (!m.combustible_id || m.combustible_id === combustibleId))
       .reduce((s, m) => s + (m.litros || 0), 0);
     stockReal = ini + entradas - salidas;
   }
@@ -110,7 +118,7 @@ function calcStockTanque(tanque, combustibleNombre, combustibleId, movimientos, 
     .filter(v => v.tanque_origen_id === tanque.id && v.combustible_id === combustibleId)
     .reduce((s, v) => s + (v.litros || 0), 0);
 
-  return Math.max(stockReal - reservadas, 0);
+  return { stock: Math.max(stockReal - reservadas, 0), stockReal };
 }
 
 const esTanqueBonificacion = c =>
@@ -137,7 +145,7 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [] }) {
   const { data: consumidores  = [] } = useQuery({ queryKey: ['consumidores'],  queryFn: () => base44.entities.Consumidor.list() });
   const { data: combustibles  = [] } = useQuery({ queryKey: ['combustibles'],  queryFn: () => base44.entities.TipoCombustible.list() });
   const { data: preciosDespacho = [] } = useQuery({ queryKey: ['precios-despacho'], queryFn: () => base44.entities.PrecioDespachoTipo.list('-fecha_desde', 200) });
-  const { data: movimientos   = [] } = useQuery({ queryKey: ['movimientos'],   queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
+  const { data: movimientos   = [] } = useQuery({ queryKey: ['movimientos'],   queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
 
   const tanques = consumidores.filter(esTanqueBonificacion);
 
@@ -667,7 +675,7 @@ function PanelBeneficiarios({ onClose }) {
 
 // ── Fila de bonificación ──────────────────────────────────────────────────────
 
-function VentaRow({ v, canOperar, canDelete, canEditar, onCambiarEstado, onDelete, onEdit, loading }) {
+function VentaRow({ v, canOperar, canDelete, canEditar, onCambiarEstado, onDelete, onEdit, loading, stockInsuficiente }) {
   const { canVerPrecios } = useUserRole();
   const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
   const [editEstado, setEditEstado] = useState(false);
@@ -752,6 +760,14 @@ function VentaRow({ v, canOperar, canDelete, canEditar, onCambiarEstado, onDelet
             <>
               <span className="text-slate-200">·</span>
               <span className="text-slate-400">desde {v.tanque_origen_nombre}</span>
+            </>
+          )}
+          {stockInsuficiente && !isTerminal && (
+            <>
+              <span className="text-slate-200">·</span>
+              <span className="text-red-600 flex items-center gap-0.5 font-semibold">
+                <AlertTriangle className="w-2.5 h-2.5" /> Sin stock
+              </span>
             </>
           )}
         </div>
@@ -1032,7 +1048,7 @@ export default function Ventas() {
     staleTime: 60_000,
   });
 
-  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
+  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
   const { data: combustibles = [] } = useQuery({ queryKey: ['combustibles'], queryFn: () => base44.entities.TipoCombustible.list(), staleTime: 5 * 60_000 });
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list(), staleTime: 5 * 60_000 });
@@ -1056,7 +1072,7 @@ export default function Ventas() {
         codigoInterno: t.codigo_interno || null,
         combustibleId: c.id,
         combustibleNombre: c.nombre,
-        stock: calcStockTanque(t, c.nombre, c.id, movimientos, ventasPendientes, tarjetas),
+        ...calcStockTanque(t, c.nombre, c.id, movimientos, ventasPendientes, tarjetas),
       }));
     });
   }, [consumidores, combustibles, movimientos, ventasPendientes, tarjetas]);
@@ -1082,7 +1098,6 @@ export default function Ventas() {
         (nuevoEstado === 'PAGADO_FINALIZADO' && venta.estado === 'PENDIENTE');
       if (needsDespacho) {
         updates.fecha_retiro = new Date().toISOString().slice(0, 10);
-        // Buscar el consumidor logístico real que corresponde al combustible de la bonificación
         const logistConsumidor = consumidores.find(c =>
           (c.nombre || '').toLowerCase().includes('logist') && c.combustible_id === venta.combustible_id
         ) ?? consumidores.find(c =>
@@ -1122,11 +1137,19 @@ export default function Ventas() {
           updates.monto = +(precio_venta_unitario * venta.litros).toFixed(4);
         }
       }
+      // Al cancelar: limpiar la referencia al movimiento antes de borrarlo
+      const movToDelete = (nuevoEstado === 'CANCELADO' && venta.movimiento_id) ? venta.movimiento_id : null;
+      if (movToDelete) updates.movimiento_id = null;
       const { error } = await supabase
         .from('venta_trabajador')
         .update(updates)
         .eq('id', venta.id);
       if (error) throw error;
+      // Borrar el DESPACHO generado — el stock vuelve al tanque origen
+      if (movToDelete) {
+        const { error: delErr } = await supabase.from('movimiento').delete().eq('id', movToDelete);
+        if (delErr) throw delErr;
+      }
     },
     onSuccess: (_, { nuevoEstado }) => {
       qc.invalidateQueries({ queryKey: ['ventas'] });
@@ -1139,7 +1162,11 @@ export default function Ventas() {
       };
       toast.success(msgs[nuevoEstado] ?? 'Estado actualizado');
     },
-    onError: (e) => toast.error(e.message ?? 'Error al actualizar'),
+    onError: (e) => {
+      qc.invalidateQueries({ queryKey: ['ventas'] });
+      qc.invalidateQueries({ queryKey: ['movimientos'] });
+      toast.error(e.message ?? 'Error al actualizar');
+    },
   });
 
   const ventasHistorialBase = useMemo(() => {
@@ -1164,6 +1191,13 @@ export default function Ventas() {
       monto:      mes.filter(v => v.estado !== 'CANCELADO' && v.estado !== 'ANULADO').reduce((s, v) => s + (v.monto || 0), 0),
     };
   }, [ventasRaw, filtroMes]);
+
+  const ventasBloqueadas = useMemo(() =>
+    ventasHistorialBase.filter(v => {
+      if (normalizeEstado(v.estado) !== 'PENDIENTE') return false;
+      const ts = stockTanques.find(t => t.tanqueId === v.tanque_origen_id && t.combustibleId === v.combustible_id);
+      return ts != null && ts.stockReal !== undefined && ts.stockReal < v.litros;
+    }), [ventasHistorialBase, stockTanques]);
 
   if (!canVerVentas) {
     return (
@@ -1263,6 +1297,23 @@ export default function Ventas() {
         </div>
       )}
 
+      {ventasBloqueadas.length > 0 && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-red-700">
+              {ventasBloqueadas.length === 1
+                ? '1 bonificación bloqueada'
+                : `${ventasBloqueadas.length} bonificaciones bloqueadas`} por stock insuficiente
+            </p>
+            <p className="text-xs text-red-400 mt-0.5 truncate">
+              {ventasBloqueadas.map(b => `${b.beneficiario_nombre} (${b.litros} L)`).join(' · ')}
+            </p>
+            <p className="text-xs text-red-300 mt-1">Registra una COMPRA para el tanque de origen y podrás procesar estas bonificaciones.</p>
+          </div>
+        </div>
+      )}
+
       <Card className="border border-slate-100 shadow-sm rounded-2xl overflow-hidden">
         <CardHeader className="px-4 pt-3 pb-0 border-b border-slate-200 dark:border-slate-700">
           {/* Tabs por estado */}
@@ -1309,10 +1360,28 @@ export default function Ventas() {
             <div className="divide-y divide-slate-100">
               {ventasHistorial.map(v => (
                 <VentaRow key={v.id} v={v}
-                  canOperar={canManageFinanzas}
+                  canOperar={canManageFinanzas || isCajero}
                   canDelete={isSuperAdmin}
                   canEditar={canEditar}
+                  stockInsuficiente={stockTanques.some(t =>
+                    t.tanqueId === v.tanque_origen_id &&
+                    t.combustibleId === v.combustible_id &&
+                    t.stockReal !== undefined && t.stockReal < v.litros
+                  )}
                   onCambiarEstado={(nuevoEstado) => {
+                    const needsDespacho = nuevoEstado === 'ENTREGADO' ||
+                      (nuevoEstado === 'PAGADO_FINALIZADO' && v.estado === 'PENDIENTE');
+                    if (needsDespacho) {
+                      const ts = stockTanques.find(t =>
+                        t.tanqueId === v.tanque_origen_id && t.combustibleId === v.combustible_id
+                      );
+                      if (ts && ts.stockReal !== undefined && ts.stockReal < v.litros) {
+                        toast.error(
+                          `Sin stock en "${ts.tanqueNombre}": disponible ${Math.max(0, ts.stockReal).toFixed(1)} L — necesita ${v.litros} L. Registra una COMPRA para reponer.`
+                        );
+                        return;
+                      }
+                    }
                     if (nuevoEstado === 'PAGADO_FINALIZADO') {
                       setPrecioVentaInput(v.precio_por_litro ? String(v.precio_por_litro) : '');
                       setToCobrar(v);

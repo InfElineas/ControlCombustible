@@ -46,7 +46,7 @@ export default function Dashboard() {
     return next;
   });
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
-  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
+  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
   const { data: tiposConsumidor = [] } = useQuery({ queryKey: ['tiposConsumidor'], queryFn: () => base44.entities.TipoConsumidor.list() });
   const { data: tipoCombustible = [] } = useQuery({ queryKey: ['tipoCombustible'], queryFn: () => base44.entities.TipoCombustible.list() });
@@ -234,7 +234,7 @@ export default function Dashboard() {
         [...reservaTankIdsParaCombustible].reduce((total, tankId) => {
           const tank = consumidores.find(c => c.id === tankId);
           const ini      = obtenerLitrosInicialesConsumidor(tank, combustibleIdRef, nombreCombustible);
-          const entradas = movimientos.filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === tankId && m.combustible_nombre === nombreCombustible).reduce((s, m) => s + (m.litros || 0), 0);
+          const entradas = movimientos.filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === tankId && m.combustible_nombre === nombreCombustible && !(m.tipo === 'DESPACHO' && (m.referencia || '').startsWith('Bonificación combustible:'))).reduce((s, m) => s + (m.litros || 0), 0);
           const salidas  = movimientos.filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === tankId).reduce((s, m) => s + (m.litros || 0), 0);
           return total + ini + entradas - salidas;
         }, 0)
@@ -420,10 +420,12 @@ export default function Dashboard() {
       .map(c => {
         const ini = Number(c.litros_iniciales) || 0;
         const entradas = movimientos
-          .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === c.id)
+          .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === c.id && !(m.tipo === 'DESPACHO' && (m.referencia || '').startsWith('Bonificación combustible:'))
+            && (!c.combustible_id || !m.combustible_id || m.combustible_id === c.combustible_id))
           .reduce((s, m) => s + (m.litros || 0), 0);
         const salidas = movimientos
-          .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === c.id)
+          .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === c.id
+            && (!c.combustible_id || !m.combustible_id || m.combustible_id === c.combustible_id))
           .reduce((s, m) => s + (m.litros || 0), 0);
         const stockActual = Math.max(0, ini + entradas - salidas);
         const cap = (() => {
@@ -447,10 +449,12 @@ export default function Dashboard() {
       .map(c => {
         const ini = Number(c.litros_iniciales) || 0;
         const entradas = movimientos
-          .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === c.id)
+          .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === c.id && !(m.tipo === 'DESPACHO' && (m.referencia || '').startsWith('Bonificación combustible:'))
+            && (!c.combustible_id || !m.combustible_id || m.combustible_id === c.combustible_id))
           .reduce((s, m) => s + (m.litros || 0), 0);
         const salidas = movimientos
-          .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === c.id)
+          .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === c.id
+            && (!c.combustible_id || !m.combustible_id || m.combustible_id === c.combustible_id))
           .reduce((s, m) => s + (m.litros || 0), 0);
         const stockActual = Math.max(0, ini + entradas - salidas);
         const cap = (() => {

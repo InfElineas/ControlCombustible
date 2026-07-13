@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { base44 } from '@/api/base44Client';
+import { supabase } from '@/api/supabaseClient';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +11,24 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertTriangle, Settings2, Mail, ChevronDown, ChevronUp, Send, Fuel } from 'lucide-react';
 import { toast } from 'sonner';
+
+// Stock real de un tanque de bonificación (excluye DESPACHOs de bonificación como entradas)
+function calcStockOrigen(tanqueId, combustibleId, combustibleNombre, movimientos, consumidores) {
+  const tanque = consumidores.find(c => c.id === tanqueId);
+  if (!tanque) return null;
+  const ES_BON = m => m.tipo === 'DESPACHO' && (m.referencia || '').startsWith('Bonificación combustible:');
+  const ini = tanque.litros_iniciales ?? 0;
+  const entradas = movimientos
+    .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO')
+      && m.consumidor_id === tanqueId && !ES_BON(m)
+      && (m.combustible_id === combustibleId || m.combustible_nombre === combustibleNombre))
+    .reduce((s, m) => s + (m.litros || 0), 0);
+  const salidas = movimientos
+    .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === tanqueId
+      && (m.combustible_id === combustibleId || m.combustible_nombre === combustibleNombre))
+    .reduce((s, m) => s + (m.litros || 0), 0);
+  return ini + entradas - salidas;
+}
 
 // Determina estado según porcentaje de nivel restante (menor % = peor)
 function estadoNivel(pct, umbralAlerta, umbralCritico) {
@@ -347,8 +366,19 @@ function ConfigAlertaDialog({ consumidor, config, onClose }) {
 
 export default function Alertas() {
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
-  const { data: movimientos = [] }  = useQuery({ queryKey: ['movimientos'],  queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
+  const { data: movimientos = [] }  = useQuery({ queryKey: ['movimientos'],  queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
   const { data: configAlertas = [] } = useQuery({ queryKey: ['configAlertas'], queryFn: () => base44.entities.ConfigAlerta.list() });
+  const { data: ventasPendientes = [] } = useQuery({
+    queryKey: ['ventas-pendientes'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('venta_trabajador')
+        .select('id, beneficiario_nombre, litros, combustible_id, combustible_nombre, tanque_origen_id, tanque_origen_nombre')
+        .eq('estado', 'PENDIENTE');
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
 
   const [editando, setEditando] = useState(null);
   const [tab, setTab] = useState('todas');
@@ -377,6 +407,14 @@ export default function Alertas() {
   const normales  = consumidoresConEstado.filter(c => c.estado?.nivel === 'ok');
   const sinDatos  = consumidoresConEstado.filter(c => !c.estado);
 
+  const bonsBloqueadas = useMemo(() =>
+    ventasPendientes.map(v => ({
+      ...v,
+      stockOrigen: calcStockOrigen(v.tanque_origen_id, v.combustible_id, v.combustible_nombre, movimientos, consumidores),
+    })).filter(v => v.stockOrigen !== null && v.stockOrigen < v.litros),
+    [ventasPendientes, movimientos, consumidores]
+  );
+
   const sections = useMemo(() => {
     if (tab === 'normales') return normales.length ? [{ title: '', color: '', items: normales }] : [];
     const groups = tab === 'alertas'
@@ -400,6 +438,37 @@ export default function Alertas() {
         <h1 className="text-xl font-bold text-slate-800">Nivel de combustible</h1>
         <p className="text-xs text-slate-400">Nivel estimado por consumidor — cuánto queda y cuánto recargar</p>
       </div>
+
+      {/* Bonificaciones bloqueadas por stock insuficiente */}
+      {bonsBloqueadas.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+            <p className="text-sm font-semibold text-red-700">
+              {bonsBloqueadas.length === 1
+                ? '1 bonificación pendiente'
+                : `${bonsBloqueadas.length} bonificaciones pendientes`} sin stock para despachar
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            {bonsBloqueadas.map(b => {
+              const deficit = b.litros - Math.max(0, b.stockOrigen);
+              return (
+                <div key={b.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-red-100 text-xs gap-2">
+                  <span className="font-medium text-slate-700 truncate">{b.beneficiario_nombre}</span>
+                  <div className="flex items-center gap-3 shrink-0 text-slate-500">
+                    <span>{b.combustible_nombre} · {b.litros} L</span>
+                    <span className="text-slate-300">·</span>
+                    <span className="text-slate-400 truncate max-w-[100px]">{b.tanque_origen_nombre}</span>
+                    <span className="text-red-600 font-semibold">Déficit {deficit.toFixed(1)} L</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-xs text-red-400">Registra una COMPRA para los tanques de origen correspondientes.</p>
+        </div>
+      )}
 
       {/* Resumen */}
       <div className="grid grid-cols-3 gap-3">

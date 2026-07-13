@@ -35,7 +35,7 @@ export default function Movimientos() {
 
   const { data: movimientos = [], isLoading } = useQuery({
     queryKey: ['movimientos'],
-    queryFn: () => base44.entities.Movimiento.list('-fecha', 2000),
+    queryFn: () => base44.entities.Movimiento.list('-fecha', 5000),
     select: data => [...data].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || '')),
     staleTime: 5 * 60_000,
   });
@@ -94,9 +94,11 @@ export default function Movimientos() {
     mutationFn: (id) => base44.entities.Movimiento.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['movimientos'] });
+      queryClient.invalidateQueries({ queryKey: ['ventas'] });
       toast.success('Movimiento eliminado');
       setDeleteId(null);
     },
+    onError: (e) => toast.error(e.message ?? 'Error al eliminar movimiento'),
   });
 
   const filtered = useMemo(() => {

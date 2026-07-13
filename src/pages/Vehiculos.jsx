@@ -28,7 +28,7 @@ const emptyForm = {
 export default function Vehiculos() {
   const queryClient = useQueryClient();
   const { data: vehiculos = [] } = useQuery({ queryKey: ['vehiculos'], queryFn: () => base44.entities.Vehiculo.list() });
-  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
+  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [mesFiltro, setMesFiltro] = useState('ALL');

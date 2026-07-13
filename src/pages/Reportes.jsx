@@ -42,7 +42,7 @@ export default function Reportes() {
 
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
   const { data: consumidores = [] } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
-  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 2000), staleTime: 5 * 60_000 });
+  const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
   const { data: cppTanquesR = [] } = useQuery({
     queryKey: ['cpp-tanques'],
     queryFn: async () => { const { data } = await supabase.from('v_cpp_por_tanque').select('*'); return data ?? []; },

@@ -655,7 +655,7 @@ function BonificacionesTab({ ventas, loading, gananciaBruta = 0, ingresoVentas =
 
   const kpis = [
     { label: 'Total bonificaciones', value: formatMonto(totalMonto), icon: DollarSign, color: 'text-violet-600 bg-violet-50' },
-    { label: 'Litros entregados', value: `${fmtL(totalLitros)} L`, icon: Fuel, color: 'text-amber-600 bg-amber-50' },
+    { label: 'Litros registrados', value: `${fmtL(totalLitros)} L`, icon: Fuel, color: 'text-amber-600 bg-amber-50' },
     { label: 'Cobrado', value: formatMonto(cobrado), icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50' },
     { label: 'Pendiente cobro', value: formatMonto(pendiente), icon: Clock, color: 'text-orange-600 bg-orange-50' },
   ];
