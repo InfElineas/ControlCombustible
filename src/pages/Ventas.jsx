@@ -1221,7 +1221,7 @@ export default function Ventas() {
     ventasHistorialBase.filter(v => {
       if (normalizeEstado(v.estado) !== 'PENDIENTE') return false;
       const ts = stockTanques.find(t => t.tanqueId === v.tanque_origen_id && t.combustibleId === v.combustible_id);
-      return ts != null && ts.stock < v.litros;
+      return ts != null && ts.stockReal < v.litros;
     }), [ventasHistorialBase, stockTanques]);
 
   if (!canVerVentas) {
@@ -1391,7 +1391,7 @@ export default function Ventas() {
                   stockInsuficiente={stockTanques.some(t =>
                     t.tanqueId === v.tanque_origen_id &&
                     t.combustibleId === v.combustible_id &&
-                    t.stock < v.litros
+                    t.stockReal < v.litros
                   )}
                   onCambiarEstado={(nuevoEstado) => {
                     const needsDespacho = nuevoEstado === 'ENTREGADO' ||
@@ -1400,9 +1400,9 @@ export default function Ventas() {
                       const ts = stockTanques.find(t =>
                         t.tanqueId === v.tanque_origen_id && t.combustibleId === v.combustible_id
                       );
-                      if (ts && ts.stock < v.litros) {
+                      if (ts && ts.stockReal < v.litros) {
                         toast.error(
-                          `Sin stock en "${ts.tanqueNombre}": disponible ${ts.stock.toFixed(1)} L — necesita ${v.litros} L. Registra una COMPRA para reponer.`
+                          `Sin stock en "${ts.tanqueNombre}": disponible ${ts.stockReal.toFixed(1)} L — necesita ${v.litros} L. Registra una COMPRA para reponer.`
                         );
                         return;
                       }
