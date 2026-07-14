@@ -8,7 +8,7 @@ import {
   ChevronRight, Fuel, ArrowRightLeft, AlertTriangle, CheckCircle2,
   Calculator, Info, Lightbulb, FileText, Gauge, Car,
   CreditCard, TrendingUp, Clock, Route, User2, Database, ClipboardList,
-  Droplets, PackageCheck, XCircle, Upload,
+  Droplets, PackageCheck, XCircle, Upload, Truck, Wrench,
 } from 'lucide-react';
 
 // ── Primitivos de layout ──────────────────────────────────────────────────────
@@ -1437,6 +1437,149 @@ Si no hay lecturas de odómetro → columna muestra —`}
     ),
   },
   {
+    id: 'transporte',
+    label: 'Transporte',
+    icon: Truck,
+    color: 'text-blue-600',
+    content: () => (
+      <>
+        <P>
+          El módulo de <strong>Transporte</strong> centraliza el control de mantenimiento preventivo
+          de la flota por kilometraje y el seguimiento de vencimientos de documentos legales
+          de los vehículos (somatón, licencia operativa) y de los conductores (licencia de conducción).
+        </P>
+
+        <Callout type="info" title="Acceso al módulo">
+          Solo los roles <Tag color="sky">Super Admin</Tag> y <Tag color="emerald">Operador</Tag> pueden
+          acceder y editar datos en este módulo. Aparece en el menú lateral entre <strong>Rutas</strong> y <strong>Alertas</strong>.
+        </Callout>
+
+        <SectionTitle id="transporte-mantenimiento">Mantenimiento preventivo por km</SectionTitle>
+
+        <SubTitle>Tipos de mantenimiento</SubTitle>
+        <TableDoc
+          headers={['Tipo', 'Qué incluye', 'Intervalo']}
+          rows={[
+            ['1 — Aceite y filtros', 'Cambio de aceite de motor y filtros de aceite/aire/combustible', 'Cada 10 000 km'],
+            ['2 — Filtro AC y refrigerante', 'Filtro del aire acondicionado y revisión/cambio de líquido refrigerante', 'Cada 10 000 km'],
+            ['3 — Frenos', 'Revisión y cambio de pastillas, discos o tambores según corresponda', 'Cada 10 000 km'],
+          ]}
+        />
+
+        <SubTitle>Indicadores de estado de mantenimiento</SubTitle>
+        <TableDoc
+          headers={['Color / Etiqueta', 'Condición', 'Qué hacer']}
+          rows={[
+            ['🟢 Al día', 'Más de 1 500 km para el próximo mantenimiento', 'Sin acción requerida.'],
+            ['🟡 ALERTA (naranja)', 'Entre 500 km y 1 500 km para el próximo mantenimiento', 'Planificar la revisión próximamente.'],
+            ['🔴 URGENTE (rojo)', 'Menos de 500 km para el próximo o km actual ya superó el km objetivo', 'Realizar el mantenimiento de inmediato.'],
+            ['⬜ Sin datos', 'No se ha registrado ningún mantenimiento previo', 'Registrar el primer mantenimiento para activar el seguimiento.'],
+          ]}
+        />
+
+        <Callout type="formula" title="Cálculo de km restantes para el próximo mantenimiento">
+          <Formula>
+{`Km actual       = MAX(odometro) en movimientos del vehículo
+Km restantes    = Km próximo mantenimiento − Km actual
+
+Si Km restantes < 0       → mantenimiento vencido (km ya superado)
+Si Km restantes < 500     → URGENTE
+Si Km restantes < 1 500   → ALERTA
+Si Km restantes ≥ 1 500   → Al día`}
+          </Formula>
+          El <strong>Km actual</strong> se obtiene del odómetro más alto registrado en la tabla
+          de movimientos (<code>movimiento.odometro</code>), igual que en el comparativo GPS vs Mov.
+        </Callout>
+
+        <SubTitle>Registrar un mantenimiento</SubTitle>
+        <P>
+          Pulsa el botón <strong>🔧 Registrar mantenimiento</strong> en la ficha del vehículo.
+          Se abre un formulario con los siguientes campos:
+        </P>
+        <TableDoc
+          headers={['Campo', 'Obligatorio', 'Descripción']}
+          rows={[
+            ['Fecha', 'Sí', 'Fecha en que se realizó el mantenimiento (hoy por defecto).'],
+            ['Km en servicio', 'Sí', 'Odómetro del vehículo al momento del mantenimiento (pre-rellenado con el km actual).'],
+            ['Tipo de mantenimiento', 'Sí', 'Aceite y filtros / Filtro AC y refrigerante / Frenos.'],
+            ['Km próximo', 'Sí', 'Odómetro al que se debe realizar el siguiente mantenimiento (se sugiere automáticamente: km actual + 10 000).'],
+            ['Notas', 'No', 'Observaciones libres (repuestos usados, taller, etc.).'],
+          ]}
+        />
+        <Callout type="tip" title="Km próximo automático">
+          Al confirmar el mantenimiento, el sistema actualiza automáticamente el campo
+          <code> km_proximo_mantenimiento</code> del vehículo y registra el historial en la tabla
+          <code> historial_mantenimiento</code>. El seguimiento se activa desde ese momento.
+        </Callout>
+
+        <SectionTitle id="transporte-documentos">Vencimiento de documentos</SectionTitle>
+
+        <SubTitle>Documentos controlados</SubTitle>
+        <TableDoc
+          headers={['Documento', 'Umbral de alerta', 'Dónde se registra']}
+          rows={[
+            ['Somatón (revisión técnica)', '≤ 30 días para vencer', 'Fecha de vencimiento del certificado de revisión técnica del vehículo.'],
+            ['Licencia operativa', '≤ 30 días para vencer', 'Fecha de vencimiento de la licencia de operación del vehículo.'],
+          ]}
+        />
+
+        <SubTitle>Estados de vencimiento</SubTitle>
+        <TableDoc
+          headers={['Color / Etiqueta', 'Condición']}
+          rows={[
+            ['🟢 Vigente', 'Más de 30 días para vencer'],
+            ['🟡 Próximo a vencer (naranja)', 'Entre 1 y 30 días para vencer'],
+            ['🔴 VENCIDO (rojo)', 'Fecha de vencimiento ya pasada (0 o menos días)'],
+            ['⬜ Sin fecha', 'No se ha registrado la fecha de vencimiento'],
+          ]}
+        />
+
+        <SubTitle>Actualizar fechas de documentos</SubTitle>
+        <P>
+          Pulsa el botón <strong>📄 Documentos</strong> en la ficha del vehículo.
+          Se abre un formulario donde puedes registrar o actualizar:
+        </P>
+        <TableDoc
+          headers={['Campo', 'Descripción']}
+          rows={[
+            ['Fecha vencimiento somatón', 'Fecha hasta la que es válida la revisión técnica del vehículo.'],
+            ['N.º licencia operativa', 'Número de la licencia de operación (opcional, para referencia).'],
+            ['Fecha vencimiento licencia op.', 'Fecha hasta la que es válida la licencia de operación.'],
+          ]}
+        />
+
+        <SectionTitle id="transporte-alertas">Alertas de transporte en el módulo Alertas</SectionTitle>
+        <P>
+          El módulo <strong>Alertas</strong> muestra automáticamente un panel de alertas de transporte
+          cuando hay vehículos con mantenimiento urgente o documentos próximos a vencer.
+          Aparece al inicio de la página, antes de las alertas de consumo.
+        </P>
+        <TableDoc
+          headers={['Alerta', 'Condición', 'Acción sugerida']}
+          rows={[
+            ['🔧 Mantenimiento urgente', 'Km restantes < 500 o km ya superado', 'Ir a Transporte → registrar mantenimiento.'],
+            ['📋 Somatón próximo / vencido', '≤ 30 días o ya vencido', 'Ir a Transporte → actualizar fecha del somatón.'],
+            ['📋 Licencia op. próxima / vencida', '≤ 30 días o ya vencida', 'Ir a Transporte → actualizar fecha de la licencia operativa.'],
+          ]}
+        />
+        <Callout type="tip">
+          Cada alerta de transporte tiene un enlace directo al módulo Transporte para gestionar
+          el vehículo afectado sin salir de la pantalla de alertas.
+        </Callout>
+
+        <SectionTitle id="transporte-filtros">Filtros de la vista de vehículos</SectionTitle>
+        <TableDoc
+          headers={['Filtro', 'Qué muestra']}
+          rows={[
+            ['Todos', 'Todos los vehículos activos del catálogo.'],
+            ['En alerta', 'Solo los vehículos con al menos una alerta activa (mantenimiento urgente/alerta o documento próximo/vencido).'],
+            ['Sin datos', 'Vehículos que no tienen ningún dato de mantenimiento ni de documentos registrados. Requieren configuración inicial.'],
+          ]}
+        />
+      </>
+    ),
+  },
+  {
     id: 'catalogos',
     label: 'Catálogos',
     icon: BookOpen,
@@ -1706,6 +1849,12 @@ Si no hay lecturas de odómetro → columna muestra —`}
             ['Recorrido GPS (tipo de viaje)', 'Tipo especial de asignación de ruta generado automáticamente por el auto-guardado nocturno del GPS. Aparece en Estadísticas con etiqueta teal y alimenta la columna Km GPS del comparativo.'],
             ['Trazabilidad', 'Capacidad de ver el origen exacto de un dato: qué registros fuente lo componen, sus fechas y cómo afectan a los totales. En el tab GPS vs Mov., haz clic en cualquier fila para ver el panel de trazabilidad del vehículo.'],
             ['Panel de trazabilidad', 'Modal que se abre al hacer clic en una fila del comparativo GPS vs Mov. Desglosa por secciones los registros GPS, novedades, movimientos de combustible y el cálculo paso a paso del km por odómetro.'],
+            ['Mantenimiento preventivo', 'Revisión o sustitución programada de piezas del vehículo (aceite, filtros, frenos) antes de que fallen. En el módulo Transporte se controla por kilometraje cada 10 000 km.'],
+            ['Km próximo mantenimiento', 'Valor de odómetro al que se debe realizar el siguiente mantenimiento. Se calcula como km del último mantenimiento + 10 000 y se actualiza cada vez que se registra un mantenimiento.'],
+            ['Historial de mantenimiento', 'Tabla que registra cada mantenimiento realizado: fecha, km en servicio, tipo y notas. Accesible desde el módulo Transporte para cada vehículo.'],
+            ['Somatón', 'Revisión técnica obligatoria del vehículo. El módulo Transporte registra su fecha de vencimiento y genera alerta cuando quedan ≤ 30 días.'],
+            ['Licencia operativa', 'Habilitación legal para la operación del vehículo. Se controla su vencimiento con alerta a ≤ 30 días.'],
+            ['v_vehiculos_transporte', 'Vista SQL que cruza datos de la tabla consumidor con el máximo odómetro registrado en movimientos, exponiendo el km_actual de cada vehículo junto con todos los campos de mantenimiento y documentos.'],
             ['Última actualización (comparativo)', 'Fecha más reciente entre todos los registros GPS y de combustible del mes seleccionado. Se muestra en el encabezado del tab GPS vs Mov. como indicador de vigencia de los datos.'],
             ['Flota GPS (Dashboard)', 'Sección del panel Inicio que resume los km GPS, km registrados, días con actividad GPS y la última fecha de registro del mes. Se sincroniza con el selector de período del Dashboard.'],
           ]}
@@ -1731,6 +1880,7 @@ const PAGE_TO_SECTION = {
   AdminPanel:    'administracion',
   Guia:          'guia',
   Ventas:        'bonificaciones',
+  Transporte:    'transporte',
 };
 
 export default function Ayuda() {
