@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertTriangle, Settings2, Mail, ChevronDown, ChevronUp, Send, Fuel, ShieldAlert, Trash2, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, Settings2, Mail, ChevronDown, ChevronUp, Send, Fuel, ShieldAlert, Trash2, RefreshCw, CheckCircle2, Wrench, Truck } from 'lucide-react';
+import { createPageUrl } from '@/utils';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import { toast } from 'sonner';
 
@@ -515,6 +516,14 @@ export default function Alertas() {
     },
     staleTime: 60_000,
   });
+  const { data: vehiculosTransporte = [] } = useQuery({
+    queryKey: ['v-vehiculos-transporte'],
+    queryFn: async () => {
+      const { data } = await supabase.from('v_vehiculos_transporte').select('*');
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
 
   const [editando, setEditando] = useState(null);
   const [tab, setTab] = useState('todas');
@@ -581,6 +590,74 @@ export default function Alertas() {
 
       {/* Integridad de datos — solo superadmin */}
       {isSuperAdmin && <IntegridadDatos />}
+
+      {/* Alertas de transporte */}
+      {(() => {
+        const hoy = new Date(); hoy.setHours(0,0,0,0);
+        const dias = (f) => f ? Math.floor((new Date(f) - hoy) / 86400000) : null;
+
+        const mantUrgente = vehiculosTransporte.filter(v =>
+          v.km_proximo_mantenimiento && (v.km_proximo_mantenimiento - v.km_actual) <= 500
+        );
+        const somatonAlerta = vehiculosTransporte.filter(v => {
+          const d = dias(v.fecha_vencimiento_somaton);
+          return d !== null && d <= 30;
+        });
+        const licOpAlerta = vehiculosTransporte.filter(v => {
+          const d = dias(v.fecha_vencimiento_licencia_op);
+          return d !== null && d <= 30;
+        });
+
+        if (!mantUrgente.length && !somatonAlerta.length && !licOpAlerta.length) return null;
+
+        return (
+          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Truck className="w-4 h-4 text-orange-500" />
+                <p className="text-sm font-semibold text-orange-700">Alertas de transporte</p>
+              </div>
+              <a href={createPageUrl('Transporte')} className="text-xs text-orange-600 underline">Ver módulo →</a>
+            </div>
+            {mantUrgente.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-orange-600 mb-1">🔧 Mantenimiento próximo o vencido</p>
+                <div className="flex flex-wrap gap-1">
+                  {mantUrgente.map(v => (
+                    <span key={v.id} className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
+                      {v.nombre} ({(v.km_proximo_mantenimiento - v.km_actual).toLocaleString()} km)
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {somatonAlerta.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-red-600 mb-1">📄 Somatón vence en ≤30 días</p>
+                <div className="flex flex-wrap gap-1">
+                  {somatonAlerta.map(v => (
+                    <span key={v.id} className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                      {v.nombre} ({dias(v.fecha_vencimiento_somaton)}d)
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {licOpAlerta.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-red-600 mb-1">📄 Licencia operativa vence en ≤30 días</p>
+                <div className="flex flex-wrap gap-1">
+                  {licOpAlerta.map(v => (
+                    <span key={v.id} className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+                      {v.nombre} ({dias(v.fecha_vencimiento_licencia_op)}d)
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Bonificaciones bloqueadas por stock insuficiente */}
       {bonsBloqueadas.length > 0 && (

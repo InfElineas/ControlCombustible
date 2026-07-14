@@ -6,7 +6,7 @@ import { useTheme } from '@/components/ui-helpers/useTheme';
 import {
   LayoutDashboard, List, Fuel, BarChart3, Menu, ChevronRight,
   LogOut, Settings, ShieldCheck, Bell, BookOpen, Shield,
-  Moon, Sun, WalletCards, Navigation, HelpCircle, ShoppingCart,
+  Moon, Sun, WalletCards, Navigation, HelpCircle, ShoppingCart, Truck,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -20,6 +20,7 @@ const navItems = [
   { name: 'Finanzas',       page: 'Finanzas',      icon: WalletCards,      roles: ['superadmin', 'economico'] },
   { name: 'Catálogos',      page: 'Catalogos',     icon: BookOpen,         roles: ['superadmin', 'operador', 'economico'] },
   { name: 'Rutas',          page: 'Rutas',         icon: Navigation,       roles: ['superadmin', 'operador', 'auditor'] },
+  { name: 'Transporte',     page: 'Transporte',    icon: Truck,            roles: ['superadmin', 'operador'] },
   { name: 'Alertas',        page: 'Alertas',       icon: Bell,             roles: ['superadmin', 'operador'] },
   { name: 'Reportes',       page: 'Reportes',      icon: BarChart3,        roles: ['superadmin', 'operador', 'auditor', 'economico', 'cajero'] },
   { name: 'Configuración',  page: 'Configuracion', icon: Settings,         roles: ['superadmin', 'operador'] },
@@ -38,6 +39,7 @@ const roleLabels = {
 const pageRoles = {
   Consumidores:  ['superadmin', 'operador'],
   Alertas:       ['superadmin', 'operador'],
+  Transporte:    ['superadmin', 'operador'],
   Catalogos:     ['superadmin', 'operador', 'economico'],
   Conductores:   ['superadmin', 'operador'],
   Configuracion: ['superadmin', 'operador'],
