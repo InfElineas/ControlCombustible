@@ -20,13 +20,14 @@ export function useUserRole() {
       }
 
       // Obtener rol; si no existe la fila se crea con 'auditor' por defecto
-      let { data: roleRow } = await supabase
+      let { data: roleRow, error: selectError } = await supabase
         .from('user_roles')
         .select('role, full_name')
         .eq('user_id', authUser.id)
         .single();
 
-      if (!roleRow) {
+      if (!roleRow && selectError?.code === 'PGRST116') {
+        // Fila no existe — intentar crear con rol por defecto
         const { data: created } = await supabase
           .from('user_roles')
           .insert({
@@ -39,6 +40,7 @@ export function useUserRole() {
           .single();
         roleRow = created;
       }
+      // Si selectError es 401/403 (RLS) no reintentar — usar 'auditor' por defecto
 
       const normalizedRole = (roleRow?.role ?? 'auditor') === 'admin' ? 'superadmin' : (roleRow?.role ?? 'auditor');
       if (active) {

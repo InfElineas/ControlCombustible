@@ -1,6 +1,7 @@
 import React from 'react';
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -247,19 +248,36 @@ export default function ConsumidorForm({ form, setForm, tipos, combustibles, edi
           <Field label="Ubicación / Dirección">
             <Input value={dt.ubicacion || ''} onChange={e => setTanq('ubicacion', e.target.value)} placeholder="Ej: Calle 23 esq. L, Vedado" />
           </Field>
-          <Field label="Tarjeta vinculada (retiros de vehículos)">
-            <Select
-              value={dt.tarjeta_vinculada_id || '_none'}
-              onValueChange={v => setTanq('tarjeta_vinculada_id', v === '_none' ? '' : v)}
-            >
-              <SelectTrigger><SelectValue placeholder="Sin tarjeta vinculada" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="_none">Sin tarjeta</SelectItem>
-                {tarjetas.filter(t => t.activa !== false).map(t => (
-                  <SelectItem key={t.id} value={t.id}>{t.alias || t.id_tarjeta}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <Field label="Tarjetas vinculadas (retiros de vehículos)">
+            <div className="space-y-1.5 mt-1">
+              {tarjetas.filter(t => t.activa !== false).map(t => {
+                const ids = (() => {
+                  const arr = dt.tarjetas_vinculadas_ids;
+                  if (Array.isArray(arr)) return arr;
+                  const s = dt.tarjeta_vinculada_id;
+                  return s ? [s] : [];
+                })();
+                const checked = ids.includes(t.id);
+                return (
+                  <div key={t.id} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`tv-${t.id}`}
+                      checked={checked}
+                      onCheckedChange={v => {
+                        const next = checked ? ids.filter(i => i !== t.id) : [...ids, t.id];
+                        setTanq('tarjetas_vinculadas_ids', next);
+                      }}
+                    />
+                    <label htmlFor={`tv-${t.id}`} className="text-sm cursor-pointer">
+                      {t.alias || t.id_tarjeta}
+                    </label>
+                  </div>
+                );
+              })}
+              {tarjetas.filter(t => t.activa !== false).length === 0 && (
+                <p className="text-xs text-slate-400">No hay tarjetas activas</p>
+              )}
+            </div>
           </Field>
           <p className="text-[11px] text-orange-500">
             La tarjeta vinculada permite al sistema calcular cuánto combustible han retirado los vehículos de este surtidor (COMPRAs con esa tarjeta).

@@ -372,8 +372,13 @@ export default function Dashboard() {
     const surtidores = consumidores.filter(c => consumidoresSurtidorIds.has(c.id) && c.activo !== false);
     if (surtidores.length === 0) return [];
     return surtidores.map(surt => {
-      const tarjetaVinculadaId = surt.datos_tanque?.tarjeta_vinculada_id;
-      const tarjeta = tarjetas.find(t => t.id === tarjetaVinculadaId);
+      const tarjetasIds = (() => {
+        const arr = surt.datos_tanque?.tarjetas_vinculadas_ids;
+        if (Array.isArray(arr) && arr.length > 0) return arr;
+        const single = surt.datos_tanque?.tarjeta_vinculada_id;
+        return single ? [single] : [];
+      })();
+      const tarjetasVinculadas = tarjetas.filter(t => tarjetasIds.includes(t.id));
       const ini = Number(surt.litros_iniciales) || 0;
       // Entradas: fuel que llegó al surtidor (COMPRA directa, DESPACHO desde isotanque, DEPOSITO externo)
       const entradasCompra = movimientos
@@ -389,9 +394,9 @@ export default function Dashboard() {
       const salidasDespacho = movimientos
         .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === surt.id)
         .reduce((s, m) => s + (m.litros || 0), 0);
-      const salidasCompra = tarjetaVinculadaId
+      const salidasCompra = tarjetasIds.length > 0
         ? movimientos
-            .filter(m => m.tipo === 'COMPRA' && m.tarjeta_id === tarjetaVinculadaId)
+            .filter(m => m.tipo === 'COMPRA' && tarjetasIds.includes(m.tarjeta_id))
             .reduce((s, m) => s + (m.litros || 0), 0)
         : null;
       const totalEntradas = ini + entradasCompra + entradasDespacho + entradasDeposito;
@@ -400,8 +405,8 @@ export default function Dashboard() {
         id: surt.id,
         nombre: surt.nombre,
         combustibleNombre: surt.combustible_nombre,
-        tarjetaAlias: tarjeta?.alias || tarjeta?.id_tarjeta || null,
-        tarjetaVinculadaId,
+        tarjetaAlias: tarjetasVinculadas.map(t => t.alias || t.id_tarjeta).join(', ') || null,
+        tarjetasIds,
         ini,
         totalEntradas,
         entradasCompra,

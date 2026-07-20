@@ -9,6 +9,7 @@ import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
 import StatusBadge from '@/components/ui-helpers/StatusBadge';
 import CombustibleBadge from '@/components/ui-helpers/CombustibleBadge';
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -869,12 +870,18 @@ const emptySurtidorForm = {
   combustible_id: '', combustible_nombre: '',
   activo: true, observaciones: '',
   litros_iniciales: 0,
-  datos_tanque: { tarjeta_vinculada_id: '', ubicacion: '' },
+  datos_tanque: { tarjetas_vinculadas_ids: [], ubicacion: '' },
 };
 
 function SurtidorRow({ c, combustibles, tarjetas, canWrite, canDelete, onEdit, onToggle, onDelete }) {
   const comb    = combustibles.find(cb => cb.id === c.combustible_id);
-  const tarjeta = tarjetas.find(t => t.id === c.datos_tanque?.tarjeta_vinculada_id);
+  const tarjetasIds = (() => {
+    const arr = c.datos_tanque?.tarjetas_vinculadas_ids;
+    if (Array.isArray(arr) && arr.length > 0) return arr;
+    const s = c.datos_tanque?.tarjeta_vinculada_id;
+    return s ? [s] : [];
+  })();
+  const tarjetasVinc = tarjetas.filter(t => tarjetasIds.includes(t.id));
   return (
     <Card className={`border-0 shadow-sm ${!c.activo ? 'opacity-60' : ''}`}>
       <CardContent className="p-3 flex items-center gap-3">
@@ -889,11 +896,11 @@ function SurtidorRow({ c, combustibles, tarjetas, canWrite, canDelete, onEdit, o
           </div>
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             {comb && <CombustibleBadge nombre={comb.nombre} />}
-            {tarjeta && (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                <CreditCard className="w-2.5 h-2.5 mr-1" />{tarjeta.alias || tarjeta.id_tarjeta}
+            {tarjetasVinc.map(t => (
+              <Badge key={t.id} variant="outline" className="text-[10px] px-1.5 py-0">
+                <CreditCard className="w-2.5 h-2.5 mr-1" />{t.alias || t.id_tarjeta}
               </Badge>
-            )}
+            ))}
             {c.datos_tanque?.ubicacion && (
               <span className="text-[11px] text-slate-400">{c.datos_tanque.ubicacion}</span>
             )}
@@ -954,7 +961,12 @@ function TabSurtidores({ canWrite, canDelete }) {
       observaciones: c.observaciones || '',
       litros_iniciales: Number.isFinite(Number(c.litros_iniciales)) ? Number(c.litros_iniciales) : 0,
       datos_tanque: {
-        tarjeta_vinculada_id: c.datos_tanque?.tarjeta_vinculada_id || '',
+        tarjetas_vinculadas_ids: (() => {
+          const arr = c.datos_tanque?.tarjetas_vinculadas_ids;
+          if (Array.isArray(arr) && arr.length > 0) return arr;
+          const s = c.datos_tanque?.tarjeta_vinculada_id;
+          return s ? [s] : [];
+        })(),
         ubicacion: c.datos_tanque?.ubicacion || '',
       },
     });
@@ -974,7 +986,7 @@ function TabSurtidores({ canWrite, canDelete }) {
       observaciones: form.observaciones || '',
       litros_iniciales: Number(form.litros_iniciales) || 0,
       datos_tanque: {
-        tarjeta_vinculada_id: form.datos_tanque.tarjeta_vinculada_id || null,
+        tarjetas_vinculadas_ids: form.datos_tanque.tarjetas_vinculadas_ids || [],
         ubicacion: form.datos_tanque.ubicacion || null,
       },
     };
@@ -1030,17 +1042,29 @@ function TabSurtidores({ canWrite, canDelete }) {
                 </Select>
               </div>
               <div className="col-span-2">
-                <Label className="text-xs text-slate-500">Tarjeta vinculada (Cupet)</Label>
-                <Select
-                  value={form.datos_tanque.tarjeta_vinculada_id || 'none'}
-                  onValueChange={v => setForm(f => ({ ...f, datos_tanque: { ...f.datos_tanque, tarjeta_vinculada_id: v === 'none' ? '' : v } }))}
-                >
-                  <SelectTrigger className="mt-1"><SelectValue placeholder="Sin tarjeta" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sin tarjeta vinculada</SelectItem>
-                    {tarjetas.map(t => <SelectItem key={t.id} value={t.id}>{t.alias || t.id_tarjeta} ({t.moneda})</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs text-slate-500">Tarjetas vinculadas (Cupet)</Label>
+                <div className="mt-1 space-y-1.5 border rounded-md p-2">
+                  {tarjetas.length === 0 && <p className="text-xs text-slate-400">No hay tarjetas</p>}
+                  {tarjetas.map(t => {
+                    const ids = form.datos_tanque.tarjetas_vinculadas_ids || [];
+                    const checked = ids.includes(t.id);
+                    return (
+                      <div key={t.id} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`st-${t.id}`}
+                          checked={checked}
+                          onCheckedChange={() => {
+                            const next = checked ? ids.filter(i => i !== t.id) : [...ids, t.id];
+                            setForm(f => ({ ...f, datos_tanque: { ...f.datos_tanque, tarjetas_vinculadas_ids: next } }));
+                          }}
+                        />
+                        <label htmlFor={`st-${t.id}`} className="text-sm cursor-pointer">
+                          {t.alias || t.id_tarjeta} <span className="text-slate-400 text-xs">({t.moneda})</span>
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
               <div className="col-span-2">
                 <Label className="text-xs text-slate-500">Ubicación / Dirección</Label>

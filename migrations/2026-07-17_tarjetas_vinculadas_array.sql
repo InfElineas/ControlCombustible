@@ -1,10 +1,19 @@
--- Vista: stock actual por tanque calculado en PostgreSQL
--- Reemplaza el cálculo JS de calcStockTanque / stockDepositos en el frontend.
--- Reglas:
---   entradas = COMPRA + DEPOSITO + DESPACHO al tanque (excluyendo DESPACHOs de bonificación)
---   salidas  = DESPACHO desde el tanque + COMPRA via tarjeta_vinculada (surtidores)
---   filtro combustible_id: null en tanque o movimiento = cualquier combustible
+-- Migración: tarjeta_vinculada_id (string) → tarjetas_vinculadas_ids (array JSON)
+-- Los surtidores con tarjeta_vinculada_id existente se convierten al nuevo formato.
+-- El campo viejo se mantiene para compatibilidad con la vista (OR en el WHERE).
 
+UPDATE consumidor
+SET datos_tanque = jsonb_set(
+  datos_tanque,
+  '{tarjetas_vinculadas_ids}',
+  jsonb_build_array(datos_tanque->>'tarjeta_vinculada_id')
+)
+WHERE categoria = 'surtidor'
+  AND datos_tanque->>'tarjeta_vinculada_id' IS NOT NULL
+  AND datos_tanque->>'tarjeta_vinculada_id' != ''
+  AND (datos_tanque->'tarjetas_vinculadas_ids') IS NULL;
+
+-- Re-crear la vista con soporte para array + campo legacy
 DROP VIEW IF EXISTS v_stock_tanques;
 
 CREATE VIEW v_stock_tanques AS
@@ -60,17 +69,22 @@ LEFT JOIN LATERAL (
 
     UNION ALL
 
-    -- COMPRAs via tarjeta vinculada (solo surtidores con tarjeta configurada)
+    -- COMPRAs via tarjetas vinculadas (soporta array nuevo y campo legacy)
     SELECT m.litros
     FROM movimiento m
     WHERE c.categoria = 'surtidor'
-      AND (c.datos_tanque ->> 'tarjeta_vinculada_id') IS NOT NULL
       AND m.tipo = 'COMPRA'
       AND (
-        m.tarjeta_id::text = ANY(
-          ARRAY(SELECT jsonb_array_elements_text(c.datos_tanque->'tarjetas_vinculadas_ids'))
+        (
+          jsonb_typeof(c.datos_tanque->'tarjetas_vinculadas_ids') = 'array'
+          AND m.tarjeta_id::text = ANY(
+            ARRAY(SELECT jsonb_array_elements_text(c.datos_tanque->'tarjetas_vinculadas_ids'))
+          )
         )
-        OR m.tarjeta_id::text = (c.datos_tanque ->> 'tarjeta_vinculada_id')
+        OR (
+          (c.datos_tanque->'tarjetas_vinculadas_ids') IS NULL
+          AND m.tarjeta_id::text = (c.datos_tanque ->> 'tarjeta_vinculada_id')
+        )
       )
       AND (
         c.combustible_id IS NULL

@@ -87,7 +87,12 @@ function calcStockTanque(tanque, combustibleNombre, combustibleId, movimientos, 
 
   let stockReal;
   if (esSurtidor) {
-    const tarjetaVinculadaId = tanque.datos_tanque?.tarjeta_vinculada_id;
+    const tarjetasIds = (() => {
+      const arr = tanque.datos_tanque?.tarjetas_vinculadas_ids;
+      if (Array.isArray(arr) && arr.length > 0) return arr;
+      const single = tanque.datos_tanque?.tarjeta_vinculada_id;
+      return single ? [single] : [];
+    })();
     const entradas = movimientos
       .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DESPACHO' || m.tipo === 'DEPOSITO') && m.consumidor_id === tanque.id && !ES_BON(m))
       .reduce((s, m) => s + (m.litros || 0), 0);
@@ -95,8 +100,8 @@ function calcStockTanque(tanque, combustibleNombre, combustibleId, movimientos, 
       .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === tanque.id
         && (!m.combustible_id || m.combustible_id === combustibleId))
       .reduce((s, m) => s + (m.litros || 0), 0);
-    const salidasCompra = tarjetaVinculadaId
-      ? movimientos.filter(m => m.tipo === 'COMPRA' && m.tarjeta_id === tarjetaVinculadaId
+    const salidasCompra = tarjetasIds.length > 0
+      ? movimientos.filter(m => m.tipo === 'COMPRA' && tarjetasIds.includes(m.tarjeta_id)
           && (!m.combustible_id || m.combustible_id === combustibleId))
           .reduce((s, m) => s + (m.litros || 0), 0)
       : 0;
@@ -136,9 +141,8 @@ const emptyForm = {
   litros: '', referencia: '', fecha_venta: new Date().toISOString().slice(0, 10),
 };
 
-function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [] }) {
+function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, canVerPrecios }) {
   const qc = useQueryClient();
-  const { user, canVerPrecios } = useUserRole();
   const [form, setForm] = useState(emptyForm);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -676,8 +680,7 @@ function PanelBeneficiarios({ onClose }) {
 
 // ── Fila de bonificación ──────────────────────────────────────────────────────
 
-function VentaRow({ v, canOperar, canDelete, canEditar, onCambiarEstado, onDelete, onEdit, loading, stockInsuficiente }) {
-  const { canVerPrecios } = useUserRole();
+function VentaRow({ v, canOperar, canDelete, canEditar, onCambiarEstado, onDelete, onEdit, loading, stockInsuficiente, canVerPrecios }) {
   const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
   const [editEstado, setEditEstado] = useState(false);
   const isCancelado = v.estado === 'CANCELADO' || v.estado === 'ANULADO';
@@ -1388,6 +1391,7 @@ export default function Ventas() {
                   canOperar={canManageFinanzas || isCajero}
                   canDelete={isSuperAdmin}
                   canEditar={canEditar}
+                  canVerPrecios={canVerPrecios}
                   stockInsuficiente={stockTanques.some(t =>
                     t.tanqueId === v.tanque_origen_id &&
                     t.combustibleId === v.combustible_id &&
@@ -1435,7 +1439,7 @@ export default function Ventas() {
               Registrar bonificación de combustible
             </DialogTitle>
           </DialogHeader>
-          <FormBonificacion onClose={() => setShowFormVenta(false)} ventasPendientes={ventasPendientes} ventasRaw={ventasRaw} />
+          <FormBonificacion onClose={() => setShowFormVenta(false)} ventasPendientes={ventasPendientes} ventasRaw={ventasRaw} user={user} canVerPrecios={canVerPrecios} />
         </DialogContent>
       </Dialog>
 
