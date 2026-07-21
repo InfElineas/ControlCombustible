@@ -19,28 +19,12 @@ export function useUserRole() {
         return;
       }
 
-      // Obtener rol; si no existe la fila se crea con 'auditor' por defecto
-      let { data: roleRow, error: selectError } = await supabase
-        .from('user_roles')
-        .select('role, full_name')
-        .eq('user_id', authUser.id)
-        .single();
-
-      if (!roleRow && selectError?.code === 'PGRST116') {
-        // Fila no existe — intentar crear con rol por defecto
-        const { data: created } = await supabase
-          .from('user_roles')
-          .insert({
-            user_id:   authUser.id,
-            email:     authUser.email,
-            full_name: authUser.user_metadata?.full_name ?? authUser.email,
-            role:      'auditor',
-          })
-          .select('role, full_name')
-          .single();
-        roleRow = created;
-      }
-      // Si selectError es 401/403 (RLS) no reintentar — usar 'auditor' por defecto
+      // RPC con SECURITY DEFINER: bypasea RLS, obtiene o crea la fila del usuario.
+      // Evita la dependencia circular donde leer el rol requiere conocer el rol.
+      const { data: roleRow } = await supabase.rpc('get_or_create_user_role', {
+        p_email:     authUser.email,
+        p_full_name: authUser.user_metadata?.full_name ?? authUser.email,
+      });
 
       const normalizedRole = (roleRow?.role ?? 'auditor') === 'admin' ? 'superadmin' : (roleRow?.role ?? 'auditor');
       if (active) {

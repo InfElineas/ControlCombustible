@@ -8,11 +8,10 @@ async function getCachedUser() {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { _cached = null; return null; }
-    const { data: row } = await supabase
-      .from('user_roles')
-      .select('full_name')
-      .eq('user_id', user.id)
-      .single();
+    const { data: row } = await supabase.rpc('get_or_create_user_role', {
+      p_email:     user.email,
+      p_full_name: user.user_metadata?.full_name ?? user.email,
+    });
     _cached = {
       user_id:    user.id,
       user_email: user.email,

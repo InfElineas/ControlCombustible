@@ -103,11 +103,10 @@ export const base44 = {
     async me() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw Object.assign(new Error('Not authenticated'), { status: 401 });
-      const { data: roleRow } = await supabase
-        .from('user_roles')
-        .select('role, full_name')
-        .eq('user_id', user.id)
-        .single();
+      const { data: roleRow } = await supabase.rpc('get_or_create_user_role', {
+        p_email:     user.email,
+        p_full_name: user.user_metadata?.full_name ?? user.email,
+      });
       return {
         id:        user.id,
         email:     user.email,

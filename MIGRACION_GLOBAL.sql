@@ -1295,5 +1295,43 @@ LEFT JOIN LATERAL (
 WHERE c.activo IS NOT FALSE AND c.categoria IN ('deposito','surtidor');
 
 -- ─────────────────────────────────────────────────────────────
+--  2026-07-21: RPC get_or_create_user_role (SECURITY DEFINER)
+-- ─────────────────────────────────────────────────────────────
+-- Ver migrations/2026-07-21_get_or_create_user_role_rpc.sql
+-- Elimina dependencia circular RLS en lectura de roles.
+
+CREATE OR REPLACE FUNCTION get_or_create_user_role(p_email text, p_full_name text)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_user_id uuid := auth.uid();
+  v_role    text;
+  v_name    text;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Not authenticated';
+  END IF;
+  SELECT role, full_name INTO v_role, v_name
+  FROM user_roles WHERE user_id = v_user_id;
+  IF v_role IS NULL THEN
+    INSERT INTO user_roles (user_id, email, full_name, role)
+    VALUES (v_user_id, p_email, p_full_name, 'auditor')
+    ON CONFLICT (user_id) DO NOTHING;
+    SELECT role, full_name INTO v_role, v_name
+    FROM user_roles WHERE user_id = v_user_id;
+  END IF;
+  RETURN json_build_object(
+    'role',      COALESCE(v_role, 'auditor'),
+    'full_name', COALESCE(v_name, p_full_name)
+  );
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_or_create_user_role(text, text) TO authenticated;
+
+-- ─────────────────────────────────────────────────────────────
 --  FIN DE MIGRACIÓN
 -- ─────────────────────────────────────────────────────────────
