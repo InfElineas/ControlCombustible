@@ -375,6 +375,10 @@ ALTER TABLE user_roles DROP CONSTRAINT IF EXISTS user_roles_role_check;
 ALTER TABLE user_roles ADD CONSTRAINT user_roles_role_check
   CHECK (role IN ('superadmin', 'operador', 'auditor', 'economico', 'cajero'));
 ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS created_date TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE user_roles ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE user_roles DROP CONSTRAINT IF EXISTS user_roles_status_check;
+ALTER TABLE user_roles ADD CONSTRAINT user_roles_status_check
+  CHECK (status IN ('pending', 'active', 'disabled'));
 
 CREATE INDEX IF NOT EXISTS idx_user_roles_user_id ON user_roles(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_roles_role    ON user_roles(role);
@@ -1310,22 +1314,30 @@ DECLARE
   v_user_id uuid := auth.uid();
   v_role    text;
   v_name    text;
+  v_status  text;
 BEGIN
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'Not authenticated';
   END IF;
-  SELECT role, full_name INTO v_role, v_name
-  FROM user_roles WHERE user_id = v_user_id;
+
+  SELECT role, full_name, status INTO v_role, v_name, v_status
+  FROM user_roles
+  WHERE user_id = v_user_id;
+
   IF v_role IS NULL THEN
-    INSERT INTO user_roles (user_id, email, full_name, role)
-    VALUES (v_user_id, p_email, p_full_name, 'auditor')
+    INSERT INTO user_roles (user_id, email, full_name, role, status)
+    VALUES (v_user_id, p_email, p_full_name, 'auditor', 'pending')
     ON CONFLICT (user_id) DO NOTHING;
-    SELECT role, full_name INTO v_role, v_name
-    FROM user_roles WHERE user_id = v_user_id;
+
+    SELECT role, full_name, status INTO v_role, v_name, v_status
+    FROM user_roles
+    WHERE user_id = v_user_id;
   END IF;
+
   RETURN json_build_object(
     'role',      COALESCE(v_role, 'auditor'),
-    'full_name', COALESCE(v_name, p_full_name)
+    'full_name', COALESCE(v_name, p_full_name),
+    'status',    COALESCE(v_status, 'pending')
   );
 END;
 $$;

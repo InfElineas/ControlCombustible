@@ -13,7 +13,8 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
   Users, Shield, Activity, ShieldCheck, ShieldAlert,
-  Pencil, Check, X, Search, ChevronLeft, ChevronRight, ChevronDown
+  Pencil, Check, X, Search, ChevronLeft, ChevronRight, ChevronDown,
+  Clock, UserX, UserCheck,
 } from 'lucide-react';
 
 // ── Constantes ───────────────────────────────────────────────────────────────
@@ -83,6 +84,19 @@ export default function AdminPanel() {
   const { isSuperAdmin, loading } = useUserRole();
   const [tab, setTab] = useState('usuarios');
 
+  const { data: pendingCount = 0 } = useQuery({
+    queryKey: ['pending_users_count'],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from('user_roles')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending');
+      return count ?? 0;
+    },
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
   if (loading) {
     return (
       <div className="py-20 text-center">
@@ -115,9 +129,9 @@ export default function AdminPanel() {
 
       <div className="flex gap-0.5 flex-wrap border-b border-slate-200 dark:border-slate-700">
         {[
-          { value: 'usuarios',  label: 'Usuarios',                icon: <Users      className="w-3.5 h-3.5" /> },
-          { value: 'permisos',  label: 'Roles y Permisos',        icon: <ShieldCheck className="w-3.5 h-3.5" /> },
-          { value: 'auditoria', label: 'Auditoría', icon: <Activity className="w-3.5 h-3.5" /> },
+          { value: 'usuarios',  label: 'Usuarios',        icon: <Users       className="w-3.5 h-3.5" /> },
+          { value: 'permisos',  label: 'Roles y Permisos', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+          { value: 'auditoria', label: 'Auditoría',        icon: <Activity    className="w-3.5 h-3.5" /> },
         ].map(({ value: v, label, icon }) => (
           <button
             key={v}
@@ -129,6 +143,11 @@ export default function AdminPanel() {
             }`}
           >
             {icon}{label}
+            {v === 'usuarios' && pendingCount > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center bg-amber-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 px-1">
+                {pendingCount}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -145,16 +164,18 @@ export default function AdminPanel() {
 // ── Tab: Usuarios ────────────────────────────────────────────────────────────
 
 function UsuariosTab() {
-  const queryClient = useQueryClient();
-  const [editing, setEditing] = useState({});
-  const [search, setSearch] = useState('');
+  const qc = useQueryClient();
+  const [editing, setEditing]         = useState({});
+  const [approving, setApproving]     = useState({});
+  const [confirmDisable, setConfirmDisable] = useState(null);
+  const [search, setSearch]           = useState('');
 
   const { data: users = [], isLoading, error: usersError } = useQuery({
     queryKey: ['admin_user_roles'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('user_roles')
-        .select('user_id, email, full_name, role, created_date')
+        .select('user_id, email, full_name, role, status, created_date')
         .order('created_date', { ascending: false });
       if (error) throw error;
       return data ?? [];
@@ -164,26 +185,49 @@ function UsuariosTab() {
   });
 
   const updateMut = useMutation({
-    mutationFn: async ({ userId, role }) => {
-      const { error } = await supabase.from('user_roles').update({ role }).eq('user_id', userId);
+    mutationFn: async ({ userId, role, newStatus }) => {
+      const upd = { role };
+      if (newStatus) upd.status = newStatus;
+      const { error } = await supabase.from('user_roles').update(upd).eq('user_id', userId);
       if (error) throw error;
     },
-    onSuccess: (_, { userId, role }) => {
-      queryClient.invalidateQueries({ queryKey: ['admin_user_roles'] });
+    onSuccess: (_, { userId, role, newStatus }) => {
+      qc.invalidateQueries({ queryKey: ['admin_user_roles'] });
+      qc.invalidateQueries({ queryKey: ['pending_users_count'] });
       setEditing(p => { const n = { ...p }; delete n[userId]; return n; });
-      toast.success('Rol actualizado correctamente');
+      setApproving(p => { const n = { ...p }; delete n[userId]; return n; });
+      toast.success(newStatus === 'active' ? 'Usuario aprobado' : 'Rol actualizado');
       const u = users.find(x => x.user_id === userId);
-      logAudit({ action: 'ROLE_CHANGE', entityType: 'UserRole', entityId: userId, entityLabel: u?.email || userId, metadata: { newRole: role, prevRole: u?.role } });
+      logAudit({ action: 'ROLE_CHANGE', entityType: 'UserRole', entityId: userId, entityLabel: u?.email, metadata: { newRole: role, prevRole: u?.role, newStatus } });
     },
-    onError: () => toast.error('Error al actualizar el rol'),
+    onError: () => toast.error('Error al actualizar'),
   });
 
-  const filtered = users.filter(u =>
-    !search || `${u.full_name} ${u.email}`.toLowerCase().includes(search.toLowerCase())
-  );
+  const setStatusMut = useMutation({
+    mutationFn: async ({ userId, status }) => {
+      const { error } = await supabase.from('user_roles').update({ status }).eq('user_id', userId);
+      if (error) throw error;
+    },
+    onSuccess: (_, { userId, status }) => {
+      qc.invalidateQueries({ queryKey: ['admin_user_roles'] });
+      qc.invalidateQueries({ queryKey: ['pending_users_count'] });
+      setConfirmDisable(null);
+      toast.success(status === 'disabled' ? 'Usuario desactivado' : 'Usuario reactivado');
+      const u = users.find(x => x.user_id === userId);
+      logAudit({ action: 'ROLE_CHANGE', entityType: 'UserRole', entityId: userId, entityLabel: u?.email, metadata: { newStatus: status } });
+    },
+    onError: () => toast.error('Error al cambiar estado'),
+  });
 
-  const countByRole = ROLES.reduce((acc, r) => {
-    acc[r] = users.filter(u => u.role === r).length;
+  const STATUS_ORDER = { pending: 0, active: 1, disabled: 2 };
+
+  const filtered = [...users]
+    .sort((a, b) => (STATUS_ORDER[a.status ?? 'active'] ?? 1) - (STATUS_ORDER[b.status ?? 'active'] ?? 1))
+    .filter(u => !search || `${u.full_name || ''} ${u.email || ''}`.toLowerCase().includes(search.toLowerCase()));
+
+  const pendingCount = users.filter(u => u.status === 'pending').length;
+  const countByRole  = ROLES.reduce((acc, r) => {
+    acc[r] = users.filter(u => u.role === r && u.status !== 'disabled').length;
     return acc;
   }, {});
 
@@ -209,13 +253,23 @@ function UsuariosTab() {
         })}
       </div>
 
-      {usersError && (
-        <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg">
-          <p className="text-xs text-red-600">Error cargando usuarios. Reintente o contacte al administrador.</p>
+      {/* Banner pendientes */}
+      {pendingCount > 0 && (
+        <div className="flex items-center gap-2.5 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl dark:bg-amber-950/20 dark:border-amber-800">
+          <Clock className="w-4 h-4 text-amber-500 shrink-0" />
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            <span className="font-semibold">{pendingCount} usuario{pendingCount > 1 ? 's' : ''}</span> esperando aprobación
+          </p>
         </div>
       )}
 
-      {/* Lista de usuarios */}
+      {usersError && (
+        <div className="px-4 py-3 bg-red-50 border border-red-200 rounded-lg">
+          <p className="text-xs text-red-600">Error cargando usuarios. Verifique que la migración 2026-07-22 haya sido aplicada.</p>
+        </div>
+      )}
+
+      {/* Lista */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-2 px-4 pt-3 flex flex-row items-center gap-3">
           <CardTitle className="text-sm font-semibold text-slate-600 flex-1">
@@ -237,38 +291,93 @@ function UsuariosTab() {
           ) : filtered.length === 0 ? (
             <div className="p-8 text-center text-sm text-slate-400">Sin resultados</div>
           ) : (
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {filtered.map(u => {
-                const m = ROLE_META[u.role] ?? { label: u.role, color: 'bg-slate-100 text-slate-600' };
-                const isEditing = u.user_id in editing;
-                const newRole = editing[u.user_id];
+                const isPending   = u.status === 'pending';
+                const isDisabled  = u.status === 'disabled';
+                const isEditing   = !isPending && !isDisabled && u.user_id in editing;
+                const isConfirming = confirmDisable === u.user_id;
+                const m       = ROLE_META[u.role] ?? { label: u.role, color: 'bg-slate-100 text-slate-600' };
                 const initial = (u.full_name || u.email || '?')[0].toUpperCase();
+                const appRole = approving[u.user_id] ?? 'auditor';
 
                 return (
-                  <div key={u.user_id} className="flex items-center gap-3 px-4 py-3">
+                  <div
+                    key={u.user_id}
+                    className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+                      isPending  ? 'bg-amber-50/50 dark:bg-amber-950/10' :
+                      isDisabled ? 'opacity-50' : ''
+                    }`}
+                  >
                     {/* Avatar */}
                     <div className="w-9 h-9 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center shrink-0">
                       <span className="text-sm font-bold text-slate-600">{initial}</span>
                     </div>
+
                     {/* Info */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 truncate leading-tight">
+                      <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate leading-tight">
                         {u.full_name || u.email}
                       </p>
                       {u.full_name && (
                         <p className="text-[11px] text-slate-400 truncate">{u.email}</p>
                       )}
                     </div>
-                    {/* Role control */}
-                    {isEditing ? (
+
+                    {/* Controls */}
+                    {isPending ? (
+                      // ── Pending: select role + approve + reject ──
+                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                        <Badge className="bg-amber-100 text-amber-700 border border-amber-200 text-[10px]">
+                          <Clock className="w-2.5 h-2.5 mr-1" />Pendiente
+                        </Badge>
+                        <Select value={appRole} onValueChange={v => setApproving(p => ({ ...p, [u.user_id]: v }))}>
+                          <SelectTrigger className="h-7 text-xs w-28"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {ROLES.map(r => (
+                              <SelectItem key={r} value={r}>{ROLE_META[r]?.label ?? r}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          size="icon" className="h-7 w-7 bg-emerald-600 hover:bg-emerald-700"
+                          onClick={() => updateMut.mutate({ userId: u.user_id, role: appRole, newStatus: 'active' })}
+                          disabled={updateMut.isPending}
+                          title="Aprobar acceso"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          size="icon" variant="ghost" className="h-7 w-7 text-red-400 hover:text-red-600 hover:bg-red-50"
+                          onClick={() => setStatusMut.mutate({ userId: u.user_id, status: 'disabled' })}
+                          disabled={setStatusMut.isPending}
+                          title="Rechazar solicitud"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    ) : isDisabled ? (
+                      // ── Disabled: show badge + reactivate ──
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge variant="outline" className="text-[10px] border-slate-200 text-slate-400">
+                          Desactivado
+                        </Badge>
+                        <Button
+                          size="sm" variant="outline" className="h-7 text-xs"
+                          onClick={() => setStatusMut.mutate({ userId: u.user_id, status: 'active' })}
+                          disabled={setStatusMut.isPending}
+                        >
+                          <UserCheck className="w-3 h-3 mr-1" />Reactivar
+                        </Button>
+                      </div>
+                    ) : isEditing ? (
+                      // ── Active, editing role ──
                       <div className="flex items-center gap-1.5 shrink-0">
                         <Select
-                          value={newRole}
+                          value={editing[u.user_id]}
                           onValueChange={v => setEditing(p => ({ ...p, [u.user_id]: v }))}
                         >
-                          <SelectTrigger className="h-7 text-xs w-32">
-                            <SelectValue />
-                          </SelectTrigger>
+                          <SelectTrigger className="h-7 text-xs w-32"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {ROLES.map(r => (
                               <SelectItem key={r} value={r}>{ROLE_META[r]?.label ?? r}</SelectItem>
@@ -277,8 +386,8 @@ function UsuariosTab() {
                         </Select>
                         <Button
                           size="icon" className="h-7 w-7 bg-sky-600 hover:bg-sky-700"
-                          onClick={() => updateMut.mutate({ userId: u.user_id, role: newRole })}
-                          disabled={!newRole || updateMut.isPending}
+                          onClick={() => updateMut.mutate({ userId: u.user_id, role: editing[u.user_id] })}
+                          disabled={!editing[u.user_id] || updateMut.isPending}
                         >
                           <Check className="w-3.5 h-3.5" />
                         </Button>
@@ -289,8 +398,27 @@ function UsuariosTab() {
                           <X className="w-3.5 h-3.5" />
                         </Button>
                       </div>
+                    ) : isConfirming ? (
+                      // ── Active, confirming disable ──
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="text-xs text-red-600 dark:text-red-400">¿Desactivar?</span>
+                        <Button
+                          size="sm" variant="destructive" className="h-7 text-xs px-2"
+                          onClick={() => setStatusMut.mutate({ userId: u.user_id, status: 'disabled' })}
+                          disabled={setStatusMut.isPending}
+                        >
+                          Sí
+                        </Button>
+                        <Button
+                          size="sm" variant="ghost" className="h-7 text-xs px-2"
+                          onClick={() => setConfirmDisable(null)}
+                        >
+                          No
+                        </Button>
+                      </div>
                     ) : (
-                      <div className="flex items-center gap-2 shrink-0">
+                      // ── Active, normal ──
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <Badge variant="outline" className={`text-[10px] ${m.color}`}>{m.label}</Badge>
                         <Button
                           size="icon" variant="ghost" className="h-7 w-7 text-slate-300 hover:text-slate-600"
@@ -298,6 +426,13 @@ function UsuariosTab() {
                           title="Cambiar rol"
                         >
                           <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          size="icon" variant="ghost" className="h-7 w-7 text-slate-300 hover:text-red-500"
+                          onClick={() => setConfirmDisable(u.user_id)}
+                          title="Desactivar usuario"
+                        >
+                          <UserX className="w-3 h-3" />
                         </Button>
                       </div>
                     )}

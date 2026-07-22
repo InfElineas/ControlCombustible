@@ -24,12 +24,14 @@ export function useUserRole() {
       });
 
       const normalizedRole = (roleRow?.role ?? 'auditor') === 'admin' ? 'superadmin' : (roleRow?.role ?? 'auditor');
+      const status = roleRow?.status ?? 'active';
       if (active) {
         setUser({
           id:        authUser.id,
           email:     authUser.email,
           full_name: roleRow?.full_name ?? authUser.user_metadata?.full_name ?? authUser.email,
           role:      normalizedRole,
+          status,
         });
         setRole(normalizedRole);
         setLoading(false);
@@ -67,6 +69,8 @@ export function useUserRole() {
     loading,
     isAdmin,
     isSuperAdmin,
+    isPending:   user?.status === 'pending',
+    isDisabled:  user?.status === 'disabled',
     isOperador,
     isAuditor,
     isEconomico,

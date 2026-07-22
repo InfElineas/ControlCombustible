@@ -7,6 +7,7 @@ import {
   LayoutDashboard, List, Fuel, BarChart3, Menu, ChevronRight,
   LogOut, Settings, ShieldCheck, Bell, BookOpen, Shield,
   Moon, Sun, WalletCards, Navigation, HelpCircle, ShoppingCart, Truck,
+  Clock, ShieldAlert,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -154,6 +155,49 @@ export default function Layout() {
         <div className="animate-pulse flex flex-col items-center gap-3">
           <Fuel className="w-8 h-8 text-sky-500" />
           <span className="text-sm text-slate-400">Cargando...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (user?.status === 'pending') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
+        <div className="max-w-sm w-full text-center space-y-4">
+          <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mx-auto">
+            <Clock className="w-7 h-7 text-amber-500" />
+          </div>
+          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Cuenta pendiente de aprobación</h2>
+          <p className="text-sm text-slate-500">
+            Tu cuenta <span className="font-medium text-slate-700 dark:text-slate-300">{user.email}</span> está esperando
+            revisión por un administrador. Recibirás acceso una vez aprobada.
+          </p>
+          <Button
+            variant="outline" size="sm"
+            onClick={() => supabase.auth.signOut().then(() => navigate('/Login', { replace: true }))}
+          >
+            <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (user?.status === 'disabled') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4">
+        <div className="max-w-sm w-full text-center space-y-4">
+          <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto">
+            <ShieldAlert className="w-7 h-7 text-red-500" />
+          </div>
+          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Cuenta desactivada</h2>
+          <p className="text-sm text-slate-500">Tu cuenta ha sido desactivada. Contacta al administrador del sistema para más información.</p>
+          <Button
+            variant="outline" size="sm"
+            onClick={() => supabase.auth.signOut().then(() => navigate('/Login', { replace: true }))}
+          >
+            <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
+          </Button>
         </div>
       </div>
     );
