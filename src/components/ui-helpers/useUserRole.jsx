@@ -9,11 +9,8 @@ export function useUserRole() {
   useEffect(() => {
     let active = true;
 
-    async function loadUser(sessionArg) {
-      // getSession() lee localStorage sin adquirir Web Lock — evita contención
-      // cuando múltiples componentes montan useUserRole() simultáneamente.
-      const authUser = sessionArg?.user
-        ?? (await supabase.auth.getSession()).data.session?.user;
+    async function loadUser(session) {
+      const authUser = session?.user;
       if (!authUser) {
         if (active) setLoading(false);
         return;
@@ -39,14 +36,15 @@ export function useUserRole() {
       }
     }
 
-    loadUser();
-
+    // onAuthStateChange dispara INITIAL_SESSION en el próximo tick con el estado
+    // real de la sesión — más confiable que llamar getSession() en el mount, que
+    // puede devolver null durante la inicialización y causar un boot prematuro.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
       if (event === 'SIGNED_OUT') {
-        if (active) { setUser(null); setRole(null); setLoading(false); }
+        setUser(null); setRole(null); setLoading(false);
         return;
       }
-      // Pasar la sesión del evento para evitar una nueva llamada getSession()
       loadUser(session);
     });
 
