@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react'; // v2
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { supabase } from '@/api/supabaseClient';
@@ -1237,7 +1237,7 @@ export default function Ventas() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" translate="no">
       {/* Encabezado */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">

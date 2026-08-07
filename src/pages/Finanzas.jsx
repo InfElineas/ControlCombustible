@@ -844,11 +844,11 @@ function ResumenPrecios() {
 // ── Precios de despacho por tipo de consumidor ────────────────────────────────
 
 const MONEDAS = ['CUP', 'USD', 'MLC'];
-const emptyForm = { tipo_consumidor_id: '', combustible_id: '', precio_por_litro: '', moneda: 'CUP', fecha_desde: '' };
+const emptyForm = { tipo_consumidor_id: '', combustible_id: '', precio_por_litro: '', moneda: 'CUP', fecha_desde: '', fecha_hasta: '' };
 
 function PreciosDespacho() {
   const qc = useQueryClient();
-  const { isSuperAdmin } = useUserRole();
+  const { canManageFinanzas } = useUserRole();
   const today = new Date().toISOString().slice(0, 10);
 
   const { data: precios     = [], isLoading } = useQuery({ queryKey: ['precios-despacho'], queryFn: () => base44.entities.PrecioDespachoTipo.list('-fecha_desde', 200) });
@@ -885,6 +885,7 @@ function PreciosDespacho() {
       precio_por_litro:   String(p.precio_por_litro),
       moneda:             p.moneda,
       fecha_desde:        p.fecha_desde,
+      fecha_hasta:        p.fecha_hasta || '',
     });
     setEditId(p.id);
     setShowForm(true);
@@ -901,6 +902,7 @@ function PreciosDespacho() {
       precio_por_litro:   +form.precio_por_litro,
       moneda:             form.moneda,
       fecha_desde:        form.fecha_desde,
+      fecha_hasta:        form.fecha_hasta || null,
     };
     if (editId) editarMut.mutate({ id: editId, d: payload });
     else crearMut.mutate(payload);
@@ -926,7 +928,7 @@ function PreciosDespacho() {
           <Tag className="w-4 h-4 text-violet-500" />
           <CardTitle className="text-sm font-semibold text-slate-700">Precios de despacho por tipo</CardTitle>
         </div>
-        {isSuperAdmin && (
+        {canManageFinanzas && (
           <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => { setForm(emptyForm); setEditId(null); setShowForm(v => !v); }}>
             <Plus className="w-3.5 h-3.5" /> Nuevo
           </Button>
@@ -985,10 +987,16 @@ function PreciosDespacho() {
                 </Select>
               </div>
 
-              <div className="space-y-1 col-span-2">
+              <div className="space-y-1">
                 <Label className="text-xs text-slate-500">Vigente desde *</Label>
                 <Input type="date" className="h-8 text-xs" value={form.fecha_desde}
                   onChange={e => setForm(f => ({ ...f, fecha_desde: e.target.value }))} />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-500">Vigente hasta <span className="text-slate-400">(opcional)</span></Label>
+                <Input type="date" className="h-8 text-xs" value={form.fecha_hasta}
+                  onChange={e => setForm(f => ({ ...f, fecha_hasta: e.target.value }))} />
               </div>
             </div>
 
@@ -1018,11 +1026,13 @@ function PreciosDespacho() {
                       <span className="font-semibold text-slate-800 flex-1">
                         {parseFloat(Number(p.precio_por_litro).toFixed(1))} {p.moneda}/L
                       </span>
-                      <span className="text-slate-400 tabular-nums">{p.fecha_desde}</span>
+                      <span className="text-slate-400 tabular-nums">
+                        {p.fecha_desde}{p.fecha_hasta ? ` · hasta ${p.fecha_hasta}` : ''}
+                      </span>
                       <Badge className={`text-[10px] py-0 px-1.5 shrink-0 ${esVigente(p) ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-400 border-slate-200'}`}>
-                        {esVigente(p) ? 'Vigente' : 'Futuro'}
+                        {esVigente(p) ? 'Vigente' : (p.fecha_hasta && p.fecha_hasta < today ? 'Expirado' : 'Futuro')}
                       </Badge>
-                      {isSuperAdmin && <>
+                      {canManageFinanzas && <>
                         <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0 text-slate-300 hover:text-sky-500"
                           onClick={() => openEdit(p)}>
                           <Pencil className="w-3 h-3" />
