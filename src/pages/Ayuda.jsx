@@ -142,7 +142,7 @@ const sections = [
             [<Tag color="sky">Super Admin</Tag>, 'Acceso completo: crear, editar, eliminar en todos los módulos. Gestiona usuarios y roles. Puede eliminar bonificaciones de prueba.'],
             [<Tag color="emerald">Operador</Tag>, 'Registra movimientos, consumidores, alertas y configuración. Puede registrar y gestionar bonificaciones. No accede a Finanzas ni Administración.'],
             [<Tag color="violet">Auditor</Tag>, 'Solo lectura. Ve Dashboard, Movimientos, Rutas, Reportes y Bonificaciones. No puede crear ni eliminar.'],
-            [<Tag color="amber">Económico</Tag>, 'Accede a Dashboard, Movimientos, Finanzas, Reportes y Bonificaciones. Puede marcar bonificaciones como cobradas. Perfil contable/financiero.'],
+            [<Tag color="amber">Económico</Tag>, 'Accede a Dashboard, Movimientos, Finanzas, Reportes y Bonificaciones. Puede marcar bonificaciones como cobradas. Gestiona precios de despacho por tipo de consumidor. Perfil contable/financiero.'],
             [<Tag color="red">Cajero</Tag>, 'Acceso exclusivo a Bonificaciones y Reportes de bonificaciones. Registra nuevas bonificaciones, marca retiros y cobros. Perfil para el personal de caja.'],
           ]}
         />
@@ -750,16 +750,35 @@ Si Desviación < Umbral alerta                    → NORMAL   (verde)`}
 
         <SubTitle>Pestaña Precios</SubTitle>
         <P>
-          Muestra los precios vigentes por tipo de combustible y permite gestionar los precios de
-          despacho por tipo de consumidor (los precios que se aplican automáticamente al registrar
-          una bonificación). Los cambios en precios se aplican a nuevas bonificaciones, no a las
-          ya registradas.
+          Contiene dos secciones independientes:
+        </P>
+        <TableDoc
+          headers={['Sección', 'Qué controla', 'Quién puede editar']}
+          rows={[
+            ['Precios de combustible', 'Precio de compra por litro (se aplica automáticamente al registrar una COMPRA en Movimientos).', 'Solo Super Admin'],
+            ['Precios de despacho por tipo', 'Precio por litro que se aplica al registrar una bonificación, según el tipo de consumidor.', 'Super Admin y Económico'],
+          ]}
+        />
+
+        <SubTitle>Historial de precios de despacho</SubTitle>
+        <P>
+          Cada precio de despacho tiene una <strong>Fecha desde</strong> (obligatoria) y una{' '}
+          <strong>Fecha hasta</strong> (opcional). El sistema aplica automáticamente el precio
+          cuyo rango de fechas coincide con la fecha de la bonificación. Esto permite mantener
+          un historial completo cuando los precios cambian:
+        </P>
+        <ol className="list-decimal ml-5 space-y-1 text-sm text-slate-600 dark:text-slate-300">
+          <li>Edita el precio vigente y ponle una <strong>Fecha hasta</strong> (el último día en que aplica ese precio).</li>
+          <li>Crea un nuevo precio con la <strong>Fecha desde</strong> del día siguiente y sin fecha hasta.</li>
+        </ol>
+        <P>
+          Los cambios en precios no afectan bonificaciones ya registradas — solo se aplican a nuevas.
         </P>
 
         <Callout type="info" title="Nota para el rol Económico">
-          El perfil <Tag color="amber">Económico</Tag> puede ver toda la información financiera
-          pero no puede registrar ni editar movimientos directamente. Para registrar compras o
-          ajustes, el operador debe hacerlo desde el módulo de Movimientos.
+          El perfil <Tag color="amber">Económico</Tag> puede crear, editar y eliminar precios de
+          despacho por tipo de consumidor. No puede registrar ni editar movimientos directamente
+          (compras, despachos, ajustes) — eso corresponde al Operador.
         </Callout>
       </>
     ),
