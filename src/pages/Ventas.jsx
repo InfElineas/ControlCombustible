@@ -802,7 +802,9 @@ function VentaRow({ v, canOperar, canDelete, canEditar, onCambiarEstado, onDelet
 
 function FormEditBonificacion({ venta, onClose }) {
   const qc = useQueryClient();
+  const { role } = useUserRole();
   const esPendiente = venta.estado === 'PENDIENTE';
+  const puedeCorregirPrecio = (role === 'superadmin' || role === 'cajero') && venta.estado === 'PAGADO_FINALIZADO';
   const [form, setForm] = useState({
     fecha_venta:      venta.fecha_venta,
     beneficiario_id:  venta.beneficiario_id,
@@ -837,16 +839,20 @@ function FormEditBonificacion({ venta, onClose }) {
     mutationFn: async (payload) => {
       const { error } = await supabase.from('venta_trabajador').update(payload).eq('id', venta.id);
       if (error) throw error;
+      const esPagoFinalizado = venta.estado === 'PAGADO_FINALIZADO';
+      const huboCorreccionPrecio = esPagoFinalizado && payload.precio_por_litro !== venta.precio_por_litro;
       logAudit({
-        action: 'EDITAR_BONIFICACION',
+        action: huboCorreccionPrecio ? 'CORRECCION_PRECIO_BONIFICACION' : 'EDITAR_BONIFICACION',
         entityType: 'VentaTrabajador',
         entityId: venta.id,
         entityLabel: `${venta.beneficiario_nombre} — ${venta.litros}L ${venta.combustible_nombre}`,
         metadata: {
+          estado: venta.estado,
           litros_anterior: venta.litros, litros_nuevo: payload.litros,
           precio_anterior: venta.precio_por_litro, precio_nuevo: payload.precio_por_litro,
           monto_anterior: venta.monto, monto_nuevo: payload.monto,
           beneficiario_anterior: venta.beneficiario_nombre, beneficiario_nuevo: payload.beneficiario_nombre,
+          ...(huboCorreccionPrecio ? { motivo: 'correccion_precio_manual' } : {}),
         },
       });
     },
@@ -980,7 +986,7 @@ function FormEditBonificacion({ venta, onClose }) {
           <div className="flex-1 space-y-1">
             <Label className="text-[10px] text-slate-400">Precio por litro</Label>
             <Input type="number" min="0.0001" step="0.0001" className="h-8 text-xs bg-white"
-              value={form.precio_por_litro} onChange={e => set('precio_por_litro', e.target.value)} disabled={!esPendiente} />
+              value={form.precio_por_litro} onChange={e => set('precio_por_litro', e.target.value)} disabled={!esPendiente && !puedeCorregirPrecio} />
           </div>
           {monto !== null && (
             <div className="flex-1 space-y-1">
@@ -1007,9 +1013,14 @@ function FormEditBonificacion({ venta, onClose }) {
           value={form.referencia} onChange={e => set('referencia', e.target.value)} />
       </div>
 
-      {!esPendiente && (
+      {!esPendiente && !puedeCorregirPrecio && (
         <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           Estado <strong>{venta.estado}</strong> — los campos financieros son inmutables. Solo se puede modificar fecha y referencia.
+        </p>
+      )}
+      {puedeCorregirPrecio && (
+        <p className="text-[11px] text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+          Corrección de precio habilitada. Cualquier cambio quedará registrado en el historial de auditoría.
         </p>
       )}
 
