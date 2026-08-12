@@ -680,7 +680,7 @@ function PanelBeneficiarios({ onClose }) {
 
 // ── Fila de bonificación ──────────────────────────────────────────────────────
 
-function VentaRow({ v, canOperar, canDelete, canEditar, onCambiarEstado, onDelete, onEdit, loading, stockInsuficiente, canVerPrecios }) {
+function VentaRow({ v, canOperar, canEntregar, canDelete, canEditar, onCambiarEstado, onDelete, onEdit, loading, stockInsuficiente, canVerPrecios }) {
   const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
   const [editEstado, setEditEstado] = useState(false);
   const isCancelado = v.estado === 'CANCELADO' || v.estado === 'ANULADO';
@@ -688,7 +688,9 @@ function VentaRow({ v, canOperar, canDelete, canEditar, onCambiarEstado, onDelet
   const isTerminal = estadoNormalizado === 'PAGADO_FINALIZADO' || estadoNormalizado === 'CANCELADO';
   const estadosSiguientes = isTerminal ? [] :
     estadoNormalizado === 'PENDIENTE'
-      ? ESTADOS.filter(e => e.value !== 'PENDIENTE')
+      // Sin canEntregar (ej: económico) no puede marcar ENTREGADO ni cobrar directo desde PENDIENTE
+      // porque ambas acciones requieren INSERT DESPACHO que RLS bloquea para ese rol
+      ? ESTADOS.filter(e => e.value !== 'PENDIENTE' && (canEntregar || (e.value !== 'ENTREGADO' && e.value !== 'PAGADO_FINALIZADO')))
       : ESTADOS.filter(e => e.value === 'PAGADO_FINALIZADO' || e.value === 'CANCELADO');
   const puedeEditar = canOperar && !isTerminal;
 
@@ -1189,7 +1191,14 @@ export default function Ventas() {
         .from('venta_trabajador')
         .update(updates)
         .eq('id', venta.id);
-      if (error) throw error;
+      if (error) {
+        // El DESPACHO ya se insertó: revertirlo para no dejar stock descontado sin bonificación
+        if (updates.movimiento_id) {
+          await supabase.from('movimiento').delete().eq('id', updates.movimiento_id);
+          logAudit({ action: 'DESPACHO_BON_REVERTIDO', entityType: 'Movimiento', entityId: updates.movimiento_id, entityLabel: `Rollback bonificación: ${venta.beneficiario_nombre}`, metadata: { venta_id: venta.id, motivo: error.message } });
+        }
+        throw error;
+      }
       // Borrar el DESPACHO generado — el stock vuelve al tanque origen
       if (movToDelete) {
         const { error: delErr } = await supabase.from('movimiento').delete().eq('id', movToDelete);
@@ -1419,6 +1428,7 @@ export default function Ventas() {
               {ventasHistorial.map(v => (
                 <VentaRow key={v.id} v={v}
                   canOperar={canManageFinanzas || isCajero}
+                  canEntregar={isSuperAdmin || isCajero}
                   canDelete={isSuperAdmin}
                   canEditar={canEditar}
                   canVerPrecios={canVerPrecios}

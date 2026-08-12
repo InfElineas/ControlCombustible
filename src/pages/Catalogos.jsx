@@ -112,14 +112,17 @@ function TabConsumidores({ canWrite, canDelete }) {
   const createMut = useMutation({
     mutationFn: d => base44.entities.Consumidor.create(d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['consumidores'] }); toast.success('Consumidor creado'); closeDialog(); },
+    onError: (e) => toast.error(e?.message ?? 'Error al crear consumidor'),
   });
   const updateMut = useMutation({
     mutationFn: ({ id, d }) => base44.entities.Consumidor.update(id, d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['consumidores'] }); toast.success('Actualizado'); closeDialog(); },
+    onError: (e) => toast.error(e?.message ?? 'Error al actualizar consumidor'),
   });
   const deleteMut = useMutation({
     mutationFn: id => base44.entities.Consumidor.delete(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['consumidores'] }); toast.success('Eliminado'); setConfirmDel(null); },
+    onError: (e) => toast.error(e?.message ?? 'Error al eliminar consumidor'),
   });
 
   const closeDialog = () => { setDialogOpen(false); setEditing(null); setForm(emptyConsumidorForm); };
@@ -329,14 +332,17 @@ function TabConductores({ canDelete }) {
   const createMut = useMutation({
     mutationFn: (d) => base44.entities.Conductor.create(d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['conductores'] }); toast.success('Conductor creado'); closeDialog(); },
+    onError: (e) => toast.error(e?.message ?? 'Error al crear conductor'),
   });
   const updateMut = useMutation({
     mutationFn: ({ id, d }) => base44.entities.Conductor.update(id, d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['conductores'] }); toast.success('Conductor actualizado'); closeDialog(); },
+    onError: (e) => toast.error(e?.message ?? 'Error al actualizar conductor'),
   });
   const deleteMut = useMutation({
     mutationFn: (id) => base44.entities.Conductor.delete(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['conductores'] }); toast.success('Conductor eliminado'); setConfirmAction(null); },
+    onError: (e) => toast.error(e?.message ?? 'Error al eliminar conductor'),
   });
 
   const closeDialog  = () => { setDialogOpen(false); setEditing(null); setForm(emptyConductorForm); };
@@ -699,14 +705,17 @@ function TabDepositos({ canWrite, canDelete }) {
   const createMut = useMutation({
     mutationFn: d => base44.entities.Consumidor.create({ ...d, categoria: 'deposito' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['consumidores'] }); toast.success('Depósito creado'); closeDialog(); },
+    onError: (e) => toast.error(e?.message ?? 'Error al crear depósito'),
   });
   const updateMut = useMutation({
     mutationFn: ({ id, d }) => base44.entities.Consumidor.update(id, d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['consumidores'] }); toast.success('Actualizado'); closeDialog(); },
+    onError: (e) => toast.error(e?.message ?? 'Error al actualizar depósito'),
   });
   const deleteMut = useMutation({
     mutationFn: id => base44.entities.Consumidor.delete(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['consumidores'] }); toast.success('Eliminado'); setConfirmDel(null); },
+    onError: (e) => toast.error(e?.message ?? 'Error al eliminar depósito'),
   });
 
   const closeDialog = () => { setDialogOpen(false); setEditing(null); setForm(emptyDepositoForm); };
@@ -938,14 +947,17 @@ function TabSurtidores({ canWrite, canDelete }) {
   const createMut = useMutation({
     mutationFn: d => base44.entities.Consumidor.create({ ...d, categoria: 'surtidor' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['consumidores'] }); toast.success('Surtidor creado'); closeDialog(); },
+    onError: (e) => toast.error(e?.message ?? 'Error al crear surtidor'),
   });
   const updateMut = useMutation({
     mutationFn: ({ id, d }) => base44.entities.Consumidor.update(id, d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['consumidores'] }); toast.success('Actualizado'); closeDialog(); },
+    onError: (e) => toast.error(e?.message ?? 'Error al actualizar surtidor'),
   });
   const deleteMut = useMutation({
     mutationFn: id => base44.entities.Consumidor.delete(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['consumidores'] }); toast.success('Eliminado'); setConfirmDel(null); },
+    onError: (e) => toast.error(e?.message ?? 'Error al eliminar surtidor'),
   });
 
   const closeDialog = () => { setDialogOpen(false); setEditing(null); setForm(emptySurtidorForm); };
@@ -1116,14 +1128,17 @@ function TabCombustibles({ canDelete }) {
   const createMut = useMutation({
     mutationFn: (d) => base44.entities.TipoCombustible.create(d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['combustibles'] }); toast.success('Combustible creado'); closeDialog(); },
+    onError: (e) => toast.error(e?.message ?? 'Error al crear combustible'),
   });
   const updateMut = useMutation({
     mutationFn: ({ id, d }) => base44.entities.TipoCombustible.update(id, d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['combustibles'] }); toast.success('Actualizado'); closeDialog(); },
+    onError: (e) => toast.error(e?.message ?? 'Error al actualizar combustible'),
   });
   const deleteMut = useMutation({
     mutationFn: (id) => base44.entities.TipoCombustible.delete(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['combustibles'] }); toast.success('Eliminado'); setConfirmAction(null); },
+    onError: (e) => toast.error(e?.message ?? 'Error al eliminar combustible'),
   });
 
   const closeDialog = () => { setDialogOpen(false); setEditing(null); setNombre(''); };
