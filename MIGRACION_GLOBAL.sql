@@ -1168,7 +1168,8 @@ INSERT INTO concepto_precio (nombre, descripcion) VALUES
 ON CONFLICT (nombre) DO NOTHING;
 
 ALTER TABLE tipo_consumidor ADD COLUMN IF NOT EXISTS concepto_id UUID REFERENCES concepto_precio(id);
-ALTER TABLE precio_despacho_tipo ADD COLUMN IF NOT EXISTS concepto_id UUID REFERENCES concepto_precio(id);
+ALTER TABLE precio_despacho_tipo ADD COLUMN IF NOT EXISTS concepto_id  UUID REFERENCES concepto_precio(id);
+ALTER TABLE precio_despacho_tipo ADD COLUMN IF NOT EXISTS fecha_hasta  DATE;
 ALTER TABLE movimiento ADD COLUMN IF NOT EXISTS precio_costo_unitario NUMERIC(10,4);
 ALTER TABLE venta_trabajador ADD COLUMN IF NOT EXISTS precio_venta_unitario NUMERIC(10,4);
 

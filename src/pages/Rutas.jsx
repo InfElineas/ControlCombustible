@@ -630,7 +630,7 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave }) {
       .order('orden')
       .then(({ data }) => {
         if (data) {
-          setParadas(data.map(rm => ({
+          setParadas(data.filter(rm => rm.marcador).map(rm => ({
             marcador_id: rm.marcador_id,
             nombre: rm.marcador.nombre,
             lat:    Number(rm.marcador.lat),
@@ -1334,12 +1334,15 @@ export default function Rutas() {
   const { data: movimientosMes = [] } = useQuery({
     queryKey: ['movimientos-stats', mesStat],
     queryFn: async () => {
+      const nextMonth = new Date(mesStat + '-01T12:00:00');
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      const nextMonthStr = nextMonth.toISOString().slice(0, 7) + '-01';
       const { data } = await supabase
         .from('movimiento')
         .select('consumidor_id, litros, tipo, fecha, combustible_nombre, odometro, km_recorridos')
         .in('tipo', ['DESPACHO', 'COMPRA'])
         .gte('fecha', mesStat + '-01')
-        .lte('fecha', mesStat + '-31')
+        .lt('fecha', nextMonthStr)
         .not('litros', 'is', null)
         .gt('litros', 0);
       return data ?? [];
@@ -1357,7 +1360,8 @@ export default function Rutas() {
         .in('tipo', ['DESPACHO', 'COMPRA'])
         .lt('fecha', mesStat + '-01')
         .not('odometro', 'is', null)
-        .order('fecha', { ascending: false });
+        .order('fecha', { ascending: false })
+        .limit(2000);
       return data ?? [];
     },
     staleTime: 5 * 60_000,
