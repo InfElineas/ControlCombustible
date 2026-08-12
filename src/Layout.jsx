@@ -39,15 +39,14 @@ const roleLabels = {
 
 const pageRoles = {
   Consumidores:  ['superadmin', 'operador'],
-  Alertas:       ['superadmin', 'operador'],
-  Transporte:    ['superadmin', 'operador'],
-  Catalogos:     ['superadmin', 'operador', 'economico', 'auditor'],
   Conductores:   ['superadmin', 'operador'],
   Configuracion: ['superadmin', 'operador'],
+  AdminPanel:    ['superadmin'],
+  Catalogos:     ['superadmin', 'operador', 'economico', 'auditor'],
   Finanzas:      ['superadmin', 'economico', 'auditor'],
+  Rutas:         ['superadmin', 'operador', 'auditor'],
   Transporte:    ['superadmin', 'operador', 'auditor'],
   Alertas:       ['superadmin', 'operador', 'auditor'],
-  AdminPanel:    ['superadmin'],
   Ventas:        ['superadmin', 'economico', 'auditor', 'cajero'],
 };
 // Nota: Consumidores y Conductores mantienen pageRoles para redireccionamiento
