@@ -84,6 +84,7 @@ export function useUserRole() {
     canDelete:              isSuperAdmin || isOperador,
     canRead:                isSuperAdmin || isOperador || isAuditor || isEconomico,
     // Finanzas: recargas de tarjetas, precios, saldos
+    canViewFinanzas:        isSuperAdmin || isEconomico || isAuditor,
     canManageFinanzas:      isSuperAdmin || isEconomico,
     // Movimientos: qué tipos puede registrar cada rol
     canRecargar:            isSuperAdmin || isEconomico,

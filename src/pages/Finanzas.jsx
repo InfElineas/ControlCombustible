@@ -32,7 +32,7 @@ function lastDay(yyyy_mm) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function Finanzas() {
-  const { canManageFinanzas, isEconomico } = useUserRole();
+  const { canManageFinanzas, canViewFinanzas, isEconomico } = useUserRole();
   const today = new Date().toISOString().slice(0, 10);
   const [periodo, setPeriodo] = useState(today.slice(0, 7));
   const [tab, setTab] = useState('tarjetas');
@@ -252,11 +252,11 @@ export default function Finanzas() {
     }
   }
 
-  if (!canManageFinanzas) {
+  if (!canViewFinanzas) {
     return (
       <div className="py-20 text-center space-y-3">
         <WalletCards className="w-10 h-10 text-slate-300 mx-auto" />
-        <p className="text-slate-400 text-sm">Acceso restringido. Solo roles económico y superadmin.</p>
+        <p className="text-slate-400 text-sm">Acceso restringido. Solo roles económico, auditor y superadmin.</p>
       </div>
     );
   }
