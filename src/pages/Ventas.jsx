@@ -837,6 +837,18 @@ function FormEditBonificacion({ venta, onClose }) {
     mutationFn: async (payload) => {
       const { error } = await supabase.from('venta_trabajador').update(payload).eq('id', venta.id);
       if (error) throw error;
+      logAudit({
+        action: 'EDITAR_BONIFICACION',
+        entityType: 'VentaTrabajador',
+        entityId: venta.id,
+        entityLabel: `${venta.beneficiario_nombre} — ${venta.litros}L ${venta.combustible_nombre}`,
+        metadata: {
+          litros_anterior: venta.litros, litros_nuevo: payload.litros,
+          precio_anterior: venta.precio_por_litro, precio_nuevo: payload.precio_por_litro,
+          monto_anterior: venta.monto, monto_nuevo: payload.monto,
+          beneficiario_anterior: venta.beneficiario_nombre, beneficiario_nuevo: payload.beneficiario_nombre,
+        },
+      });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ventas'] });
@@ -1173,7 +1185,14 @@ export default function Ventas() {
         if (delErr) throw delErr;
         logAudit({ action: 'DESPACHO_BON_ELIMINADO', entityType: 'Movimiento', entityId: movToDelete, entityLabel: `Cancelación bonificación: ${venta.beneficiario_nombre}`, metadata: { venta_id: venta.id, motivo: 'cancelacion_bonificacion' } });
       }
-      logAudit({ action: 'ESTADO_VENTA', entityType: 'VentaTrabajador', entityId: venta.id, entityLabel: `${venta.beneficiario_nombre} — ${venta.litros}L ${venta.combustible_nombre}`, metadata: { estado_anterior: venta.estado, estado_nuevo: nuevoEstado } });
+      const auditMeta = { estado_anterior: venta.estado, estado_nuevo: nuevoEstado };
+      if (nuevoEstado === 'PAGADO_FINALIZADO' && precio_venta_unitario) {
+        auditMeta.precio_venta_unitario_nuevo = precio_venta_unitario;
+        auditMeta.precio_venta_unitario_anterior = venta.precio_venta_unitario ?? null;
+        auditMeta.monto_nuevo = +(precio_venta_unitario * venta.litros).toFixed(4);
+        auditMeta.monto_anterior = venta.monto;
+      }
+      logAudit({ action: 'ESTADO_VENTA', entityType: 'VentaTrabajador', entityId: venta.id, entityLabel: `${venta.beneficiario_nombre} — ${venta.litros}L ${venta.combustible_nombre}`, metadata: auditMeta });
     },
     onSuccess: (_, { nuevoEstado }) => {
       qc.invalidateQueries({ queryKey: ['ventas'] });
