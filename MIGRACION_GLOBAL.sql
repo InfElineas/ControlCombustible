@@ -628,7 +628,7 @@ DROP POLICY IF EXISTS "precio_despacho_delete_eco" ON precio_despacho_tipo;
 CREATE POLICY "precio_despacho_select_all" ON precio_despacho_tipo FOR SELECT TO authenticated USING (true);
 CREATE POLICY "precio_despacho_insert_eco" ON precio_despacho_tipo FOR INSERT TO authenticated WITH CHECK (get_my_role() IN ('superadmin', 'economico'));
 CREATE POLICY "precio_despacho_update_eco" ON precio_despacho_tipo FOR UPDATE TO authenticated USING (get_my_role() IN ('superadmin', 'economico')) WITH CHECK (get_my_role() IN ('superadmin', 'economico'));
-CREATE POLICY "precio_despacho_delete_eco" ON precio_despacho_tipo FOR DELETE TO authenticated USING (get_my_role() = 'superadmin');
+CREATE POLICY "precio_despacho_delete_eco" ON precio_despacho_tipo FOR DELETE TO authenticated USING (get_my_role() IN ('superadmin', 'economico'));
 
 -- tarjeta
 DROP POLICY IF EXISTS "Authenticated full access" ON tarjeta;
@@ -638,9 +638,9 @@ DROP POLICY IF EXISTS "tarjeta_update_ops"        ON tarjeta;
 DROP POLICY IF EXISTS "tarjeta_delete_superadmin" ON tarjeta;
 
 CREATE POLICY "tarjeta_select_all"        ON tarjeta FOR SELECT TO authenticated USING (true);
-CREATE POLICY "tarjeta_insert_ops"        ON tarjeta FOR INSERT TO authenticated WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
-CREATE POLICY "tarjeta_update_ops"        ON tarjeta FOR UPDATE TO authenticated USING (get_my_role() IN ('superadmin', 'operador')) WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
-CREATE POLICY "tarjeta_delete_superadmin" ON tarjeta FOR DELETE TO authenticated USING (get_my_role() = 'superadmin');
+CREATE POLICY "tarjeta_insert_ops" ON tarjeta FOR INSERT TO authenticated WITH CHECK (get_my_role() IN ('superadmin', 'operador', 'economico'));
+CREATE POLICY "tarjeta_update_ops" ON tarjeta FOR UPDATE TO authenticated USING (get_my_role() IN ('superadmin', 'operador', 'economico')) WITH CHECK (get_my_role() IN ('superadmin', 'operador', 'economico'));
+CREATE POLICY "tarjeta_delete_ops" ON tarjeta FOR DELETE TO authenticated USING (get_my_role() IN ('superadmin', 'economico'));
 
 -- consumidor
 DROP POLICY IF EXISTS "Authenticated full access"   ON consumidor;

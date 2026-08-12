@@ -1244,7 +1244,7 @@ function TabTarjetas({ canManage, canDelete }) {
       toast.success(dialog?.mode === 'edit' ? 'Tarjeta actualizada' : 'Tarjeta creada');
       setDialog(null);
     },
-    onError: () => toast.error('Error al guardar tarjeta'),
+    onError: (e) => toast.error(e?.message ?? 'Error al guardar tarjeta'),
   });
 
   const deleteMut = useMutation({
@@ -1702,7 +1702,7 @@ export default function Catalogos() {
         {tab === 'conductores'      && <TabConductores    canDelete={canDelete} />}
         {tab === 'tipos_consumidor' && <TabTiposConsumidor />}
         {tab === 'combustibles'     && <TabCombustibles   canDelete={canDelete} />}
-        {tab === 'tarjetas'         && <TabTarjetas       canManage={canManageTarjetas} canDelete={canDelete} />}
+        {tab === 'tarjetas'         && <TabTarjetas       canManage={canManageTarjetas} canDelete={canManageTarjetas} />}
         {tab === 'precios'          && <TabPrecios        canManage={canManageTarjetas} />}
       </div>
     </div>
