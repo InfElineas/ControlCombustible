@@ -366,6 +366,27 @@ function ConfigAlertaDialog({ consumidor, config, onClose }) {
   );
 }
 
+function BloqueAnomalia({ titulo, nivel = 'warn', children }) {
+  return (
+    <div className="space-y-1.5">
+      <p className={`text-[10px] font-semibold uppercase tracking-wide ${nivel === 'crit' ? 'text-red-600' : 'text-orange-600'}`}>
+        {titulo}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function FilaAnomalia({ nivel = 'warn', children }) {
+  return (
+    <div className={`flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg px-3 py-2 border text-xs gap-2 ${
+      nivel === 'crit' ? 'border-red-100 dark:border-red-900' : 'border-orange-100 dark:border-orange-900'
+    }`}>
+      {children}
+    </div>
+  );
+}
+
 function IntegridadDatos() {
   const qc = useQueryClient();
 
@@ -418,6 +439,74 @@ function IntegridadDatos() {
     staleTime: 60_000,
   });
 
+  // Movimientos recientes: base para las comprobaciones de anomalías. Se acota
+  // a 90 días para que la lista señale lo que aún se puede corregir.
+  const hoyStr    = new Date().toISOString().slice(0, 10);
+  const hace90Str = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
+
+  const { data: movRecientes = [], isFetching: fetchingM } = useQuery({
+    queryKey: ['integridad-movimientos-recientes', hace90Str],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('movimiento')
+        .select('id, fecha, tipo, litros, consumidor_id, consumidor_nombre, combustible_id, combustible_nombre, referencia')
+        .gte('fecha', hace90Str)
+        .order('fecha', { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+  const { data: consumidoresInt = [] } = useQuery({
+    queryKey: ['consumidores'],
+    queryFn: () => base44.entities.Consumidor.list(),
+    staleTime: 5 * 60_000,
+  });
+
+  const { data: entregadasSinMov = [], isFetching: fetchingE } = useQuery({
+    queryKey: ['integridad-entregadas-sin-mov'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('venta_trabajador')
+        .select('id, beneficiario_nombre, litros, combustible_nombre, estado, fecha_venta')
+        .in('estado', ['ENTREGADO', 'PAGADO_FINALIZADO'])
+        .is('movimiento_id', null);
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+  const anomalias = React.useMemo(() => {
+    const porId = Object.fromEntries(consumidoresInt.map(c => [c.id, c]));
+
+    // Fecha posterior a hoy: error de tecleo que descoloca los cierres del mes
+    const fechaFutura = movRecientes.filter(m => m.fecha > hoyStr);
+
+    // Mismo tanque, combustible, litros y día registrados más de una vez
+    const grupos = {};
+    movRecientes.forEach(m => {
+      const k = [m.fecha, m.tipo, m.consumidor_id, m.combustible_id, m.litros].join('|');
+      (grupos[k] ||= []).push(m);
+    });
+    const duplicados = Object.values(grupos).filter(g => g.length > 1);
+
+    // Corrección manual sin justificar: imposible de auditar después
+    const ajusteSinMotivo = movRecientes.filter(
+      m => m.tipo === 'AJUSTE' && !(m.referencia || '').trim()
+    );
+
+    // Entrada mayor que la capacidad del depósito que la recibe
+    const sobrellenado = movRecientes.filter(m => {
+      if (!m.consumidor_id || !['COMPRA', 'DEPOSITO', 'DESPACHO'].includes(m.tipo)) return false;
+      const cap = Number(porId[m.consumidor_id]?.datos_tanque?.capacidad_litros) || 0;
+      return cap > 0 && Number(m.litros || 0) > cap;
+    }).map(m => ({ ...m, capacidad: Number(porId[m.consumidor_id]?.datos_tanque?.capacidad_litros) }));
+
+    return { fechaFutura, duplicados, ajusteSinMotivo, sobrellenado };
+  }, [movRecientes, consumidoresInt, hoyStr]);
+
   const limpiarMut = useMutation({
     mutationFn: async () => {
       // 1. Eliminar DESPACHOs huérfanos
@@ -444,12 +533,16 @@ function IntegridadDatos() {
   // Saneables = los que el botón puede resolver solo. Los descuadres cuentan
   // como problema detectado pero exigen decisión humana.
   const saneables      = huerfanos.length + canceladasConMov.length;
-  const totalProblemas = saneables + descuadres.length;
-  const isFetching     = fetchingH || fetchingC || fetchingD;
+  const totalProblemas = saneables + descuadres.length + entregadasSinMov.length +
+    anomalias.fechaFutura.length + anomalias.duplicados.length +
+    anomalias.ajusteSinMotivo.length + anomalias.sobrellenado.length;
+  const isFetching     = fetchingH || fetchingC || fetchingD || fetchingM || fetchingE;
   const refrescar = () => {
     qc.invalidateQueries({ queryKey: ['integridad-despachos-huerfanos'] });
     qc.invalidateQueries({ queryKey: ['integridad-ventas-canceladas-con-mov'] });
     qc.invalidateQueries({ queryKey: ['integridad-stock-descuadre'] });
+    qc.invalidateQueries({ queryKey: ['integridad-movimientos-recientes'] });
+    qc.invalidateQueries({ queryKey: ['integridad-entregadas-sin-mov'] });
   };
 
   return (
@@ -483,8 +576,73 @@ function IntegridadDatos() {
 
       {totalProblemas === 0 && !isFetching && (
         <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400">
-          <CheckCircle2 className="w-3.5 h-3.5" /> Stock cuadrado y sin DESPACHOs huérfanos
+          <CheckCircle2 className="w-3.5 h-3.5" /> Stock cuadrado y sin anomalías en los últimos 90 días
         </div>
+      )}
+
+      {anomalias.sobrellenado.length > 0 && (
+        <BloqueAnomalia nivel="crit" titulo={`Entrada mayor que la capacidad del depósito (${anomalias.sobrellenado.length})`}>
+          {anomalias.sobrellenado.map(m => (
+            <FilaAnomalia key={m.id} nivel="crit">
+              <span className="font-mono text-slate-400 shrink-0">{m.fecha}</span>
+              <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{m.consumidor_nombre}</span>
+              <span className="text-red-600 font-semibold shrink-0 tabular-nums">
+                {m.litros} L en un tanque de {m.capacidad} L
+              </span>
+            </FilaAnomalia>
+          ))}
+        </BloqueAnomalia>
+      )}
+
+      {entregadasSinMov.length > 0 && (
+        <BloqueAnomalia nivel="crit" titulo={`Bonificaciones entregadas sin movimiento asociado (${entregadasSinMov.length})`}>
+          {entregadasSinMov.map(v => (
+            <FilaAnomalia key={v.id} nivel="crit">
+              <span className="font-mono text-slate-400 shrink-0">{v.fecha_venta}</span>
+              <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{v.beneficiario_nombre}</span>
+              <span className="text-slate-500 shrink-0">{v.litros} L {v.combustible_nombre}</span>
+              <span className="text-red-600 font-semibold shrink-0">sin descontar del stock</span>
+            </FilaAnomalia>
+          ))}
+        </BloqueAnomalia>
+      )}
+
+      {anomalias.duplicados.length > 0 && (
+        <BloqueAnomalia titulo={`Posibles registros duplicados (${anomalias.duplicados.length})`}>
+          {anomalias.duplicados.map(g => (
+            <FilaAnomalia key={g[0].id}>
+              <span className="font-mono text-slate-400 shrink-0">{g[0].fecha}</span>
+              <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{g[0].consumidor_nombre}</span>
+              <span className="text-slate-500 shrink-0">{g[0].litros} L {g[0].combustible_nombre}</span>
+              <span className="text-orange-600 font-semibold shrink-0">{g.length} veces</span>
+            </FilaAnomalia>
+          ))}
+        </BloqueAnomalia>
+      )}
+
+      {anomalias.fechaFutura.length > 0 && (
+        <BloqueAnomalia titulo={`Movimientos con fecha futura (${anomalias.fechaFutura.length})`}>
+          {anomalias.fechaFutura.map(m => (
+            <FilaAnomalia key={m.id}>
+              <span className="font-mono text-orange-600 font-semibold shrink-0">{m.fecha}</span>
+              <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{m.consumidor_nombre}</span>
+              <span className="text-slate-500 shrink-0">{m.tipo} · {m.litros} L</span>
+            </FilaAnomalia>
+          ))}
+        </BloqueAnomalia>
+      )}
+
+      {anomalias.ajusteSinMotivo.length > 0 && (
+        <BloqueAnomalia titulo={`Ajustes sin motivo escrito (${anomalias.ajusteSinMotivo.length})`}>
+          {anomalias.ajusteSinMotivo.map(m => (
+            <FilaAnomalia key={m.id}>
+              <span className="font-mono text-slate-400 shrink-0">{m.fecha}</span>
+              <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{m.consumidor_nombre}</span>
+              <span className="text-slate-500 shrink-0">{m.litros} L</span>
+              <span className="text-orange-600 font-semibold shrink-0">sin justificar</span>
+            </FilaAnomalia>
+          ))}
+        </BloqueAnomalia>
       )}
 
       {descuadres.length > 0 && (
