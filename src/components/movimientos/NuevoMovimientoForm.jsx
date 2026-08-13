@@ -25,6 +25,17 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   const { data: precios = [] } = useQuery({ queryKey: ['precios'], queryFn: () => base44.entities.PrecioCombustible.list() });
   const { data: preciosDespacho = [] } = useQuery({ queryKey: ['precios-despacho'], queryFn: () => base44.entities.PrecioDespachoTipo.list('-fecha_desde', 200) });
   const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
+  // Stock servido por la base de datos: misma fuente que el trigger que valida
+  // el despacho, y sin el tope de 5000 movimientos del cálculo en cliente.
+  const { data: stockView = [] } = useQuery({
+    queryKey: ['v-stock-tanques'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_stock_tanques').select('*');
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
 
   // Tipos de movimiento que el rol actual puede registrar
   const tiposPermitidos = useMemo(() => {
@@ -278,41 +289,16 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     });
   }, [tipo, movimientos, form.consumidor_id, form.combustible_id, form.fecha, litrosReales, capacidadTanque, consumidorSeleccionado, form.nivel_tanque]);
 
-  // Stock de un consumidor origen (para DESPACHO)
-  const calcularStockConsumidor = (consumidorId, combustibleId) => {
-    if (!consumidorId || !combustibleId) return null;
-    const con = consumidores.find(c => c.id === consumidorId);
-    if (!con) return null;
-    const combustibleCompatible = con.combustible_id ? con.combustible_id === combustibleId : true;
-    const stockInicial = combustibleCompatible ? (Number(con.litros_iniciales) || 0) : 0;
-    const esSurtidorOrigen = esSurtidor(con);
-    // Entradas por COMPRA directa al origen
-    const entradasCompra = movimientos
-      .filter(m => m.tipo === 'COMPRA' && m.consumidor_id === consumidorId && m.combustible_id === combustibleId)
-      .reduce((s, m) => s + (m.litros || 0), 0);
-    // Para surtidores: también cuentan los DESPACHO que recibió desde los tanques
-    const entradasDespacho = esSurtidorOrigen
-      ? movimientos
-          .filter(m => m.tipo === 'DESPACHO' && m.consumidor_id === consumidorId && m.combustible_id === combustibleId)
-          .reduce((s, m) => s + (m.litros || 0), 0)
-      : 0;
-    const salidas = movimientos
-      .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === consumidorId && m.combustible_id === combustibleId)
-      .reduce((s, m) => s + (m.litros || 0), 0);
-    // Para surtidores: los vehículos retiran con COMPRA usando la tarjeta vinculada
-    const tarjetaVinculadaId = con.datos_tanque?.tarjeta_vinculada_id;
-    const salidasTarjeta = (esSurtidorOrigen && tarjetaVinculadaId)
-      ? movimientos
-          .filter(m => m.tipo === 'COMPRA' && m.tarjeta_id === tarjetaVinculadaId)
-          .reduce((s, m) => s + (m.litros || 0), 0)
-      : 0;
-    return stockInicial + entradasCompra + entradasDespacho - salidas - salidasTarjeta;
-  };
-
+  // Stock del origen de un DESPACHO. Sale de v_stock_tanques, la misma fuente
+  // que usa el trigger que autoriza la operación, así que el número que ve el
+  // operador es exactamente el que decide si el guardado pasa o no. El cálculo
+  // local anterior no contaba los DEPOSITO como entrada ni contemplaba el array
+  // tarjetas_vinculadas_ids, y además dependía del tope de 5000 movimientos.
   const stockOrigenDespacho = useMemo(() => {
-    if (tipo !== 'DESPACHO') return null;
-    return calcularStockConsumidor(form.consumidor_origen_id, form.combustible_id);
-  }, [tipo, form.consumidor_origen_id, form.combustible_id, movimientos, consumidores]);
+    if (tipo !== 'DESPACHO' || !form.consumidor_origen_id) return null;
+    const fila = stockView.find(r => r.consumidor_id === form.consumidor_origen_id);
+    return fila ? Number(fila.stock_actual) : null;
+  }, [tipo, form.consumidor_origen_id, stockView]);
 
   const createMutation = useMutation({
     mutationFn: (data) => base44.entities.Movimiento.create(data),

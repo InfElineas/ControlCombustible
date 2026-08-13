@@ -76,6 +76,16 @@ export default function Dashboard() {
     staleTime: 5 * 60_000,
   });
 
+  const { data: stockView = [] } = useQuery({
+    queryKey: ['v-stock-tanques'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_stock_tanques').select('*');
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
   const { data: ventasAllTime = [] } = useQuery({
     queryKey: ['ventas-logistica-economico'],
     queryFn: async () => {
@@ -421,20 +431,20 @@ export default function Dashboard() {
   }, [consumidores, consumidoresSurtidorIds, movimientos, tarjetas]);
 
   // Stock de tanques de reserva — visible a todos los roles (economico usa economicoStats)
+  // El stock lo sirve v_stock_tanques: misma fuente que el resto de la app y
+  // que el trigger que valida los despachos, y sin el tope de 5000 movimientos
+  // que tenía el cálculo en cliente.
+  const stockPorConsumidor = useMemo(() => {
+    const m = {};
+    stockView.forEach(r => { m[r.consumidor_id] = Number(r.stock_actual) || 0; });
+    return m;
+  }, [stockView]);
+
   const stockTanquesReserva = useMemo(() => {
     return consumidores
       .filter(c => consumidoresReservaIds.has(c.id) && c.activo !== false)
       .map(c => {
-        const ini = Number(c.litros_iniciales) || 0;
-        const entradas = movimientos
-          .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === c.id && !(m.tipo === 'DESPACHO' && (m.referencia || '').startsWith('Bonificación combustible:'))
-            && (!c.combustible_id || !m.combustible_id || m.combustible_id === c.combustible_id))
-          .reduce((s, m) => s + (m.litros || 0), 0);
-        const salidas = movimientos
-          .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === c.id
-            && (!c.combustible_id || !m.combustible_id || m.combustible_id === c.combustible_id))
-          .reduce((s, m) => s + (m.litros || 0), 0);
-        const stockActual = Math.max(0, ini + entradas - salidas);
+        const stockActual = stockPorConsumidor[c.id] ?? 0;
         const cap = (() => {
           const t = Number(c?.datos_tanque?.capacidad_litros);
           if (Number.isFinite(t) && t > 0) return t;
@@ -445,7 +455,7 @@ export default function Dashboard() {
         return { id: c.id, nombre: c.nombre || 'Tanque', combustibleNombre: c.combustible_nombre || null, stockActual, capacidad: cap, pct };
       })
       .sort((a, b) => b.stockActual - a.stockActual);
-  }, [consumidores, consumidoresReservaIds, movimientos]);
+  }, [consumidores, consumidoresReservaIds, stockPorConsumidor]);
 
   const economicoStats = useMemo(() => {
     if (!isEconomico) return null;
