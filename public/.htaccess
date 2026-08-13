@@ -1,5 +1,11 @@
 Options -MultiViews
 RewriteEngine On
+
+# /assets/ nunca debe caer en el fallback a index.html: si un bundle falta,
+# el rewrite devolvia el HTML con status 200 y las CDN lo cacheaban bajo la
+# URL del .js, dejando la app en blanco sin error. Mejor un 404 honesto.
+RewriteRule ^assets/ - [L]
+
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ /index.html [QSA,L]
