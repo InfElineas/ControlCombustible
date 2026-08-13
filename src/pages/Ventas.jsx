@@ -194,7 +194,16 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
       toast.success('Bonificación registrada');
       onClose();
     },
-    onError: (e) => toast.error(e.message ?? 'Error al guardar'),
+    onError: (e) => {
+      // El número de factura se calcula en el cliente y tiene índice único en DB:
+      // si dos usuarios registran a la vez, el segundo choca aquí.
+      if (e?.code === '23505' || (e?.message ?? '').includes('numero_factura')) {
+        qc.invalidateQueries({ queryKey: ['ventas'] });
+        toast.error('Ese número de factura ya fue usado por otro registro. Vuelva a intentarlo — se asignará el siguiente número.');
+        return;
+      }
+      toast.error(e.message ?? 'Error al guardar');
+    },
   });
 
   function handleSubmit(e) {
@@ -668,11 +677,10 @@ function PanelBeneficiarios({ onClose }) {
       )}
 
       {toDelete && (
-        <ConfirmDialog open title="Eliminar trabajador"
+        <ConfirmDialog open onOpenChange={() => setToDelete(null)} title="Eliminar trabajador"
           description={`¿Eliminar a ${toDelete.nombre}? Solo es posible si no tiene bonificaciones asociadas.`}
           onConfirm={() => deleteMut.mutate(toDelete.id)}
-          onCancel={() => setToDelete(null)}
-          loading={deleteMut.isPending} />
+          destructive />
       )}
     </div>
   );
@@ -843,7 +851,7 @@ function FormEditBonificacion({ venta, onClose }) {
       if (error) throw error;
       const esPagoFinalizado = venta.estado === 'PAGADO_FINALIZADO';
       const huboCorreccionPrecio = esPagoFinalizado && payload.precio_por_litro !== venta.precio_por_litro;
-      logAudit({
+      await logAudit({
         action: huboCorreccionPrecio ? 'CORRECCION_PRECIO_BONIFICACION' : 'EDITAR_BONIFICACION',
         entityType: 'VentaTrabajador',
         entityId: venta.id,
@@ -1082,7 +1090,8 @@ export default function Ventas() {
   const { data: stockView = [] } = useQuery({
     queryKey: ['v-stock-tanques'],
     queryFn: async () => {
-      const { data } = await supabase.from('v_stock_tanques').select('*');
+      const { data, error } = await supabase.from('v_stock_tanques').select('*');
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 60_000,
@@ -1174,7 +1183,7 @@ export default function Ventas() {
           .single();
         if (movErr) throw movErr;
         updates.movimiento_id = mov.id;
-        logAudit({ action: 'DESPACHO_BON_CREADO', entityType: 'Movimiento', entityId: mov.id, entityLabel: `Bonificación: ${venta.beneficiario_nombre} — ${venta.litros}L ${venta.combustible_nombre}`, metadata: { venta_id: venta.id, tanque_origen_id: venta.tanque_origen_id, litros: venta.litros } });
+        await logAudit({ action: 'DESPACHO_BON_CREADO', entityType: 'Movimiento', entityId: mov.id, entityLabel: `Bonificación: ${venta.beneficiario_nombre} — ${venta.litros}L ${venta.combustible_nombre}`, metadata: { venta_id: venta.id, tanque_origen_id: venta.tanque_origen_id, litros: venta.litros } });
       }
       if (nuevoEstado === 'PAGADO_FINALIZADO') {
         updates.fecha_pago = new Date().toISOString().slice(0, 10);
@@ -1195,7 +1204,7 @@ export default function Ventas() {
         // El DESPACHO ya se insertó: revertirlo para no dejar stock descontado sin bonificación
         if (updates.movimiento_id) {
           await supabase.from('movimiento').delete().eq('id', updates.movimiento_id);
-          logAudit({ action: 'DESPACHO_BON_REVERTIDO', entityType: 'Movimiento', entityId: updates.movimiento_id, entityLabel: `Rollback bonificación: ${venta.beneficiario_nombre}`, metadata: { venta_id: venta.id, motivo: error.message } });
+          await logAudit({ action: 'DESPACHO_BON_REVERTIDO', entityType: 'Movimiento', entityId: updates.movimiento_id, entityLabel: `Rollback bonificación: ${venta.beneficiario_nombre}`, metadata: { venta_id: venta.id, motivo: error.message } });
         }
         throw error;
       }
@@ -1203,7 +1212,7 @@ export default function Ventas() {
       if (movToDelete) {
         const { error: delErr } = await supabase.from('movimiento').delete().eq('id', movToDelete);
         if (delErr) throw delErr;
-        logAudit({ action: 'DESPACHO_BON_ELIMINADO', entityType: 'Movimiento', entityId: movToDelete, entityLabel: `Cancelación bonificación: ${venta.beneficiario_nombre}`, metadata: { venta_id: venta.id, motivo: 'cancelacion_bonificacion' } });
+        await logAudit({ action: 'DESPACHO_BON_ELIMINADO', entityType: 'Movimiento', entityId: movToDelete, entityLabel: `Cancelación bonificación: ${venta.beneficiario_nombre}`, metadata: { venta_id: venta.id, motivo: 'cancelacion_bonificacion' } });
       }
       const auditMeta = { estado_anterior: venta.estado, estado_nuevo: nuevoEstado };
       if (nuevoEstado === 'PAGADO_FINALIZADO' && precio_venta_unitario) {
@@ -1212,7 +1221,7 @@ export default function Ventas() {
         auditMeta.monto_nuevo = +(precio_venta_unitario * venta.litros).toFixed(4);
         auditMeta.monto_anterior = venta.monto;
       }
-      logAudit({ action: 'ESTADO_VENTA', entityType: 'VentaTrabajador', entityId: venta.id, entityLabel: `${venta.beneficiario_nombre} — ${venta.litros}L ${venta.combustible_nombre}`, metadata: auditMeta });
+      await logAudit({ action: 'ESTADO_VENTA', entityType: 'VentaTrabajador', entityId: venta.id, entityLabel: `${venta.beneficiario_nombre} — ${venta.litros}L ${venta.combustible_nombre}`, metadata: auditMeta });
     },
     onSuccess: (_, { nuevoEstado }) => {
       qc.invalidateQueries({ queryKey: ['ventas'] });
@@ -1572,12 +1581,11 @@ export default function Ventas() {
 
       {/* Confirmar eliminación */}
       {toEliminar && (
-        <ConfirmDialog open
+        <ConfirmDialog open onOpenChange={() => setToEliminar(null)}
           title="Eliminar bonificación"
           description={`¿Eliminar definitivamente el registro de ${toEliminar.litros} L a ${toEliminar.beneficiario_nombre}? Esta acción no se puede deshacer.`}
           onConfirm={() => eliminarMut.mutate(toEliminar.id)}
-          onCancel={() => setToEliminar(null)}
-          loading={eliminarMut.isPending}
+          destructive
         />
       )}
 

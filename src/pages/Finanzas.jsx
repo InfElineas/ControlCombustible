@@ -47,12 +47,13 @@ export default function Finanzas() {
   const { data: movPeriodo = [], isLoading: loadingMov } = useQuery({
     queryKey: ['finanzas-mov', periodo],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('movimiento')
         .select('id, fecha, tipo, litros, monto, tarjeta_id, consumidor_id, consumidor_nombre, combustible_nombre, referencia')
         .gte('fecha', periodoDesde)
         .lte('fecha', periodoHasta)
         .order('fecha', { ascending: false });
+      if (error) throw error;
       return data ?? [];
     },
   });
@@ -60,12 +61,13 @@ export default function Finanzas() {
   const { data: ventasPeriodo = [], isLoading: loadingVentas } = useQuery({
     queryKey: ['finanzas-ventas', periodo],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('venta_trabajador')
         .select('*')
         .gte('fecha_venta', periodoDesde)
         .lte('fecha_venta', periodoHasta)
         .order('fecha_venta', { ascending: false });
+      if (error) throw error;
       return data ?? [];
     },
   });
@@ -118,7 +120,8 @@ export default function Finanzas() {
   const { data: cppTanques = [] } = useQuery({
     queryKey: ['cpp-tanques'],
     queryFn: async () => {
-      const { data } = await supabase.from('v_cpp_por_tanque').select('*');
+      const { data, error } = await supabase.from('v_cpp_por_tanque').select('*');
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 5 * 60_000,
@@ -134,7 +137,8 @@ export default function Finanzas() {
   const { data: cppCombustibles = [] } = useQuery({
     queryKey: ['cpp-combustibles'],
     queryFn: async () => {
-      const { data } = await supabase.from('v_cpp_por_combustible').select('*');
+      const { data, error } = await supabase.from('v_cpp_por_combustible').select('*');
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 5 * 60_000,
@@ -1051,16 +1055,14 @@ function PreciosDespacho() {
         )}
       </CardContent>
 
-      {toDelete && (
-        <ConfirmDialog
-          open
-          title="Eliminar precio"
-          description={`¿Eliminar el precio de ${tipoNombre(toDelete.tipo_consumidor_id)} vigente desde ${toDelete.fecha_desde}?`}
-          onConfirm={() => eliminarMut.mutate(toDelete.id)}
-          onCancel={() => setToDelete(null)}
-          loading={eliminarMut.isPending}
-        />
-      )}
+      <ConfirmDialog
+        open={!!toDelete}
+        onOpenChange={() => setToDelete(null)}
+        title="Eliminar precio"
+        description={toDelete ? `¿Eliminar el precio de ${tipoNombre(toDelete.tipo_consumidor_id)} vigente desde ${toDelete.fecha_desde}?` : ''}
+        onConfirm={() => eliminarMut.mutate(toDelete.id)}
+        destructive
+      />
     </Card>
   );
 }
@@ -1185,16 +1187,14 @@ function ConceptosPanel() {
           </DialogContent>
         </Dialog>
 
-        {toDelete && (
-          <ConfirmDialog
-            open
-            title="Eliminar concepto"
-            description={`¿Eliminar el concepto "${toDelete.nombre}"?`}
-            onConfirm={() => eliminarMut.mutate(toDelete.id)}
-            onCancel={() => setToDelete(null)}
-            loading={eliminarMut.isPending}
-          />
-        )}
+        <ConfirmDialog
+          open={!!toDelete}
+          onOpenChange={() => setToDelete(null)}
+          title="Eliminar concepto"
+          description={toDelete ? `¿Eliminar el concepto "${toDelete.nombre}"?` : ''}
+          onConfirm={() => eliminarMut.mutate(toDelete.id)}
+          destructive
+        />
       </CardContent>
     </Card>
   );
@@ -1219,7 +1219,8 @@ function CppAjustePanel() {
   const { data: cppTanques = [] } = useQuery({
     queryKey: ['cpp-tanques'],
     queryFn: async () => {
-      const { data } = await supabase.from('v_cpp_por_tanque').select('*');
+      const { data, error } = await supabase.from('v_cpp_por_tanque').select('*');
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 60_000,
@@ -1232,6 +1233,7 @@ function CppAjustePanel() {
 
   const [form, setForm] = useState({ consumidor_id: '', cpp_manual: '', motivo: '', fecha: new Date().toISOString().slice(0, 10) });
   const [showForm, setShowForm] = useState(false);
+  const [toDelete, setToDelete] = useState(null);
 
   const crearMut = useMutation({
     mutationFn: d => base44.entities.CppAjuste.create(d),
@@ -1253,8 +1255,9 @@ function CppAjustePanel() {
       qc.invalidateQueries({ queryKey: ['cpp-tanques'] });
       qc.invalidateQueries({ queryKey: ['cpp-combustibles'] });
       toast.success('Ajuste eliminado — CPP vuelve al cálculo automático');
+      setToDelete(null);
     },
-    onError: () => toast.error('Error al eliminar'),
+    onError: (e) => toast.error(e?.message ?? 'Error al eliminar'),
   });
 
   const cppCalcMap = useMemo(() => {
@@ -1337,7 +1340,7 @@ function CppAjustePanel() {
                   {a.motivo && <span className="text-slate-400 truncate max-w-[120px]">{a.motivo}</span>}
                   {canManageFinanzas && (
                     <Button size="icon" variant="ghost" className="h-5 w-5 text-slate-300 hover:text-red-500 shrink-0"
-                      onClick={() => eliminarMut.mutate(a.id)}>
+                      disabled={eliminarMut.isPending} onClick={() => setToDelete(a)}>
                       <Trash2 className="w-3 h-3" />
                     </Button>
                   )}
@@ -1346,6 +1349,15 @@ function CppAjustePanel() {
             </div>
           </div>
         )}
+
+        <ConfirmDialog
+          open={!!toDelete}
+          onOpenChange={() => setToDelete(null)}
+          title="Eliminar ajuste de CPP"
+          description={toDelete ? `Se eliminará el ajuste de ${Number(toDelete.cpp_manual).toFixed(4)} /L en "${tanqueNombre(toDelete.consumidor_id)}". El CPP volverá al cálculo automático y cambiarán los indicadores de rentabilidad.` : ''}
+          onConfirm={() => eliminarMut.mutate(toDelete.id)}
+          destructive
+        />
 
         <Dialog open={showForm} onOpenChange={open => { if (!open) setShowForm(false); }}>
           <DialogContent className="max-w-sm">

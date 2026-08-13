@@ -1337,7 +1337,7 @@ export default function Rutas() {
       const nextMonth = new Date(mesStat + '-01T12:00:00');
       nextMonth.setMonth(nextMonth.getMonth() + 1);
       const nextMonthStr = nextMonth.toISOString().slice(0, 7) + '-01';
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('movimiento')
         .select('consumidor_id, litros, tipo, fecha, combustible_nombre, odometro, km_recorridos')
         .in('tipo', ['DESPACHO', 'COMPRA'])
@@ -1345,6 +1345,7 @@ export default function Rutas() {
         .lt('fecha', nextMonthStr)
         .not('litros', 'is', null)
         .gt('litros', 0);
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 2 * 60_000,
@@ -1354,7 +1355,7 @@ export default function Rutas() {
   const { data: movOdoAntesMes = [] } = useQuery({
     queryKey: ['movimientos-odo-antes', mesStat],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('movimiento')
         .select('consumidor_id, odometro, fecha')
         .in('tipo', ['DESPACHO', 'COMPRA'])
@@ -1362,6 +1363,7 @@ export default function Rutas() {
         .not('odometro', 'is', null)
         .order('fecha', { ascending: false })
         .limit(2000);
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 5 * 60_000,
@@ -1374,12 +1376,13 @@ export default function Rutas() {
       const nextMonth = new Date(mesStat + '-01T12:00:00');
       nextMonth.setMonth(nextMonth.getMonth() + 1);
       const nextMonthStr = nextMonth.toISOString().slice(0, 7) + '-01';
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('asignacion_ruta')
         .select('id, consumidor_id, consumidor_nombre, tipo_viaje, km_reales, fecha, estado')
         .gte('fecha', mesStat + '-01')
         .lt('fecha', nextMonthStr)
         .neq('estado', 'cancelada');
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 5 * 60_000,

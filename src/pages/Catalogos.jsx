@@ -1458,6 +1458,7 @@ function TabPrecios({ canManage }) {
 
   const [dialog, setDialog] = useState(null);
   const [form, setForm]     = useState(emptyPrecio());
+  const [confirmDel, setConfirmDel] = useState(null);
 
   const preciosPorComb = useMemo(() => {
     const map     = {};
@@ -1492,8 +1493,8 @@ function TabPrecios({ canManage }) {
 
   const deleteMut = useMutation({
     mutationFn: (id) => base44.entities.PrecioCombustible.delete(id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['precios'] }); toast.success('Precio eliminado'); },
-    onError: () => toast.error('Error al eliminar'),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['precios'] }); toast.success('Precio eliminado'); setConfirmDel(null); },
+    onError: (e) => toast.error(e?.message ?? 'Error al eliminar'),
   });
 
   function openCreate(combustibleId = '') { setForm({ ...emptyPrecio(), combustible_id: combustibleId }); setDialog({ mode: 'create' }); }
@@ -1577,7 +1578,7 @@ function TabPrecios({ canManage }) {
                           </Button>
                         )}
                         {canManage && (
-                          <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => deleteMut.mutate(p.id)}>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" disabled={deleteMut.isPending} onClick={() => setConfirmDel(p)}>
                             <Trash2 className="w-3 h-3 text-slate-400 hover:text-red-500" />
                           </Button>
                         )}
@@ -1598,6 +1599,11 @@ function TabPrecios({ canManage }) {
           </CardContent>
         </Card>
       )}
+
+      <ConfirmDialog open={!!confirmDel} onOpenChange={() => setConfirmDel(null)}
+        title="Eliminar precio"
+        description={confirmDel ? `Se eliminará el precio de $ ${Number(confirmDel.precio_por_litro).toFixed(2)}/L vigente desde ${confirmDel.fecha_desde}. Esta acción no se puede deshacer.` : ''}
+        onConfirm={() => deleteMut.mutate(confirmDel.id)} destructive />
 
       {/* Dialog crear/editar */}
       <Dialog open={!!dialog} onOpenChange={open => !open && setDialog(null)}>

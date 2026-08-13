@@ -391,11 +391,12 @@ function IntegridadDatos() {
   const { data: canceladasConMov = [], isFetching: fetchingC } = useQuery({
     queryKey: ['integridad-ventas-canceladas-con-mov'],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('venta_trabajador')
         .select('id, beneficiario_nombre, litros, combustible_nombre, estado, movimiento_id')
         .in('estado', ['CANCELADO', 'ANULADO'])
         .not('movimiento_id', 'is', null);
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 60_000,
@@ -500,10 +501,11 @@ export default function Alertas() {
   const { data: ventasPendientes = [] } = useQuery({
     queryKey: ['ventas-pendientes'],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('venta_trabajador')
         .select('id, beneficiario_nombre, litros, combustible_id, combustible_nombre, tanque_origen_id, tanque_origen_nombre')
         .eq('estado', 'PENDIENTE');
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 60_000,
@@ -511,7 +513,8 @@ export default function Alertas() {
   const { data: stockView = [] } = useQuery({
     queryKey: ['v-stock-tanques'],
     queryFn: async () => {
-      const { data } = await supabase.from('v_stock_tanques').select('*');
+      const { data, error } = await supabase.from('v_stock_tanques').select('*');
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 60_000,
@@ -519,7 +522,8 @@ export default function Alertas() {
   const { data: vehiculosTransporte = [] } = useQuery({
     queryKey: ['v-vehiculos-transporte'],
     queryFn: async () => {
-      const { data } = await supabase.from('v_vehiculos_transporte').select('*');
+      const { data, error } = await supabase.from('v_vehiculos_transporte').select('*');
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 60_000,

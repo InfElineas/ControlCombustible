@@ -64,12 +64,13 @@ export default function Dashboard() {
       const nextMonth = new Date(mesGps + '-01T12:00:00');
       nextMonth.setMonth(nextMonth.getMonth() + 1);
       const nextMonthStr = nextMonth.toISOString().slice(0, 7) + '-01';
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('asignacion_ruta')
         .select('consumidor_id, tipo_viaje, km_reales, fecha, estado')
         .gte('fecha', mesGps + '-01')
         .lt('fecha', nextMonthStr)
         .neq('estado', 'cancelada');
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 5 * 60_000,
@@ -78,11 +79,12 @@ export default function Dashboard() {
   const { data: ventasAllTime = [] } = useQuery({
     queryKey: ['ventas-logistica-economico'],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('venta_trabajador')
         .select('id, estado, litros, monto, combustible_nombre, fecha_venta')
         .neq('estado', 'CANCELADO')
         .neq('estado', 'ANULADO');
+      if (error) throw error;
       return data ?? [];
     },
     staleTime: 5 * 60_000,

@@ -81,7 +81,9 @@ export function useUserRole() {
     canManageConductores:   isSuperAdmin || isOperador,
     canImport:              isSuperAdmin || isOperador,
     canViewReportes:        isSuperAdmin || isOperador || isAuditor || isEconomico,
-    canDelete:              isSuperAdmin || isOperador,
+    // RLS restringe DELETE de consumidor/conductor/asignacion_ruta/movimiento a
+    // superadmin: incluir operador aquí solo mostraba botones que siempre fallaban.
+    canDelete:              isSuperAdmin,
     canRead:                isSuperAdmin || isOperador || isAuditor || isEconomico,
     // Finanzas: recargas de tarjetas, precios, saldos
     canViewFinanzas:        isSuperAdmin || isEconomico || isAuditor,
@@ -94,9 +96,11 @@ export function useUserRole() {
     canComprarDespachar:    isSuperAdmin || isOperador,
     // Ventas trabajadores
     canVerVentas:           isSuperAdmin || isOperador || isEconomico || isAuditor || isCajero,
-    canRegistrarVentas:     isSuperAdmin || isOperador || isCajero,
+    // operador queda fuera: pageRoles.Ventas no lo incluye, así que nunca alcanza
+    // la página y estos flags eran letra muerta.
+    canRegistrarVentas:     isSuperAdmin || isCajero,
     canCobrarVentas:        isSuperAdmin || isEconomico || isCajero,
-    canGestionarBeneficiarios: isSuperAdmin || isOperador || isCajero,
+    canGestionarBeneficiarios: isSuperAdmin || isCajero,
     canVerPrecios:             isSuperAdmin || isEconomico || isAuditor,
   };
 }

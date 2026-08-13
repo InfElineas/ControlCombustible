@@ -45,7 +45,7 @@ export default function Reportes() {
   const { data: movimientos = [] } = useQuery({ queryKey: ['movimientos'], queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
   const { data: cppTanquesR = [] } = useQuery({
     queryKey: ['cpp-tanques'],
-    queryFn: async () => { const { data } = await supabase.from('v_cpp_por_tanque').select('*'); return data ?? []; },
+    queryFn: async () => { const { data, error } = await supabase.from('v_cpp_por_tanque').select('*'); if (error) throw error; return data ?? []; },
     staleTime: 5 * 60_000,
     enabled: canVerPrecios,
   });
