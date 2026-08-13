@@ -167,7 +167,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     const fecha  = form.fecha || new Date().toISOString().slice(0, 10);
     const combId = form.combustible_id || null;
     const candidatos = preciosDespacho
-      .filter(p => p.tipo_consumidor_id === tcId && p.fecha_desde <= fecha)
+      .filter(p => p.tipo_consumidor_id === tcId && p.fecha_desde <= fecha && (!p.fecha_hasta || p.fecha_hasta >= fecha))
       .sort((a, b) => b.fecha_desde.localeCompare(a.fecha_desde));
     return candidatos.find(p => p.combustible_id === combId)
         ?? candidatos.find(p => !p.combustible_id)

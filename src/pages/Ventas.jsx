@@ -150,6 +150,7 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
   const { data: consumidores  = [] } = useQuery({ queryKey: ['consumidores'],  queryFn: () => base44.entities.Consumidor.list() });
   const { data: combustibles  = [] } = useQuery({ queryKey: ['combustibles'],  queryFn: () => base44.entities.TipoCombustible.list() });
   const { data: preciosDespacho = [] } = useQuery({ queryKey: ['precios-despacho'], queryFn: () => base44.entities.PrecioDespachoTipo.list('-fecha_desde', 200) });
+  const { data: tiposConsumidor = [] } = useQuery({ queryKey: ['tipos-consumidor'], queryFn: () => base44.entities.TipoConsumidor.list() });
   const { data: movimientos   = [] } = useQuery({ queryKey: ['movimientos'],   queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
 
   const tanques = consumidores.filter(esTanqueBonificacion);
@@ -163,17 +164,25 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
     return combustibles.filter(c => c.activa !== false && admitidos.some(a => a === c.nombre || a === c.id));
   }, [form.tanque_origen_id, consumidores, combustibles]);
 
+  // El DESPACHO de una bonificación se registra contra el consumidor de uso
+  // logístico, así que el precio aplicable es el definido para ese tipo.
+  const tipoBonificacionId = useMemo(
+    () => tiposConsumidor.find(t => (t.nombre || '').toLowerCase().includes('logist'))?.id ?? null,
+    [tiposConsumidor],
+  );
+
   const precioVigente = useMemo(() => {
     if (!form.combustible_id || !form.fecha_venta) return null;
     const fecha = form.fecha_venta;
     const combId = form.combustible_id;
     const candidatos = preciosDespacho
-      .filter(p => p.fecha_desde <= fecha)
+      .filter(p => p.fecha_desde <= fecha && (!p.fecha_hasta || p.fecha_hasta >= fecha))
+      .filter(p => !tipoBonificacionId || p.tipo_consumidor_id === tipoBonificacionId)
       .sort((a, b) => b.fecha_desde.localeCompare(a.fecha_desde));
     return candidatos.find(p => p.combustible_id === combId)
         ?? candidatos.find(p => !p.combustible_id)
         ?? null;
-  }, [form.combustible_id, form.fecha_venta, preciosDespacho]);
+  }, [form.combustible_id, form.fecha_venta, preciosDespacho, tipoBonificacionId]);
 
   const montoCalculado = precioVigente && form.litros ? parseFloat(form.litros) * precioVigente.precio_por_litro : null;
   const stockDisponible = useStockDisponible(form.tanque_origen_id, form.combustible_id, movimientos, ventasPendientes, consumidores);
