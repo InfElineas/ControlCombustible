@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { ArrowDownCircle, ArrowLeftRight, Warehouse, Save, Loader2, Gauge, Satellite, Paperclip, X, Tag } from 'lucide-react';
+import { ArrowDownCircle, ArrowLeftRight, Warehouse, Save, Loader2, Gauge, Satellite, Paperclip, X, Tag, AlertTriangle } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 import { obtenerPrecioVigente, formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import { calcularAuditoriaCompra, obtenerCapacidadTanque, AUDITORIA_ESTADO } from './auditoriaCombustible';
@@ -300,16 +300,54 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     return fila ? Number(fila.stock_actual) : null;
   }, [tipo, form.consumidor_origen_id, stockView]);
 
+  // Ventana en la que dos movimientos idénticos se consideran un doble
+  // registro. Dos cargas reales al mismo consumidor, con los mismos litros y
+  // separadas por menos de tres minutos, no ocurren en la práctica.
+  const MINUTOS_ANTIDUPLICADO = 3;
+  const [duplicadoPendiente, setDuplicadoPendiente] = useState(null);
+
   const createMutation = useMutation({
-    mutationFn: (data) => base44.entities.Movimiento.create(data),
+    mutationFn: async ({ forzar, ...data }) => {
+      // La comprobación necesita una magnitud que comparar: litros en los
+      // movimientos de combustible, monto en las recargas de tarjeta.
+      const magnitud = Number(data.litros) > 0 ? 'litros'
+        : (Number(data.monto) > 0 ? 'monto' : null);
+      if (!forzar && magnitud) {
+        const desde = new Date(Date.now() - MINUTOS_ANTIDUPLICADO * 60_000).toISOString();
+        let q = supabase.from('movimiento')
+          .select('id')
+          .eq('tipo', data.tipo)
+          .eq('fecha', data.fecha)
+          .eq(magnitud, data[magnitud])
+          .gte('created_date', desde)
+          .limit(1);
+        if (data.consumidor_id)  q = q.eq('consumidor_id',  data.consumidor_id);
+        if (data.combustible_id) q = q.eq('combustible_id', data.combustible_id);
+        if (data.tarjeta_id)     q = q.eq('tarjeta_id',     data.tarjeta_id);
+        const { data: previas } = await q;
+        if (previas?.length) {
+          const err = new Error('DUPLICADO_RECIENTE');
+          err.datosPendientes = data;
+          throw err;
+        }
+      }
+      return base44.entities.Movimiento.create(data);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['movimientos'] });
       queryClient.invalidateQueries({ queryKey: ['v-stock-tanques'] });
+      setDuplicadoPendiente(null);
       toast.success('Movimiento registrado correctamente');
       setAdjuntoFile(null);
       onSuccess?.();
     },
     onError: (error) => {
+      // Ya hay un movimiento idéntico de hace segundos: se pide confirmación
+      // en lugar de bloquear, porque una repetición real es posible.
+      if (error?.message === 'DUPLICADO_RECIENTE') {
+        setDuplicadoPendiente(error.datosPendientes);
+        return;
+      }
       const msg = (error?.message || '').toLowerCase();
       console.error('[movimiento:create]', error);
       if (msg.includes('permission') || msg.includes('denied') || msg.includes('policy')) {
@@ -1025,6 +1063,30 @@ export default function NuevoMovimientoForm({ onSuccess }) {
           </label>
         )}
       </div>
+
+      {duplicadoPendiente && (
+        <div className="rounded-lg bg-orange-50 border border-orange-300 px-3 py-2.5 space-y-2">
+          <p className="text-xs text-orange-800 flex items-start gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              Ya se registró un movimiento idéntico hace menos de {MINUTOS_ANTIDUPLICADO} minutos:
+              mismo tipo, destino, combustible y cantidad. Si fue un doble envío, cancela.
+              Si de verdad es una segunda operación, confírmalo.
+            </span>
+          </p>
+          <div className="flex gap-2 justify-end">
+            <Button type="button" variant="ghost" size="sm" className="h-7 text-xs"
+              onClick={() => setDuplicadoPendiente(null)}>
+              Cancelar
+            </Button>
+            <Button type="button" size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
+              disabled={createMutation.isPending}
+              onClick={() => createMutation.mutate({ ...duplicadoPendiente, forzar: true })}>
+              Sí, es otra operación
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Button
         onClick={handleSubmit}
