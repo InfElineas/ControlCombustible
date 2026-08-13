@@ -1330,14 +1330,26 @@ WHERE categoria = 'surtidor'
   AND (datos_tanque->'tarjetas_vinculadas_ids') IS NULL;
 
 -- Re-crear v_stock_tanques con soporte multi-tarjeta
+-- 2026-08-13: se anaden balance_real, descuadre y litros_descuadre. stock_actual
+-- conserva el recorte a 0 para la interfaz; balance_real permite detectar cuando
+-- las salidas superan las entradas, que antes quedaba oculto tras el GREATEST.
+-- Ver migrations/2026-08-13_v_stock_tanques_balance_real.sql
 DROP VIEW IF EXISTS v_stock_tanques;
 CREATE VIEW v_stock_tanques AS
 SELECT
+  b.consumidor_id, b.nombre, b.categoria, b.combustible_id, b.combustible_nombre,
+  GREATEST(0, b.balance_real)                                  AS stock_actual,
+  b.balance_real,
+  (b.balance_real < 0)                                         AS descuadre,
+  CASE WHEN b.balance_real < 0 THEN -b.balance_real ELSE 0 END  AS litros_descuadre,
+  b.litros_iniciales, b.total_entradas, b.total_salidas
+FROM (
+SELECT
   c.id AS consumidor_id, c.nombre, c.categoria, c.combustible_id, c.combustible_nombre,
-  GREATEST(0, COALESCE(c.litros_iniciales,0) + COALESCE(e.total,0) - COALESCE(s.total,0)) AS stock_actual,
   COALESCE(c.litros_iniciales,0) AS litros_iniciales,
   COALESCE(e.total,0) AS total_entradas,
-  COALESCE(s.total,0) AS total_salidas
+  COALESCE(s.total,0) AS total_salidas,
+  COALESCE(c.litros_iniciales,0) + COALESCE(e.total,0) - COALESCE(s.total,0) AS balance_real
 FROM consumidor c
 LEFT JOIN LATERAL (
   SELECT COALESCE(SUM(m.litros),0) AS total FROM movimiento m
@@ -1362,7 +1374,8 @@ LEFT JOIN LATERAL (
       AND (c.combustible_id IS NULL OR m.combustible_id IS NULL OR m.combustible_id = c.combustible_id)
   ) sub
 ) s ON true
-WHERE c.activo IS NOT FALSE AND c.categoria IN ('deposito','surtidor');
+WHERE c.activo IS NOT FALSE AND c.categoria IN ('deposito','surtidor')
+) b;
 
 -- ─────────────────────────────────────────────────────────────
 --  2026-07-21: RPC get_or_create_user_role (SECURITY DEFINER)
