@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/api/supabaseClient';
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -77,7 +79,7 @@ function esEquipo(consumidor) {
   return n.includes('equipo') || n.includes('planta') || n.includes('generador') || n.includes('grupo');
 }
 
-function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
+function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL', stockVista }) {
   const mesActual = hoy.toISOString().slice(0, 7);
   const periodo = mesFiltro === 'ALL' ? mesActual : mesFiltro;
   const esTanqueConsumidor = esTanque(consumidor);
@@ -279,11 +281,23 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL' }) {
 
   const stockActual = React.useMemo(() => {
     if (!esTanqueConsumidor) return null;
+    // v_stock_tanques es la fuente: ya contempla las transferencias internas.
+    if (stockVista != null) return stockVista;
+    // Solo si el tanque no figura en la vista. Se replica su misma fórmula
+    // —incluidos los DESPACHO recibidos y el filtro por combustible— para no
+    // reintroducir la discrepancia que este cambio corrige.
     const ini    = Number(consumidor.litros_iniciales) || 0;
-    const entras = movimientos.filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO') && m.consumidor_id        === consumidor.id).reduce((s, m) => s + (m.litros || 0), 0);
-    const sales  = movimientos.filter(m =>  m.tipo === 'DESPACHO'                         && m.consumidor_origen_id === consumidor.id).reduce((s, m) => s + (m.litros || 0), 0);
+    const mismoComb = m => !consumidor.combustible_id || !m.combustible_id || m.combustible_id === consumidor.combustible_id;
+    const entras = movimientos
+      .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' ||
+        (m.tipo === 'DESPACHO' && !(m.referencia || '').startsWith('Bonificación combustible:')))
+        && m.consumidor_id === consumidor.id && mismoComb(m))
+      .reduce((s, m) => s + (m.litros || 0), 0);
+    const sales  = movimientos
+      .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === consumidor.id && mismoComb(m))
+      .reduce((s, m) => s + (m.litros || 0), 0);
     return Math.max(0, ini + entras - sales);
-  }, [esTanqueConsumidor, movimientos, consumidor.id, consumidor.litros_iniciales]);
+  }, [esTanqueConsumidor, stockVista, movimientos, consumidor.id, consumidor.litros_iniciales, consumidor.combustible_id]);
 
   const coberturaDias = React.useMemo(() => {
     if (!esTanqueConsumidor || stockActual == null) return null;
@@ -1039,6 +1053,26 @@ export default function ConsumidoresPorTipo({ consumidores, tiposConsumidor, mov
   const periodo = mesFiltro === 'ALL' ? mesActual : mesFiltro;
   const consumidoresActivos = consumidores.filter(c => c.activo);
 
+  // El stock sale de v_stock_tanques, no de un cálculo propio: sumando solo
+  // COMPRA y DEPOSITO se perdía el combustible recibido por transferencia
+  // interna (DESPACHO desde otro tanque) y el stock salía muy por debajo del
+  // real. Misma queryKey que el resto de la app, así que comparte caché.
+  const { data: stockView = [] } = useQuery({
+    queryKey: ['v-stock-tanques'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_stock_tanques').select('*');
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+  const stockPorConsumidor = React.useMemo(() => {
+    const m = {};
+    stockView.forEach(r => { m[r.consumidor_id] = Number(r.stock_actual) || 0; });
+    return m;
+  }, [stockView]);
+
   const grupos = tiposConsumidor
     .filter(t => t.activo !== false)
     .map(tipo => ({
@@ -1160,7 +1194,8 @@ export default function ConsumidoresPorTipo({ consumidores, tiposConsumidor, mov
                 )}
                 <div className="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {itemsFiltrados.map(c => (
-                    <ConsumidorCard key={c.id} consumidor={c} movimientos={movimientos} hoy={hoy} mesFiltro={mesFiltro} />
+                    <ConsumidorCard key={c.id} consumidor={c} movimientos={movimientos} hoy={hoy} mesFiltro={mesFiltro}
+                      stockVista={stockPorConsumidor[c.id]} />
                   ))}
                 </div>
               </div>
