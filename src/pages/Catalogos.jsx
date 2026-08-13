@@ -56,7 +56,7 @@ const emptyConductorForm = {
 
 // ── TAB CONSUMIDORES ──────────────────────────────────────────────────────────
 
-function ConsumidorRow({ c, tipos, canWrite, canDelete, onEdit, onToggle, onDelete }) {
+function ConsumidorRow({ c, tipos, canWrite, canDelete, onEdit, onToggle, onDelete, toggling }) {
   const tipo = tipos.find(t => t.id === c.tipo_consumidor_id);
   return (
     <Card className={`border-0 shadow-sm ${!c.activo ? 'opacity-60' : ''}`}>
@@ -85,7 +85,7 @@ function ConsumidorRow({ c, tipos, canWrite, canDelete, onEdit, onToggle, onDele
         </div>
         <div className="flex gap-1 shrink-0">
           {canWrite  && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(c)}><Pencil className="w-3.5 h-3.5" /></Button>}
-          {canWrite  && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onToggle(c)}><Power className={`w-3.5 h-3.5 ${c.activo !== false ? 'text-emerald-500' : 'text-slate-300'}`} /></Button>}
+          {canWrite  && <Button variant="ghost" size="icon" className="h-8 w-8" disabled={toggling} onClick={() => onToggle(c)}><Power className={`w-3.5 h-3.5 ${c.activo !== false ? 'text-emerald-500' : 'text-slate-300'}`} /></Button>}
           {canDelete && <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-red-500" onClick={() => onDelete(c)}><Trash2 className="w-3.5 h-3.5" /></Button>}
         </div>
       </CardContent>
@@ -270,7 +270,7 @@ function TabConsumidores({ canWrite, canDelete }) {
         )}
         {filteredByTab.map(c => (
           <ConsumidorRow key={c.id} c={c} tipos={tipos} canWrite={canWrite} canDelete={canDelete}
-            onEdit={openEdit} onToggle={toggleActivo} onDelete={setConfirmDel} />
+            onEdit={openEdit} onToggle={toggleActivo} onDelete={setConfirmDel} toggling={updateMut.isPending} />
         ))}
       </div>
 
@@ -305,7 +305,7 @@ function TabConsumidores({ canWrite, canDelete }) {
 
 // ── TAB CONDUCTORES ───────────────────────────────────────────────────────────
 
-function TabConductores({ canDelete }) {
+function TabConductores({ canWrite, canDelete }) {
   const qc = useQueryClient();
   const { data: conductores = []  } = useQuery({ queryKey: ['conductores'],  queryFn: () => base44.entities.Conductor.list() });
   const { data: consumidores = []  } = useQuery({ queryKey: ['consumidores'], queryFn: () => base44.entities.Consumidor.list() });
@@ -410,10 +410,12 @@ function TabConductores({ canDelete }) {
               {opcionesMes.map(o => <SelectItem key={o.key} value={o.key}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700 shrink-0"
-            onClick={() => { setForm(emptyConductorForm); setEditing(null); setDialogOpen(true); }}>
-            <Plus className="w-4 h-4" /> Nuevo
-          </Button>
+          {canWrite && (
+            <Button size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700 shrink-0"
+              onClick={() => { setForm(emptyConductorForm); setEditing(null); setDialogOpen(true); }}>
+              <Plus className="w-4 h-4" /> Nuevo
+            </Button>
+          )}
         </div>
       </div>
 
@@ -470,12 +472,16 @@ function TabConductores({ canDelete }) {
                   <Button variant="ghost" size="icon" className="h-8 w-8" title="Ficha" onClick={() => setHistorialId(c.id)}>
                     <UserCheck className="w-3.5 h-3.5 text-slate-400" />
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(c)}>
-                    <Pencil className="w-3.5 h-3.5" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleActive(c)}>
-                    <Power className={`w-3.5 h-3.5 ${c.activo ? 'text-emerald-500' : 'text-slate-300'}`} />
-                  </Button>
+                  {canWrite && (
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(c)}>
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                  {canWrite && (
+                    <Button variant="ghost" size="icon" className="h-8 w-8" disabled={updateMut.isPending} onClick={() => toggleActive(c)}>
+                      <Power className={`w-3.5 h-3.5 ${c.activo ? 'text-emerald-500' : 'text-slate-300'}`} />
+                    </Button>
+                  )}
                   {canDelete && (
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-red-500"
                       onClick={() => setConfirmAction({ id: c.id, title: 'Eliminar conductor', desc: `¿Eliminar a "${c.nombre}"?` })}>
@@ -649,7 +655,7 @@ const emptyDepositoForm = {
   datos_tanque: { capacidad_litros: '', ubicacion: '', stock_minimo: '' },
 };
 
-function DepositoRow({ c, combustibles, canWrite, canDelete, onEdit, onToggle, onDelete }) {
+function DepositoRow({ c, combustibles, canWrite, canDelete, onEdit, onToggle, onDelete, toggling }) {
   const comb = combustibles.find(cb => cb.id === c.combustible_id);
   return (
     <Card className={`border-0 shadow-sm ${!c.activo ? 'opacity-60' : ''}`}>
@@ -675,7 +681,7 @@ function DepositoRow({ c, combustibles, canWrite, canDelete, onEdit, onToggle, o
         </div>
         <div className="flex gap-1 shrink-0">
           {canWrite  && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(c)}><Pencil className="w-3.5 h-3.5" /></Button>}
-          {canWrite  && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onToggle(c)}><Power className={`w-3.5 h-3.5 ${c.activo !== false ? 'text-emerald-500' : 'text-slate-300'}`} /></Button>}
+          {canWrite  && <Button variant="ghost" size="icon" className="h-8 w-8" disabled={toggling} onClick={() => onToggle(c)}><Power className={`w-3.5 h-3.5 ${c.activo !== false ? 'text-emerald-500' : 'text-slate-300'}`} /></Button>}
           {canDelete && <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-red-500" onClick={() => onDelete(c)}><Trash2 className="w-3.5 h-3.5" /></Button>}
         </div>
       </CardContent>
@@ -786,7 +792,7 @@ function TabDepositos({ canWrite, canDelete }) {
         )}
         {depositos.map(c => (
           <DepositoRow key={c.id} c={c} combustibles={combustibles} canWrite={canWrite} canDelete={canDelete}
-            onEdit={openEdit} onToggle={toggleActivo} onDelete={setConfirmDel} />
+            onEdit={openEdit} onToggle={toggleActivo} onDelete={setConfirmDel} toggling={updateMut.isPending} />
         ))}
       </div>
 
@@ -882,7 +888,7 @@ const emptySurtidorForm = {
   datos_tanque: { tarjetas_vinculadas_ids: [], ubicacion: '' },
 };
 
-function SurtidorRow({ c, combustibles, tarjetas, canWrite, canDelete, onEdit, onToggle, onDelete }) {
+function SurtidorRow({ c, combustibles, tarjetas, canWrite, canDelete, onEdit, onToggle, onDelete, toggling }) {
   const comb    = combustibles.find(cb => cb.id === c.combustible_id);
   const tarjetasIds = (() => {
     const arr = c.datos_tanque?.tarjetas_vinculadas_ids;
@@ -917,7 +923,7 @@ function SurtidorRow({ c, combustibles, tarjetas, canWrite, canDelete, onEdit, o
         </div>
         <div className="flex gap-1 shrink-0">
           {canWrite  && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(c)}><Pencil className="w-3.5 h-3.5" /></Button>}
-          {canWrite  && <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onToggle(c)}><Power className={`w-3.5 h-3.5 ${c.activo !== false ? 'text-emerald-500' : 'text-slate-300'}`} /></Button>}
+          {canWrite  && <Button variant="ghost" size="icon" className="h-8 w-8" disabled={toggling} onClick={() => onToggle(c)}><Power className={`w-3.5 h-3.5 ${c.activo !== false ? 'text-emerald-500' : 'text-slate-300'}`} /></Button>}
           {canDelete && <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-red-500" onClick={() => onDelete(c)}><Trash2 className="w-3.5 h-3.5" /></Button>}
         </div>
       </CardContent>
@@ -1025,7 +1031,7 @@ function TabSurtidores({ canWrite, canDelete }) {
         )}
         {surtidores.map(c => (
           <SurtidorRow key={c.id} c={c} combustibles={combustibles} tarjetas={tarjetas} canWrite={canWrite} canDelete={canDelete}
-            onEdit={openEdit} onToggle={toggleActivo} onDelete={setConfirmDel} />
+            onEdit={openEdit} onToggle={toggleActivo} onDelete={setConfirmDel} toggling={updateMut.isPending} />
         ))}
       </div>
 
@@ -1115,7 +1121,7 @@ function TabTiposConsumidor() {
 
 // ── TAB COMBUSTIBLES ──────────────────────────────────────────────────────────
 
-function TabCombustibles({ canDelete }) {
+function TabCombustibles({ canWrite, canDelete }) {
   const qc = useQueryClient();
   const { data: combustibles = [] } = useQuery({ queryKey: ['combustibles'], queryFn: () => base44.entities.TipoCombustible.list() });
   const { data: movimientos  = [] } = useQuery({ queryKey: ['movimientos'],  queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
@@ -1163,10 +1169,12 @@ function TabCombustibles({ canDelete }) {
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
-        <Button size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700"
-          onClick={() => { setNombre(''); setEditing(null); setDialogOpen(true); }}>
-          <Plus className="w-4 h-4" /> Nuevo combustible
-        </Button>
+        {canWrite && (
+          <Button size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700"
+            onClick={() => { setNombre(''); setEditing(null); setDialogOpen(true); }}>
+            <Plus className="w-4 h-4" /> Nuevo combustible
+          </Button>
+        )}
       </div>
 
       <div className="grid gap-3">
@@ -1183,14 +1191,18 @@ function TabCombustibles({ canDelete }) {
                 </div>
               </div>
               <div className="flex gap-1 shrink-0">
-                <Button variant="ghost" size="icon" className="h-8 w-8"
-                  onClick={() => { setEditing(c); setNombre(c.nombre); setDialogOpen(true); }}>
-                  <Pencil className="w-3.5 h-3.5" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8"
-                  onClick={() => updateMut.mutate({ id: c.id, d: { activa: !c.activa } })}>
-                  <Power className={`w-3.5 h-3.5 ${c.activa ? 'text-emerald-500' : 'text-slate-300'}`} />
-                </Button>
+                {canWrite && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8"
+                    onClick={() => { setEditing(c); setNombre(c.nombre); setDialogOpen(true); }}>
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                )}
+                {canWrite && (
+                  <Button variant="ghost" size="icon" className="h-8 w-8" disabled={updateMut.isPending}
+                    onClick={() => updateMut.mutate({ id: c.id, d: { activa: !c.activa } })}>
+                    <Power className={`w-3.5 h-3.5 ${c.activa ? 'text-emerald-500' : 'text-slate-300'}`} />
+                  </Button>
+                )}
                 {canDelete && (
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-300 hover:text-red-500"
                     onClick={() => handleDelete(c)}>
@@ -1265,7 +1277,7 @@ function TabTarjetas({ canManage, canDelete }) {
   const deleteMut = useMutation({
     mutationFn: (id) => base44.entities.Tarjeta.delete(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['tarjetas'] }); toast.success('Tarjeta eliminada'); setConfirmAction(null); },
-    onError: () => toast.error('Error al eliminar'),
+    onError: (e) => toast.error(e?.message ?? 'Error al eliminar'),
   });
 
   const toggleMut = useMutation({
@@ -1355,7 +1367,7 @@ function TabTarjetas({ canManage, canDelete }) {
                         </Button>
                       )}
                       {canManage && (
-                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => toggleMut.mutate({ id: t.id, activa: !t.activa })}>
+                        <Button size="icon" variant="ghost" className="h-7 w-7" disabled={toggleMut.isPending} onClick={() => toggleMut.mutate({ id: t.id, activa: !t.activa })}>
                           <Power className={`w-3 h-3 ${t.activa !== false ? 'text-emerald-500' : 'text-slate-300'}`} />
                         </Button>
                       )}
@@ -1488,7 +1500,7 @@ function TabPrecios({ canManage }) {
       toast.success(dialog?.mode === 'edit' ? 'Precio actualizado' : 'Precio creado');
       setDialog(null);
     },
-    onError: () => toast.error('Error al guardar precio'),
+    onError: (e) => toast.error(e?.message ?? 'Error al guardar precio'),
   });
 
   const deleteMut = useMutation({
@@ -1655,14 +1667,17 @@ function TabPrecios({ canManage }) {
 // ── DEFINICIÓN DE TABS CON CONTROL DE ACCESO ─────────────────────────────────
 
 function buildTabs(role) {
+  // El auditor ve todos los catálogos en modo lectura: los tabs reciben
+  // canWrite/canDelete/canManage en false, así que solo se renderiza el listado.
+  const auditor = role === 'auditor';
   return [
-    { value: 'consumidores',     label: 'Consumidores',        icon: <Users      className="w-3.5 h-3.5" />, show: role === 'superadmin' || role === 'operador' },
-    { value: 'depositos',        label: 'Depósitos',           icon: <Warehouse  className="w-3.5 h-3.5" />, show: role === 'superadmin' || role === 'operador' },
-    { value: 'surtidores',       label: 'Surtidores',          icon: <MapPin     className="w-3.5 h-3.5" />, show: role === 'superadmin' || role === 'operador' },
-    { value: 'conductores',      label: 'Conductores',         icon: <UserCheck  className="w-3.5 h-3.5" />, show: role === 'superadmin' || role === 'operador' },
-    { value: 'tarjetas',         label: 'Tarjetas',            icon: <CreditCard className="w-3.5 h-3.5" />, show: role === 'superadmin' || role === 'economico' },
-    { value: 'precios',          label: 'Precios',             icon: <DollarSign className="w-3.5 h-3.5" />, show: role === 'superadmin' || role === 'economico' },
-    { value: 'combustibles',     label: 'Combustibles',        icon: <Fuel       className="w-3.5 h-3.5" />, show: role === 'superadmin' },
+    { value: 'consumidores',     label: 'Consumidores',        icon: <Users      className="w-3.5 h-3.5" />, show: role === 'superadmin' || role === 'operador' || auditor },
+    { value: 'depositos',        label: 'Depósitos',           icon: <Warehouse  className="w-3.5 h-3.5" />, show: role === 'superadmin' || role === 'operador' || auditor },
+    { value: 'surtidores',       label: 'Surtidores',          icon: <MapPin     className="w-3.5 h-3.5" />, show: role === 'superadmin' || role === 'operador' || auditor },
+    { value: 'conductores',      label: 'Conductores',         icon: <UserCheck  className="w-3.5 h-3.5" />, show: role === 'superadmin' || role === 'operador' || auditor },
+    { value: 'tarjetas',         label: 'Tarjetas',            icon: <CreditCard className="w-3.5 h-3.5" />, show: role === 'superadmin' || role === 'economico' || auditor },
+    { value: 'precios',          label: 'Precios',             icon: <DollarSign className="w-3.5 h-3.5" />, show: role === 'superadmin' || role === 'economico' || auditor },
+    { value: 'combustibles',     label: 'Combustibles',        icon: <Fuel       className="w-3.5 h-3.5" />, show: role === 'superadmin' || auditor },
     { value: 'tipos_consumidor', label: 'Tipos de consumidor', icon: <ListTree   className="w-3.5 h-3.5" />, show: role === 'superadmin' },
   ].filter(t => t.show);
 }
@@ -1720,9 +1735,9 @@ export default function Catalogos() {
         {tab === 'consumidores'     && <TabConsumidores   canWrite={canWrite} canDelete={canDelete} />}
         {tab === 'depositos'        && <TabDepositos      canWrite={canWrite} canDelete={canDelete} />}
         {tab === 'surtidores'       && <TabSurtidores     canWrite={canWrite} canDelete={canDelete} />}
-        {tab === 'conductores'      && <TabConductores    canDelete={canDelete} />}
+        {tab === 'conductores'      && <TabConductores    canWrite={canWrite} canDelete={canDelete} />}
         {tab === 'tipos_consumidor' && <TabTiposConsumidor />}
-        {tab === 'combustibles'     && <TabCombustibles   canDelete={canDelete} />}
+        {tab === 'combustibles'     && <TabCombustibles   canWrite={canWrite} canDelete={canDelete} />}
         {tab === 'tarjetas'         && <TabTarjetas       canManage={canManageTarjetas} canDelete={canManageTarjetas} />}
         {tab === 'precios'          && <TabPrecios        canManage={canManageTarjetas} />}
       </div>

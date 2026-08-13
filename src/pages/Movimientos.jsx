@@ -107,8 +107,11 @@ export default function Movimientos() {
     if (pinMovId) return movimientos.filter(m => m.id === pinMovId);
     const consumidorById = Object.fromEntries(consumidores.map(c => [c.id, c]));
     return movimientos.filter(m => {
-      // Economico ve solo DESPACHOs VD (consumidor_nombre='Uso Logístico'), no los de flota
-      if (isEconomico && m.tipo === 'DESPACHO' && m.consumidor_nombre !== 'Uso Logístico') return false;
+      // Economico ve solo DESPACHOs VD (destino de uso logístico), no los de flota.
+      // Se compara por coincidencia parcial: el nombre exacto varía entre registros
+      // ("Uso Logístico", "Operaciones Logisticas VD") y una igualdad estricta
+      // dejaba al rol viendo cero despachos.
+      if (isEconomico && m.tipo === 'DESPACHO' && !(m.consumidor_nombre || '').toLowerCase().includes('logist')) return false;
       if (filters.fechaDesde && m.fecha < filters.fechaDesde) return false;
       if (filters.fechaHasta && m.fecha > filters.fechaHasta) return false;
       if (filters.tipo !== 'all' && m.tipo !== filters.tipo) return false;

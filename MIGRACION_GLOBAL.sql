@@ -544,41 +544,80 @@ $$ LANGUAGE sql SECURITY DEFINER STABLE;
 -- ── Políticas base: tablas de catálogo (acceso total autenticados) ────────────
 -- (Se eliminan antes de crear para evitar duplicados en re-ejecución)
 
+-- Ver migración 2026-08-13_rls_cerrar_full_access.sql: estas tablas tenían
+-- "Authenticated full access" (ALL), lo que permitía a auditor y cajero
+-- escribir vía API directa. Ahora SELECT es abierto y la escritura sigue al
+-- rol que controla esa pantalla en el frontend.
 DO $$ BEGIN
-  -- tipo_consumidor
-  DROP POLICY IF EXISTS "Authenticated full access" ON tipo_consumidor;
-  CREATE POLICY "Authenticated full access" ON tipo_consumidor
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  -- tipo_consumidor — Catálogos › Tipos de consumidor (solo superadmin)
+  DROP POLICY IF EXISTS "Authenticated full access"   ON tipo_consumidor;
+  DROP POLICY IF EXISTS "tipo_consumidor_select_all"  ON tipo_consumidor;
+  DROP POLICY IF EXISTS "tipo_consumidor_write_admin" ON tipo_consumidor;
+  CREATE POLICY "tipo_consumidor_select_all" ON tipo_consumidor
+    FOR SELECT TO authenticated USING (true);
+  CREATE POLICY "tipo_consumidor_write_admin" ON tipo_consumidor
+    FOR ALL TO authenticated
+    USING (get_my_role() = 'superadmin') WITH CHECK (get_my_role() = 'superadmin');
 
   -- tipo_combustible
-  DROP POLICY IF EXISTS "Authenticated full access" ON tipo_combustible;
-  CREATE POLICY "Authenticated full access" ON tipo_combustible
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  DROP POLICY IF EXISTS "Authenticated full access"   ON tipo_combustible;
+  DROP POLICY IF EXISTS "tipo_combustible_select_all" ON tipo_combustible;
+  DROP POLICY IF EXISTS "tipo_combustible_write_ops"  ON tipo_combustible;
+  CREATE POLICY "tipo_combustible_select_all" ON tipo_combustible
+    FOR SELECT TO authenticated USING (true);
+  CREATE POLICY "tipo_combustible_write_ops" ON tipo_combustible
+    FOR ALL TO authenticated
+    USING (get_my_role() IN ('superadmin', 'operador'))
+    WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
 
-  -- precio_combustible
-  DROP POLICY IF EXISTS "Authenticated full access" ON precio_combustible;
-  CREATE POLICY "Authenticated full access" ON precio_combustible
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  -- precio_combustible — Catálogos › Precios (superadmin/economico)
+  DROP POLICY IF EXISTS "Authenticated full access"     ON precio_combustible;
+  DROP POLICY IF EXISTS "precio_combustible_select_all" ON precio_combustible;
+  DROP POLICY IF EXISTS "precio_combustible_write_eco"  ON precio_combustible;
+  CREATE POLICY "precio_combustible_select_all" ON precio_combustible
+    FOR SELECT TO authenticated USING (true);
+  CREATE POLICY "precio_combustible_write_eco" ON precio_combustible
+    FOR ALL TO authenticated
+    USING (get_my_role() IN ('superadmin', 'economico'))
+    WITH CHECK (get_my_role() IN ('superadmin', 'economico'));
 
   -- vehiculo
   DROP POLICY IF EXISTS "Authenticated full access" ON vehiculo;
-  CREATE POLICY "Authenticated full access" ON vehiculo
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  DROP POLICY IF EXISTS "vehiculo_select_all"       ON vehiculo;
+  DROP POLICY IF EXISTS "vehiculo_write_ops"        ON vehiculo;
+  CREATE POLICY "vehiculo_select_all" ON vehiculo
+    FOR SELECT TO authenticated USING (true);
+  CREATE POLICY "vehiculo_write_ops" ON vehiculo
+    FOR ALL TO authenticated
+    USING (get_my_role() IN ('superadmin', 'operador'))
+    WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
 
-  -- config_alerta
+  -- config_alerta — Alertas (auditor entra en solo lectura)
   DROP POLICY IF EXISTS "Authenticated full access" ON config_alerta;
-  CREATE POLICY "Authenticated full access" ON config_alerta
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  DROP POLICY IF EXISTS "config_alerta_select_all"  ON config_alerta;
+  DROP POLICY IF EXISTS "config_alerta_write_ops"   ON config_alerta;
+  CREATE POLICY "config_alerta_select_all" ON config_alerta
+    FOR SELECT TO authenticated USING (true);
+  CREATE POLICY "config_alerta_write_ops" ON config_alerta
+    FOR ALL TO authenticated
+    USING (get_my_role() IN ('superadmin', 'operador'))
+    WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
 
   -- audit_log: SELECT libre; INSERT solo con user_id = propio (evita falsificación)
   DROP POLICY IF EXISTS "Authenticated read access" ON audit_log;
   CREATE POLICY "Authenticated read access" ON audit_log
     FOR SELECT TO authenticated USING (true);
 
-  -- ruta
+  -- ruta — Rutas (auditor entra en solo lectura)
   DROP POLICY IF EXISTS "Authenticated full access" ON ruta;
-  CREATE POLICY "Authenticated full access" ON ruta
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  DROP POLICY IF EXISTS "ruta_select_all"           ON ruta;
+  DROP POLICY IF EXISTS "ruta_write_ops"            ON ruta;
+  CREATE POLICY "ruta_select_all" ON ruta
+    FOR SELECT TO authenticated USING (true);
+  CREATE POLICY "ruta_write_ops" ON ruta
+    FOR ALL TO authenticated
+    USING (get_my_role() IN ('superadmin', 'operador'))
+    WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
 
 END $$;
 
@@ -730,9 +769,15 @@ CREATE INDEX IF NOT EXISTS idx_rct_asignacion_id    ON reporte_chat_transporte(a
 ALTER TABLE reporte_chat_transporte ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
-  DROP POLICY IF EXISTS "Authenticated full access" ON reporte_chat_transporte;
-  CREATE POLICY "Authenticated full access" ON reporte_chat_transporte
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  DROP POLICY IF EXISTS "Authenticated full access"            ON reporte_chat_transporte;
+  DROP POLICY IF EXISTS "reporte_chat_transporte_select_all"   ON reporte_chat_transporte;
+  DROP POLICY IF EXISTS "reporte_chat_transporte_write_ops"    ON reporte_chat_transporte;
+  CREATE POLICY "reporte_chat_transporte_select_all" ON reporte_chat_transporte
+    FOR SELECT TO authenticated USING (true);
+  CREATE POLICY "reporte_chat_transporte_write_ops" ON reporte_chat_transporte
+    FOR ALL TO authenticated
+    USING (get_my_role() IN ('superadmin', 'operador'))
+    WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
 END $$;
 
 COMMENT ON COLUMN consumidor.datos_vehiculo IS
@@ -1001,8 +1046,14 @@ ALTER TABLE marcador ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
   DROP POLICY IF EXISTS "Authenticated full access" ON marcador;
-  CREATE POLICY "Authenticated full access" ON marcador
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  DROP POLICY IF EXISTS "marcador_select_all"       ON marcador;
+  DROP POLICY IF EXISTS "marcador_write_ops"        ON marcador;
+  CREATE POLICY "marcador_select_all" ON marcador
+    FOR SELECT TO authenticated USING (true);
+  CREATE POLICY "marcador_write_ops" ON marcador
+    FOR ALL TO authenticated
+    USING (get_my_role() IN ('superadmin', 'operador'))
+    WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
 END $$;
 
 -- ─────────────────────────────────────────────────────────────
@@ -1022,9 +1073,15 @@ CREATE INDEX IF NOT EXISTS idx_ruta_marcador_ruta_id ON ruta_marcador (ruta_id);
 ALTER TABLE ruta_marcador ENABLE ROW LEVEL SECURITY;
 
 DO $$ BEGIN
-  DROP POLICY IF EXISTS "Authenticated full access" ON ruta_marcador;
-  CREATE POLICY "Authenticated full access" ON ruta_marcador
-    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+  DROP POLICY IF EXISTS "Authenticated full access"  ON ruta_marcador;
+  DROP POLICY IF EXISTS "ruta_marcador_select_all"   ON ruta_marcador;
+  DROP POLICY IF EXISTS "ruta_marcador_write_ops"    ON ruta_marcador;
+  CREATE POLICY "ruta_marcador_select_all" ON ruta_marcador
+    FOR SELECT TO authenticated USING (true);
+  CREATE POLICY "ruta_marcador_write_ops" ON ruta_marcador
+    FOR ALL TO authenticated
+    USING (get_my_role() IN ('superadmin', 'operador'))
+    WITH CHECK (get_my_role() IN ('superadmin', 'operador'));
 END $$;
 
 -- ─────────────────────────────────────────────────────────────

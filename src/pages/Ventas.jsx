@@ -506,7 +506,7 @@ function PanelBeneficiarios({ onClose }) {
       setEditId(null);
       toast.success(editId ? 'Actualizado' : 'Trabajador registrado');
     },
-    onError: () => toast.error('Error al guardar'),
+    onError: (e) => toast.error(e?.message ?? 'Error al guardar'),
   });
 
   const deleteMut = useMutation({
@@ -830,7 +830,13 @@ function FormEditBonificacion({ venta, onClose }) {
     tanque_origen_id: venta.tanque_origen_id,
     combustible_id:   venta.combustible_id,
     litros:           String(venta.litros),
-    precio_por_litro: String(venta.precio_por_litro),
+    // En ventas cobradas el precio real es precio_venta_unitario: mostrar
+    // precio_por_litro haría creer que se cobró al precio de despacho original.
+    precio_por_litro: String(
+      venta.estado === 'PAGADO_FINALIZADO' && venta.precio_venta_unitario != null
+        ? venta.precio_venta_unitario
+        : venta.precio_por_litro
+    ),
     referencia:       venta.referencia ?? '',
     numero_factura:   venta.numero_factura ?? '',
   });
@@ -913,6 +919,10 @@ function FormEditBonificacion({ venta, onClose }) {
       monto:                litros * precio,
       referencia:           form.referencia || null,
       numero_factura:       form.numero_factura || null,
+      // En una venta ya cobrada el precio de referencia es precio_venta_unitario:
+      // si no se actualiza junto al precio corregido, ambos campos quedan con
+      // valores distintos y los reportes no cuadran con el monto.
+      ...(venta.estado === 'PAGADO_FINALIZADO' ? { precio_venta_unitario: precio } : {}),
     });
   }
 

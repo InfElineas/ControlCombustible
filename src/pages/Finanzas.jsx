@@ -26,7 +26,9 @@ const fmtL = n => (n == null || isNaN(n) ? '0' : n % 1 === 0 ? String(Math.round
 
 function lastDay(yyyy_mm) {
   const [y, m] = yyyy_mm.split('-').map(Number);
-  return new Date(y, m, 0).toISOString().slice(0, 10);
+  // Date.UTC evita que toISOString desplace la fecha un día en zonas UTC+,
+  // lo que dejaba fuera el último día del mes en las consultas del período.
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -867,19 +869,19 @@ function PreciosDespacho() {
   const crearMut = useMutation({
     mutationFn: d => base44.entities.PrecioDespachoTipo.create(d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['precios-despacho'] }); setForm(emptyForm); setShowForm(false); setEditId(null); toast.success('Precio registrado'); },
-    onError:   () => toast.error('Error al guardar'),
+    onError:   (e) => toast.error(e?.message ?? 'Error al guardar'),
   });
 
   const editarMut = useMutation({
     mutationFn: ({ id, d }) => base44.entities.PrecioDespachoTipo.update(id, d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['precios-despacho'] }); setForm(emptyForm); setShowForm(false); setEditId(null); toast.success('Precio actualizado'); },
-    onError:   () => toast.error('Error al guardar'),
+    onError:   (e) => toast.error(e?.message ?? 'Error al guardar'),
   });
 
   const eliminarMut = useMutation({
     mutationFn: id => base44.entities.PrecioDespachoTipo.delete(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['precios-despacho'] }); setToDelete(null); toast.success('Eliminado'); },
-    onError:   () => toast.error('Error al eliminar'),
+    onError:   (e) => toast.error(e?.message ?? 'Error al eliminar'),
   });
 
   function openEdit(p) {
@@ -951,7 +953,7 @@ function PreciosDespacho() {
                     <SelectValue placeholder="Seleccionar…" />
                   </SelectTrigger>
                   <SelectContent>
-                    {tiposConsumidor.filter(t => t.activa !== false).map(t => (
+                    {tiposConsumidor.filter(t => t.activo !== false).map(t => (
                       <SelectItem key={t.id} value={t.id} className="text-xs">{t.nombre}</SelectItem>
                     ))}
                   </SelectContent>
@@ -1088,19 +1090,19 @@ function ConceptosPanel() {
   const crearMut = useMutation({
     mutationFn: d => base44.entities.ConceptoPrecio.create(d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['conceptos-precio'] }); setForm(emptyConceptoForm); setShowForm(false); setEditId(null); toast.success('Concepto creado'); },
-    onError: () => toast.error('Error al guardar'),
+    onError: (e) => toast.error(e?.message ?? 'Error al guardar'),
   });
 
   const editarMut = useMutation({
     mutationFn: ({ id, d }) => base44.entities.ConceptoPrecio.update(id, d),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['conceptos-precio'] }); setForm(emptyConceptoForm); setShowForm(false); setEditId(null); toast.success('Concepto actualizado'); },
-    onError: () => toast.error('Error al guardar'),
+    onError: (e) => toast.error(e?.message ?? 'Error al guardar'),
   });
 
   const eliminarMut = useMutation({
     mutationFn: id => base44.entities.ConceptoPrecio.delete(id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['conceptos-precio'] }); setToDelete(null); toast.success('Eliminado'); },
-    onError: () => toast.error('Error al eliminar'),
+    onError: (e) => toast.error(e?.message ?? 'Error al eliminar'),
   });
 
   function openEdit(c) {
@@ -1245,7 +1247,7 @@ function CppAjustePanel() {
       setShowForm(false);
       toast.success('Ajuste de CPP registrado');
     },
-    onError: () => toast.error('Error al guardar'),
+    onError: (e) => toast.error(e?.message ?? 'Error al guardar'),
   });
 
   const eliminarMut = useMutation({

@@ -1588,11 +1588,13 @@ export default function Rutas() {
 
   // Mutations — catálogo
   async function saveWaypoints(rutaId, paradas) {
-    await supabase.from('ruta_marcador').delete().eq('ruta_id', rutaId);
+    const { error: delErr } = await supabase.from('ruta_marcador').delete().eq('ruta_id', rutaId);
+    if (delErr) throw delErr;
     if (paradas.length > 0) {
-      await supabase.from('ruta_marcador').insert(
+      const { error: insErr } = await supabase.from('ruta_marcador').insert(
         paradas.map(p => ({ ruta_id: rutaId, marcador_id: p.marcador_id, orden: p.orden }))
       );
+      if (insErr) throw insErr;
     }
     queryClient.invalidateQueries({ queryKey: ['ruta_marcadores'] });
   }

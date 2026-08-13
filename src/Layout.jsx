@@ -48,6 +48,8 @@ const pageRoles = {
   Transporte:    ['superadmin', 'operador', 'auditor'],
   Alertas:       ['superadmin', 'operador', 'auditor'],
   Ventas:        ['superadmin', 'economico', 'auditor', 'cajero'],
+  Movimientos:   ['superadmin', 'operador', 'auditor', 'economico'],
+  Reportes:      ['superadmin', 'operador', 'auditor', 'economico', 'cajero'],
 };
 // Nota: Consumidores y Conductores mantienen pageRoles para redireccionamiento
 // correcto si alguien navega a esas URLs directamente (ambas redirigen a Catalogos).
