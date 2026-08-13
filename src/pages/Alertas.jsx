@@ -484,10 +484,15 @@ function IntegridadDatos() {
     // Fecha posterior a hoy: error de tecleo que descoloca los cierres del mes
     const fechaFutura = movRecientes.filter(m => m.fecha > hoyStr);
 
-    // Mismo tanque, combustible, litros y día registrados más de una vez
+    // Mismo destino, combustible, litros y día registrados más de una vez.
+    // La referencia entra en la clave porque varias entregas iguales el mismo
+    // día son lo normal en bonificaciones —cada trabajador genera su despacho—
+    // y solo se distinguen por ella. Sin esto casi todo el histórico salía
+    // marcado. Dos registros con la misma referencia sí son sospechosos.
     const grupos = {};
     movRecientes.forEach(m => {
-      const k = [m.fecha, m.tipo, m.consumidor_id, m.combustible_id, m.litros].join('|');
+      const k = [m.fecha, m.tipo, m.consumidor_id, m.combustible_id, m.litros,
+        (m.referencia || '').trim().toLowerCase()].join('|');
       (grupos[k] ||= []).push(m);
     });
     const duplicados = Object.values(grupos).filter(g => g.length > 1);
@@ -612,7 +617,10 @@ function IntegridadDatos() {
           {anomalias.duplicados.map(g => (
             <FilaAnomalia key={g[0].id}>
               <span className="font-mono text-slate-400 shrink-0">{g[0].fecha}</span>
-              <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{g[0].consumidor_nombre}</span>
+              <span className="flex-1 truncate text-slate-600 dark:text-slate-300">
+                {g[0].consumidor_nombre}
+                {g[0].referencia && <span className="text-slate-400"> · {g[0].referencia}</span>}
+              </span>
               <span className="text-slate-500 shrink-0">{g[0].litros} L {g[0].combustible_nombre}</span>
               <span className="text-orange-600 font-semibold shrink-0">{g.length} veces</span>
             </FilaAnomalia>
