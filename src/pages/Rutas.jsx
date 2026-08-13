@@ -58,7 +58,7 @@ function esNoVehiculo(c) {
 
 // ── Diálogo: novedad de una ruta regular (sustitución / cancelación / incidencia) ──
 
-function DialogNovedad({ ruta, novedad, consumidores, conductores, onClose, onSave }) {
+function DialogNovedad({ ruta, novedad, consumidores, conductores, onClose, onSave, guardando }) {
   const vehiculos = consumidores.filter(c => c.activo && !esNoVehiculo(c));
   const [gpsKmLoading, setGpsKmLoading] = useState(false);
   const [form, setForm] = useState(() => {
@@ -298,7 +298,7 @@ function DialogNovedad({ ruta, novedad, consumidores, conductores, onClose, onSa
 
           <div className="flex gap-2 justify-end pt-1">
             <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
-            <Button size="sm" className="bg-sky-600 hover:bg-sky-700" onClick={handleSave}>
+            <Button size="sm" className="bg-sky-600 hover:bg-sky-700" onClick={handleSave} disabled={guardando}>
               {novedad ? 'Guardar cambios' : 'Registrar novedad'}
             </Button>
           </div>
@@ -320,7 +320,7 @@ const EMPTY_ASIG = {
   km_reales: '', observaciones: '', estado: 'completada',
 };
 
-function DialogAsignacion({ asignacion, consumidores, conductores, onClose, onSave }) {
+function DialogAsignacion({ asignacion, consumidores, conductores, onClose, onSave, guardando }) {
   const [gpsKmLoading, setGpsKmLoading] = useState(false);
   const [form, setForm] = useState(() => asignacion ? {
     fecha:                  asignacion.fecha || hoy(),
@@ -539,7 +539,7 @@ function DialogAsignacion({ asignacion, consumidores, conductores, onClose, onSa
 
           <div className="flex gap-2 justify-end pt-1">
             <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
-            <Button size="sm" className="bg-orange-600 hover:bg-orange-700" onClick={handleSave}>
+            <Button size="sm" className="bg-orange-600 hover:bg-orange-700" onClick={handleSave} disabled={guardando}>
               {asignacion ? 'Guardar cambios' : 'Registrar viaje extra'}
             </Button>
           </div>
@@ -582,7 +582,7 @@ function calcDistParadas(paradas) {
   return Math.round(total * 10) / 10;
 }
 
-function DialogRuta({ ruta, consumidores, conductores, onClose, onSave }) {
+function DialogRuta({ ruta, consumidores, conductores, onClose, onSave, guardando }) {
   const vehiculos = consumidores.filter(c => c.activo && !esNoVehiculo(c));
 
   const [form, setForm] = useState(() => {
@@ -1004,7 +1004,7 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave }) {
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={onClose}>Cancelar</Button>
-              <Button size="sm" className="bg-sky-600 hover:bg-sky-700" onClick={handleSave}>
+              <Button size="sm" className="bg-sky-600 hover:bg-sky-700" onClick={handleSave} disabled={guardando}>
                 {ruta ? 'Guardar cambios' : 'Crear ruta'}
               </Button>
             </div>
@@ -1599,8 +1599,12 @@ export default function Rutas() {
     queryClient.invalidateQueries({ queryKey: ['ruta_marcadores'] });
   }
 
+  const [guardandoRuta, setGuardandoRuta] = useState(false);
+
   async function handleSaveRuta(data) {
+    if (guardandoRuta) return;
     const { _paradas = [], ...rutaData } = data;
+    setGuardandoRuta(true);
     try {
       let rutaId;
       if (editingRuta) {
@@ -1617,6 +1621,8 @@ export default function Rutas() {
       setEditingRuta(null);
     } catch (err) {
       toast.error(`Error: ${err.message}`);
+    } finally {
+      setGuardandoRuta(false);
     }
   }
   const deleteRutaMut = useMutation({
@@ -2410,6 +2416,7 @@ export default function Rutas() {
           conductores={conductores}
           onClose={closeNovedad}
           onSave={handleSaveNovedad}
+          guardando={createAsigMut.isPending || updateAsigMut.isPending}
         />
       )}
       {(showDialogAsig || editingAsig) && (
@@ -2421,6 +2428,7 @@ export default function Rutas() {
           onSave={d => editingAsig
             ? updateAsigMut.mutate({ id: editingAsig.id, d })
             : createAsigMut.mutate(d)}
+          guardando={createAsigMut.isPending || updateAsigMut.isPending}
         />
       )}
       {(showDialogRuta || editingRuta) && (
@@ -2430,6 +2438,7 @@ export default function Rutas() {
           conductores={conductores}
           onClose={() => { setShowDialogRuta(false); setEditingRuta(null); }}
           onSave={handleSaveRuta}
+          guardando={guardandoRuta}
         />
       )}
       <ConfirmDialog

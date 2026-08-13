@@ -188,8 +188,32 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
   const stockDisponible = useStockDisponible(form.tanque_origen_id, form.combustible_id, movimientos, ventasPendientes, consumidores);
   const stockInsuficiente = stockDisponible !== null && form.litros && parseFloat(form.litros) > stockDisponible;
 
+  // Ventana en la que dos bonificaciones idénticas se consideran un doble
+  // registro. Tres minutos separan con holgura los casos reales observados: un
+  // doble envío ocurre en segundos, mientras que dos entregas legítimas al
+  // mismo trabajador el mismo día se registran con horas de diferencia.
+  const MINUTOS_ANTIDUPLICADO = 3;
+  const [duplicadoPendiente, setDuplicadoPendiente] = useState(null);
+
   const crearMut = useMutation({
-    mutationFn: async (data) => {
+    mutationFn: async ({ forzar, ...data }) => {
+      if (!forzar) {
+        const desde = new Date(Date.now() - MINUTOS_ANTIDUPLICADO * 60_000).toISOString();
+        const { data: previas } = await supabase
+          .from('venta_trabajador')
+          .select('id, created_date')
+          .eq('beneficiario_id', data.beneficiario_id)
+          .eq('fecha_venta', data.fecha_venta)
+          .eq('litros', data.litros)
+          .eq('combustible_id', data.combustible_id)
+          .gte('created_date', desde)
+          .limit(1);
+        if (previas?.length) {
+          const err = new Error('DUPLICADO_RECIENTE');
+          err.datosPendientes = data;
+          throw err;
+        }
+      }
       const { data: result, error } = await supabase
         .from('venta_trabajador')
         .insert(data)
@@ -200,10 +224,18 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ventas'] });
+      setDuplicadoPendiente(null);
       toast.success('Bonificación registrada');
       onClose();
     },
     onError: (e) => {
+      // Ya existe una bonificación idéntica de hace segundos: se pide
+      // confirmación en vez de bloquear, porque una segunda entrega real al
+      // mismo trabajador es posible aunque poco frecuente.
+      if (e?.message === 'DUPLICADO_RECIENTE') {
+        setDuplicadoPendiente(e.datosPendientes);
+        return;
+      }
       // El número de factura se calcula en el cliente y tiene índice único en DB:
       // si dos usuarios registran a la vez, el segundo choca aquí.
       if (e?.code === '23505' || (e?.message ?? '').includes('numero_factura')) {
@@ -382,6 +414,30 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
         <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700 flex items-center gap-2">
           <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
           Sin precio de despacho configurado. Configure en Finanzas → Precios de despacho.
+        </div>
+      )}
+
+      {duplicadoPendiente && (
+        <div className="rounded-lg bg-orange-50 border border-orange-300 px-3 py-2.5 space-y-2">
+          <p className="text-xs text-orange-800 flex items-start gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              Este mismo trabajador ya tiene una bonificación idéntica registrada hace
+              menos de {MINUTOS_ANTIDUPLICADO} minutos. Si fue un doble envío, cancela.
+              Si de verdad es una segunda entrega, confírmalo.
+            </span>
+          </p>
+          <div className="flex gap-2 justify-end">
+            <Button type="button" variant="ghost" size="sm" className="h-7 text-xs"
+              onClick={() => { setDuplicadoPendiente(null); onClose(); }}>
+              Cancelar registro
+            </Button>
+            <Button type="button" size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700"
+              disabled={crearMut.isPending}
+              onClick={() => crearMut.mutate({ ...duplicadoPendiente, forzar: true })}>
+              Sí, es otra entrega
+            </Button>
+          </div>
         </div>
       )}
 
