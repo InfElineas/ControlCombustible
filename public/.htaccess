@@ -4,6 +4,16 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ /index.html [QSA,L]
 
+# El servidor sirve los .js como application/x-javascript. Junto a
+# X-Content-Type-Options: nosniff, Chrome rechaza ese MIME heredado al cargar
+# <script type="module"> y deja la app sin montar, sin mensaje de error.
+<IfModule mod_mime.c>
+  RemoveType .js .mjs
+  AddType text/javascript .js
+  AddType text/javascript .mjs
+  AddType text/css .css
+</IfModule>
+
 <IfModule mod_headers.c>
   # Fuerza HTTPS por un año e incluye subdominios
   Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
