@@ -50,6 +50,7 @@ export default function MovimientosFiltros({ filters, onChange, consumidores, ti
                 <SelectItem value="COMPRA">🟠 Compra</SelectItem>
                 <SelectItem value="DESPACHO">🟣 Despacho</SelectItem>
                 <SelectItem value="DEPOSITO">🟦 Depósito</SelectItem>
+                <SelectItem value="AJUSTE">⚪ Ajuste</SelectItem>
               </SelectContent>
             </Select>
           </div>

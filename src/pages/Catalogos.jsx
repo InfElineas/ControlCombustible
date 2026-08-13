@@ -280,19 +280,21 @@ function TabConsumidores({ canWrite, canDelete }) {
           <DialogHeader>
             <DialogTitle>{editing ? 'Editar consumidor' : 'Nuevo consumidor'}</DialogTitle>
           </DialogHeader>
-          <ConsumidorForm
-            form={form} setForm={setForm}
-            tipos={tipos} combustibles={combustibles}
-            editingTipo={editing?.tipo_consumidor_nombre}
-            conductores={conductores} tarjetas={tarjetas}
-          />
-          <DialogFooter className="mt-4">
-            <Button variant="outline" size="sm" onClick={closeDialog}>Cancelar</Button>
-            <Button size="sm" onClick={handleSave} disabled={createMut.isPending || updateMut.isPending} className="bg-sky-600 hover:bg-sky-700">
-              {(createMut.isPending || updateMut.isPending) && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
-              Guardar
-            </Button>
-          </DialogFooter>
+          <form onSubmit={e => { e.preventDefault(); handleSave(); }}>
+            <ConsumidorForm
+              form={form} setForm={setForm}
+              tipos={tipos} combustibles={combustibles}
+              editingTipo={editing?.tipo_consumidor_nombre}
+              conductores={conductores} tarjetas={tarjetas}
+            />
+            <DialogFooter className="mt-4">
+              <Button type="button" variant="outline" size="sm" onClick={closeDialog}>Cancelar</Button>
+              <Button type="submit" size="sm" disabled={createMut.isPending || updateMut.isPending} className="bg-sky-600 hover:bg-sky-700">
+                {(createMut.isPending || updateMut.isPending) && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
+                Guardar
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -500,6 +502,7 @@ function TabConductores({ canWrite, canDelete }) {
       <Dialog open={dialogOpen} onOpenChange={closeDialog}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? 'Editar Conductor' : 'Nuevo Conductor'}</DialogTitle></DialogHeader>
+          <form onSubmit={e => { e.preventDefault(); handleSave(); }}>
           <div className="space-y-4 py-2">
             <div>
               <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Datos Personales</p>
@@ -574,12 +577,13 @@ function TabConductores({ canWrite, canDelete }) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={closeDialog}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending} className="bg-sky-600 hover:bg-sky-700">
+            <Button type="button" variant="outline" onClick={closeDialog}>Cancelar</Button>
+            <Button type="submit" disabled={createMut.isPending || updateMut.isPending} className="bg-sky-600 hover:bg-sky-700">
               {(createMut.isPending || updateMut.isPending) && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
               Guardar
             </Button>
           </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -1219,14 +1223,16 @@ function TabCombustibles({ canWrite, canDelete }) {
       <Dialog open={dialogOpen} onOpenChange={closeDialog}>
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>{editing ? 'Editar' : 'Nuevo'} Combustible</DialogTitle></DialogHeader>
-          <div className="py-2">
-            <Label className="text-xs text-slate-500">Nombre *</Label>
-            <Input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Diesel" className="mt-1" />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={closeDialog}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={createMut.isPending || updateMut.isPending} className="bg-sky-600 hover:bg-sky-700">Guardar</Button>
-          </DialogFooter>
+          <form onSubmit={e => { e.preventDefault(); handleSave(); }}>
+            <div className="py-2">
+              <Label className="text-xs text-slate-500">Nombre *</Label>
+              <Input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="Ej: Diesel" className="mt-1" />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={closeDialog}>Cancelar</Button>
+              <Button type="submit" disabled={createMut.isPending || updateMut.isPending} className="bg-sky-600 hover:bg-sky-700">Guardar</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
@@ -1420,6 +1426,7 @@ function TabTarjetas({ canManage, canDelete }) {
           <DialogHeader>
             <DialogTitle className="text-sm">{dialog?.mode === 'edit' ? 'Editar tarjeta' : 'Nueva tarjeta'}</DialogTitle>
           </DialogHeader>
+          <form onSubmit={e => { e.preventDefault(); handleSave(); }}>
           <div className="space-y-3 py-1">
             <div>
               <Label className="text-xs text-slate-500">Alias / Nombre *</Label>
@@ -1442,12 +1449,13 @@ function TabTarjetas({ canManage, canDelete }) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setDialog(null)}>Cancelar</Button>
-            <Button size="sm" onClick={handleSave} disabled={saveMut.isPending} className="bg-sky-600 hover:bg-sky-700">
+            <Button type="button" variant="outline" size="sm" onClick={() => setDialog(null)}>Cancelar</Button>
+            <Button type="submit" size="sm" disabled={saveMut.isPending} className="bg-sky-600 hover:bg-sky-700">
               {saveMut.isPending && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
               {dialog?.mode === 'edit' ? 'Guardar cambios' : 'Crear tarjeta'}
             </Button>
           </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

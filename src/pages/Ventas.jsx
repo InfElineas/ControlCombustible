@@ -146,7 +146,7 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
   const [form, setForm] = useState(emptyForm);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const { data: beneficiarios = [] } = useQuery({ queryKey: ['beneficiarios'], queryFn: () => base44.entities.Beneficiario.list('nombre') });
+  const { data: beneficiarios = [] } = useQuery({ queryKey: ['beneficiarios'], queryFn: () => base44.entities.Beneficiario.list('nombre', 2000) });
   const { data: consumidores  = [] } = useQuery({ queryKey: ['consumidores'],  queryFn: () => base44.entities.Consumidor.list() });
   const { data: combustibles  = [] } = useQuery({ queryKey: ['combustibles'],  queryFn: () => base44.entities.TipoCombustible.list() });
   const { data: preciosDespacho = [] } = useQuery({ queryKey: ['precios-despacho'], queryFn: () => base44.entities.PrecioDespachoTipo.list('-fecha_desde', 200) });
@@ -422,7 +422,7 @@ function PanelBeneficiarios({ onClose }) {
 
   const { data: beneficiarios = [], isLoading } = useQuery({
     queryKey: ['beneficiarios'],
-    queryFn: () => base44.entities.Beneficiario.list('nombre'),
+    queryFn: () => base44.entities.Beneficiario.list('nombre', 2000),
   });
 
   const ciExistentes = useMemo(() => new Set(beneficiarios.map(b => b.ci).filter(Boolean)), [beneficiarios]);
@@ -842,7 +842,7 @@ function FormEditBonificacion({ venta, onClose }) {
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const { data: beneficiarios = [] } = useQuery({ queryKey: ['beneficiarios'], queryFn: () => base44.entities.Beneficiario.list('nombre') });
+  const { data: beneficiarios = [] } = useQuery({ queryKey: ['beneficiarios'], queryFn: () => base44.entities.Beneficiario.list('nombre', 2000) });
   const { data: consumidores  = [] } = useQuery({ queryKey: ['consumidores'],  queryFn: () => base44.entities.Consumidor.list() });
   const { data: combustibles  = [] } = useQuery({ queryKey: ['combustibles'],  queryFn: () => base44.entities.TipoCombustible.list() });
 

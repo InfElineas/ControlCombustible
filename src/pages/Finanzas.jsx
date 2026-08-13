@@ -79,11 +79,15 @@ export default function Finanzas() {
     queryFn: () => base44.entities.Tarjeta.list(),
   });
 
-  // KPIs
-  const compras = movPeriodo.filter(m => m.tipo === 'COMPRA');
+  // KPIs — memoizados: son dependencias de los useMemo de abajo y sin esto
+  // cambiaban de referencia en cada render, forzando el recálculo completo.
+  const compras = useMemo(() => movPeriodo.filter(m => m.tipo === 'COMPRA'), [movPeriodo]);
   const gastoCompras = compras.reduce((s, m) => s + (m.monto || 0), 0);
   const litrosComprados = compras.reduce((s, m) => s + (m.litros || 0), 0);
-  const ventasActivas = ventasPeriodo.filter(v => v.estado !== 'CANCELADO' && v.estado !== 'ANULADO');
+  const ventasActivas = useMemo(
+    () => ventasPeriodo.filter(v => v.estado !== 'CANCELADO' && v.estado !== 'ANULADO'),
+    [ventasPeriodo],
+  );
   const montoBonus = ventasActivas.reduce((s, v) => s + (v.monto || 0), 0);
   const pendienteBonus = ventasPeriodo
     .filter(v => v.estado === 'PENDIENTE' || v.estado === 'ENTREGADO')

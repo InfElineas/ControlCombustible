@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useSearchParams } from 'react-router-dom';
-import { ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Warehouse, Filter, Plus, ChevronLeft, ChevronRight, ChevronDown, Paperclip } from 'lucide-react';
+import { ArrowUpCircle, ArrowDownCircle, ArrowLeftRight, Warehouse, SlidersHorizontal, Filter, Plus, ChevronLeft, ChevronRight, ChevronDown, Paperclip } from 'lucide-react';
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import CombustibleBadge from '@/components/ui-helpers/CombustibleBadge';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
@@ -27,6 +27,7 @@ const TIPO_CONFIG = {
   COMPRA:   { label: 'Compra',   icon: ArrowDownCircle, bg: 'bg-orange-50',  text: 'text-orange-600',  badge: 'border-orange-200 text-orange-700' },
   DESPACHO: { label: 'Despacho', icon: ArrowLeftRight,  bg: 'bg-purple-50',  text: 'text-purple-600',  badge: 'border-purple-200 text-purple-700' },
   DEPOSITO: { label: 'Depósito', icon: Warehouse,       bg: 'bg-teal-50',    text: 'text-teal-600',    badge: 'border-teal-200 text-teal-700' },
+  AJUSTE:   { label: 'Ajuste',   icon: SlidersHorizontal, bg: 'bg-slate-100', text: 'text-slate-600',  badge: 'border-slate-300 text-slate-700' },
 };
 
 export default function Movimientos() {
