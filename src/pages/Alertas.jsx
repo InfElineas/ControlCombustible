@@ -402,6 +402,22 @@ function IntegridadDatos() {
     staleTime: 60_000,
   });
 
+  // Tanques cuyas salidas superan a las entradas. No se pueden sanear solos:
+  // hay que decidir si falta registrar una entrada o sobra una salida.
+  const { data: descuadres = [], isFetching: fetchingD } = useQuery({
+    queryKey: ['integridad-stock-descuadre'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('v_stock_tanques')
+        .select('consumidor_id, nombre, combustible_nombre, balance_real, litros_descuadre, total_entradas, total_salidas')
+        .eq('descuadre', true)
+        .order('litros_descuadre', { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
   const limpiarMut = useMutation({
     mutationFn: async () => {
       // 1. Eliminar DESPACHOs huérfanos
@@ -425,8 +441,16 @@ function IntegridadDatos() {
     onError: (e) => toast.error(e.message ?? 'Error al sanear datos'),
   });
 
-  const totalProblemas = huerfanos.length + canceladasConMov.length;
-  const isFetching = fetchingH || fetchingC;
+  // Saneables = los que el botón puede resolver solo. Los descuadres cuentan
+  // como problema detectado pero exigen decisión humana.
+  const saneables      = huerfanos.length + canceladasConMov.length;
+  const totalProblemas = saneables + descuadres.length;
+  const isFetching     = fetchingH || fetchingC || fetchingD;
+  const refrescar = () => {
+    qc.invalidateQueries({ queryKey: ['integridad-despachos-huerfanos'] });
+    qc.invalidateQueries({ queryKey: ['integridad-ventas-canceladas-con-mov'] });
+    qc.invalidateQueries({ queryKey: ['integridad-stock-descuadre'] });
+  };
 
   return (
     <div className={`rounded-xl border p-4 space-y-3 ${totalProblemas > 0 ? 'border-orange-200 bg-orange-50/60 dark:bg-orange-950/20 dark:border-orange-800' : 'border-slate-100 bg-slate-50/40 dark:border-slate-700'}`}>
@@ -444,11 +468,11 @@ function IntegridadDatos() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-slate-600"
-            onClick={() => { qc.invalidateQueries({ queryKey: ['integridad-despachos-huerfanos'] }); qc.invalidateQueries({ queryKey: ['integridad-ventas-canceladas-con-mov'] }); }}
+            onClick={refrescar}
             disabled={isFetching}>
             <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
-          {totalProblemas > 0 && (
+          {saneables > 0 && (
             <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700 text-white gap-1.5"
               onClick={() => limpiarMut.mutate()} disabled={limpiarMut.isPending}>
               {limpiarMut.isPending ? <><RefreshCw className="w-3 h-3 animate-spin" />Saneando…</> : <><Trash2 className="w-3 h-3" />Sanear todo</>}
@@ -459,7 +483,32 @@ function IntegridadDatos() {
 
       {totalProblemas === 0 && !isFetching && (
         <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400">
-          <CheckCircle2 className="w-3.5 h-3.5" /> Sin DESPACHOs huérfanos ni inconsistencias detectadas
+          <CheckCircle2 className="w-3.5 h-3.5" /> Stock cuadrado y sin DESPACHOs huérfanos
+        </div>
+      )}
+
+      {descuadres.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-red-600 uppercase tracking-wide">
+            Stock descuadrado: salieron más litros de los que entraron ({descuadres.length})
+          </p>
+          {descuadres.map(d => (
+            <div key={`${d.consumidor_id}-${d.combustible_nombre}`}
+              className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg px-3 py-2 border border-red-100 dark:border-red-900 text-xs gap-2">
+              <span className="flex-1 font-medium text-slate-700 dark:text-slate-200 truncate">{d.nombre}</span>
+              <span className="text-slate-500 shrink-0">{d.combustible_nombre}</span>
+              <span className="text-slate-400 shrink-0 tabular-nums hidden sm:inline">
+                {Number(d.total_entradas).toFixed(1)} entraron · {Number(d.total_salidas).toFixed(1)} salieron
+              </span>
+              <span className="text-red-600 font-semibold shrink-0 tabular-nums">
+                faltan {Number(d.litros_descuadre).toFixed(2)} L
+              </span>
+            </div>
+          ))}
+          <p className="text-[10px] text-slate-400">
+            Requiere revisión manual: falta registrar una entrada o sobra una salida. Corrígelo
+            con un movimiento de AJUSTE para que quede constancia de quién lo hizo y por qué.
+          </p>
         </div>
       )}
 
