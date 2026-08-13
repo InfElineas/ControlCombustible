@@ -785,7 +785,9 @@ function VentaRow({ v, canOperar, canEntregar, canDelete, canEditar, onCambiarEs
               <span className="text-slate-400">desde {v.tanque_origen_nombre}</span>
             </>
           )}
-          {stockInsuficiente && !isTerminal && (
+          {/* Solo en PENDIENTE: una vez ENTREGADO el DESPACHO ya descontó el stock,
+              así que comparar el stock actual con sus litros da un falso positivo. */}
+          {stockInsuficiente && estadoNormalizado === 'PENDIENTE' && (
             <>
               <span className="text-slate-200">·</span>
               <span className="text-red-600 flex items-center gap-0.5 font-semibold">
