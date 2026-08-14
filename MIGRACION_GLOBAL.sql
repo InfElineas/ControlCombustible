@@ -1085,12 +1085,15 @@ DO $$ BEGIN
   DROP POLICY IF EXISTS "anomalia_descartada_delete_ops"  ON anomalia_descartada;
   CREATE POLICY "anomalia_descartada_select_all" ON anomalia_descartada
     FOR SELECT TO authenticated USING (true);
+  -- El auditor incluido: revisar los avisos y darles término es su trabajo.
+  -- Marcar como revisado no altera datos operativos, solo deja constancia.
+  -- Ver migrations/2026-08-14_auditor_descarta_anomalias.sql
   CREATE POLICY "anomalia_descartada_insert_ops" ON anomalia_descartada
     FOR INSERT TO authenticated
-    WITH CHECK (get_my_role() IN ('superadmin', 'operador', 'economico'));
+    WITH CHECK (get_my_role() IN ('superadmin', 'operador', 'economico', 'auditor'));
   CREATE POLICY "anomalia_descartada_delete_ops" ON anomalia_descartada
     FOR DELETE TO authenticated
-    USING (get_my_role() IN ('superadmin', 'operador', 'economico'));
+    USING (get_my_role() IN ('superadmin', 'operador', 'economico', 'auditor'));
 END $$;
 
 

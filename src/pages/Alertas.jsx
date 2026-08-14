@@ -399,8 +399,13 @@ function FilaAnomalia({ nivel = 'warn', children, onDescartar, puedeDescartar })
 
 function IntegridadDatos() {
   const qc = useQueryClient();
-  const { user, canWrite, canManageFinanzas } = useUserRole();
-  const puedeDescartar = canWrite || canManageFinanzas;
+  const { user, canWrite, canManageFinanzas, canDelete, isAuditor } = useUserRole();
+  // Revisar un aviso y darle término es trabajo del auditor: no altera datos
+  // operativos, solo deja constancia de que ese caso ya se miró.
+  const puedeDescartar = canWrite || canManageFinanzas || isAuditor;
+  // Sanear sí borra movimientos y desvincula bonificaciones, así que queda
+  // reservado a quien puede eliminarlos de verdad.
+  const puedeSanear = canDelete;
   const [verDescartados, setVerDescartados] = useState(false);
 
   const {
@@ -495,7 +500,7 @@ function IntegridadDatos() {
             disabled={isFetching}>
             <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? 'animate-spin' : ''}`} />
           </Button>
-          {saneables > 0 && (
+          {saneables > 0 && puedeSanear && (
             <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700 text-white gap-1.5"
               onClick={() => limpiarMut.mutate()} disabled={limpiarMut.isPending}>
               {limpiarMut.isPending ? <><RefreshCw className="w-3 h-3 animate-spin" />Saneando…</> : <><Trash2 className="w-3 h-3" />Sanear todo</>}
