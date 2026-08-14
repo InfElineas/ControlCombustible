@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
+import { useIntegridadAlertas } from '@/components/ui-helpers/useIntegridadAlertas';
 import { useTheme } from '@/components/ui-helpers/useTheme';
 import {
   LayoutDashboard, List, Fuel, BarChart3, Menu, ChevronRight,
@@ -70,7 +71,7 @@ function ThemeToggle({ isDark, toggle, className = '' }) {
   );
 }
 
-function NavLink({ item, active, onNavigate }) {
+function NavLink({ item, active, onNavigate, contador = 0 }) {
   return (
     <Link
       to={createPageUrl(item.page)}
@@ -83,7 +84,15 @@ function NavLink({ item, active, onNavigate }) {
     >
       <item.icon className={`w-4 h-4 ${active ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500'}`} />
       {item.name}
-      {active && <ChevronRight className="w-3.5 h-3.5 ml-auto text-sky-400 dark:text-sky-600" />}
+      {contador > 0 && (
+        <span
+          className="ml-auto min-w-[1.25rem] h-5 px-1.5 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums"
+          title={`${contador} ${contador === 1 ? 'asunto pendiente' : 'asuntos pendientes'} de revisar`}
+        >
+          {contador > 99 ? '99+' : contador}
+        </span>
+      )}
+      {active && contador === 0 && <ChevronRight className="w-3.5 h-3.5 ml-auto text-sky-400 dark:text-sky-600" />}
     </Link>
   );
 }
@@ -92,6 +101,11 @@ function NavContent({ currentPageName, role, onNavigate, isDark, toggle }) {
   const filtered = navItems.filter(item => item.roles.includes(role));
   const rl = roleLabels[role] || { label: role, color: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' };
   const showAdmin = adminNavItem.roles.includes(role);
+
+  // Contador de integridad en el menú. Mismo cálculo que el panel de Alertas,
+  // y solo se consulta para los roles que pueden abrir esa página.
+  const puedeVerAlertas = navItems.find(i => i.page === 'Alertas')?.roles.includes(role) ?? false;
+  const { total: alertasPendientes } = useIntegridadAlertas({ enabled: puedeVerAlertas });
 
   return (
     <nav className="flex flex-col gap-1 p-3">
@@ -104,7 +118,8 @@ function NavContent({ currentPageName, role, onNavigate, isDark, toggle }) {
       </div>
 
       {filtered.map(item => (
-        <NavLink key={item.page} item={item} active={currentPageName === item.page} onNavigate={onNavigate} />
+        <NavLink key={item.page} item={item} active={currentPageName === item.page} onNavigate={onNavigate}
+          contador={item.page === 'Alertas' ? alertasPendientes : 0} />
       ))}
 
       {showAdmin && (

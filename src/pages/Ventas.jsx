@@ -255,10 +255,10 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
     const litros = parseFloat(form.litros);
     if (!litros || litros <= 0) { toast.error('Ingrese los litros'); return; }
     if (!precioVigente) { toast.error('No hay precio de despacho configurado para este combustible'); return; }
-    if (stockDisponible !== null && litros > stockDisponible) {
-      toast.error(`Stock insuficiente. Disponible: ${stockDisponible.toFixed(1)} L`);
-      return;
-    }
+    // El stock no se comprueba aquí a propósito: registrar deja la bonificación
+    // en PENDIENTE, que es un compromiso, no una salida de combustible. El stock
+    // se descuenta al entregar, y es ahí donde se valida (y donde el trigger de
+    // la base de datos lo impide si no alcanza).
     const ben = beneficiarios.find(b => b.id === form.beneficiario_id);
     const tanque = consumidores.find(c => c.id === form.tanque_origen_id);
     const comb = combustibles.find(c => c.id === form.combustible_id);
@@ -379,19 +379,17 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
             value={form.litros} onChange={e => set('litros', e.target.value)} />
         </div>
 
-        {/* Stock */}
+        {/* Stock — informativo: registrar no descuenta, se descuenta al entregar */}
         {stockDisponible !== null && form.combustible_id && (
           <div className={`rounded-lg px-3 py-1.5 text-xs flex items-center gap-2 ${
             stockInsuficiente
-              ? 'bg-red-50 border border-red-200 text-red-700'
+              ? 'bg-amber-50 border border-amber-200 text-amber-700'
               : 'bg-white border border-slate-200 text-slate-500'
           }`}>
-            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${stockInsuficiente ? 'bg-red-400' : 'bg-emerald-400'}`} />
+            <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${stockInsuficiente ? 'bg-amber-400' : 'bg-emerald-400'}`} />
             Stock disponible: <strong className="ml-0.5">{stockDisponible.toFixed(1)} L</strong>
             {stockInsuficiente && (
-              <span className="ml-auto font-semibold flex items-center gap-1 text-red-600">
-                <ShieldAlert className="w-3 h-3" /> Insuficiente
-              </span>
+              <span className="ml-auto font-medium text-amber-700">Habrá que reponer antes de entregar</span>
             )}
           </div>
         )}

@@ -13,6 +13,7 @@ import { AlertTriangle, Settings2, Mail, ChevronDown, ChevronUp, Send, Fuel, Shi
 import { createPageUrl } from '@/utils';
 import { logAudit } from '@/api/auditLog';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
+import { useIntegridadAlertas, QUERY_KEYS_INTEGRIDAD } from '@/components/ui-helpers/useIntegridadAlertas';
 import { toast } from 'sonner';
 
 // Stock real de un tanque de bonificación (excluye DESPACHOs de bonificación como entradas)
@@ -402,25 +403,13 @@ function IntegridadDatos() {
   const puedeDescartar = canWrite || canManageFinanzas;
   const [verDescartados, setVerDescartados] = useState(false);
 
-  // Casos revisados y confirmados como correctos. Se excluyen de las listas.
-  const { data: descartadas = [] } = useQuery({
-    queryKey: ['anomalias-descartadas'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('anomalia_descartada')
-        .select('id, tipo, clave, user_email, created_date')
-        .order('created_date', { ascending: false });
-      if (error) throw error;
-      return data ?? [];
-    },
-    staleTime: 60_000,
-  });
+  const {
+    descartadas, huerfanos, canceladasConMov,
+    descuadresVis, entregadasVis, anomalias,
+    saneables, total: totalProblemas, isFetching,
+  } = useIntegridadAlertas();
 
-  const clavesDescartadas = React.useMemo(
-    () => new Set(descartadas.map(d => d.clave)),
-    [descartadas],
-  );
-  const visible = (clave) => !clavesDescartadas.has(clave);
+  const refrescar = () => QUERY_KEYS_INTEGRIDAD.forEach(k => qc.invalidateQueries({ queryKey: k }));
 
   const descartarMut = useMutation({
     mutationFn: async ({ tipo, clave }) => {
@@ -452,144 +441,7 @@ function IntegridadDatos() {
     onError: (e) => toast.error(e?.message ?? 'No se pudo restaurar'),
   });
 
-  const { data: huerfanos = [], isFetching: fetchingH } = useQuery({
-    queryKey: ['integridad-despachos-huerfanos'],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_despachos_bon_huerfanos').select ? null : null;
-      // fallback: query directa
-      const { data: rows } = await supabase
-        .from('movimiento')
-        .select('id, fecha, litros, referencia, consumidor_origen_id, consumidor_origen_nombre')
-        .eq('tipo', 'DESPACHO')
-        .ilike('referencia', 'Bonificación combustible:%');
-      if (!rows) return [];
-      // filtrar los que no tienen venta
-      const { data: ventas } = await supabase.from('venta_trabajador').select('movimiento_id').not('movimiento_id', 'is', null);
-      const ventaMovIds = new Set((ventas ?? []).map(v => v.movimiento_id));
-      return rows.filter(m => !ventaMovIds.has(m.id));
-    },
-    staleTime: 60_000,
-  });
 
-  const { data: canceladasConMov = [], isFetching: fetchingC } = useQuery({
-    queryKey: ['integridad-ventas-canceladas-con-mov'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('venta_trabajador')
-        .select('id, beneficiario_nombre, litros, combustible_nombre, estado, movimiento_id')
-        .in('estado', ['CANCELADO', 'ANULADO'])
-        .not('movimiento_id', 'is', null);
-      if (error) throw error;
-      return data ?? [];
-    },
-    staleTime: 60_000,
-  });
-
-  // Tanques cuyas salidas superan a las entradas. No se pueden sanear solos:
-  // hay que decidir si falta registrar una entrada o sobra una salida.
-  const { data: descuadres = [], isFetching: fetchingD } = useQuery({
-    queryKey: ['integridad-stock-descuadre'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('v_stock_tanques')
-        .select('consumidor_id, nombre, combustible_nombre, balance_real, litros_descuadre, total_entradas, total_salidas')
-        .eq('descuadre', true)
-        .order('litros_descuadre', { ascending: false });
-      if (error) throw error;
-      return data ?? [];
-    },
-    staleTime: 60_000,
-  });
-
-  // Movimientos recientes: base para las comprobaciones de anomalías. Se acota
-  // a 90 días para que la lista señale lo que aún se puede corregir.
-  const hoyStr    = new Date().toISOString().slice(0, 10);
-  const hace90Str = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
-
-  const { data: movRecientes = [], isFetching: fetchingM } = useQuery({
-    queryKey: ['integridad-movimientos-recientes', hace90Str],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('movimiento')
-        .select('id, fecha, tipo, litros, consumidor_id, consumidor_nombre, combustible_id, combustible_nombre, referencia')
-        .gte('fecha', hace90Str)
-        .order('fecha', { ascending: false });
-      if (error) throw error;
-      return data ?? [];
-    },
-    staleTime: 60_000,
-  });
-
-  const { data: consumidoresInt = [] } = useQuery({
-    queryKey: ['consumidores'],
-    queryFn: () => base44.entities.Consumidor.list(),
-    staleTime: 5 * 60_000,
-  });
-
-  const { data: entregadasSinMov = [], isFetching: fetchingE } = useQuery({
-    queryKey: ['integridad-entregadas-sin-mov'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('venta_trabajador')
-        .select('id, beneficiario_nombre, litros, combustible_nombre, estado, fecha_venta')
-        .in('estado', ['ENTREGADO', 'PAGADO_FINALIZADO'])
-        .is('movimiento_id', null);
-      if (error) throw error;
-      return data ?? [];
-    },
-    staleTime: 60_000,
-  });
-
-  const anomalias = React.useMemo(() => {
-    const porId = Object.fromEntries(consumidoresInt.map(c => [c.id, c]));
-
-    // Fecha posterior a hoy: error de tecleo que descoloca los cierres del mes
-    const fechaFutura = movRecientes.filter(m => m.fecha > hoyStr);
-
-    // Mismo destino, combustible, litros y día registrados más de una vez.
-    // La referencia entra en la clave porque varias entregas iguales el mismo
-    // día son lo normal en bonificaciones —cada trabajador genera su despacho—
-    // y solo se distinguen por ella. Sin esto casi todo el histórico salía
-    // marcado. Dos registros con la misma referencia sí son sospechosos.
-    const grupos = {};
-    movRecientes.forEach(m => {
-      const k = [m.fecha, m.tipo, m.consumidor_id, m.combustible_id, m.litros,
-        (m.referencia || '').trim().toLowerCase()].join('|');
-      (grupos[k] ||= []).push(m);
-    });
-    // La clave lleva el número de repeticiones: si más adelante aparece otro
-    // registro en el mismo grupo, el caso cambia y vuelve a avisarse aunque se
-    // hubiera descartado antes.
-    const duplicados = Object.entries(grupos)
-      .filter(([, g]) => g.length > 1)
-      .map(([k, g]) => ({ items: g, clave: `dup|${k}|${g.length}` }))
-      .filter(d => visible(d.clave));
-
-    // Corrección manual sin justificar: imposible de auditar después
-    const ajusteSinMotivo = movRecientes
-      .filter(m => m.tipo === 'AJUSTE' && !(m.referencia || '').trim())
-      .filter(m => visible(`ajuste|${m.id}`));
-
-    // Entrada mayor que la capacidad del depósito que la recibe
-    const sobrellenado = movRecientes.filter(m => {
-      if (!m.consumidor_id || !['COMPRA', 'DEPOSITO', 'DESPACHO'].includes(m.tipo)) return false;
-      const cap = Number(porId[m.consumidor_id]?.datos_tanque?.capacidad_litros) || 0;
-      return cap > 0 && Number(m.litros || 0) > cap;
-    })
-      .map(m => ({ ...m, capacidad: Number(porId[m.consumidor_id]?.datos_tanque?.capacidad_litros) }))
-      .filter(m => visible(`sobre|${m.id}`));
-
-    return {
-      fechaFutura: fechaFutura.filter(m => visible(`futura|${m.id}`)),
-      duplicados,
-      ajusteSinMotivo,
-      sobrellenado,
-    };
-  }, [movRecientes, consumidoresInt, hoyStr, clavesDescartadas]);
-
-  // Las dos listas que vienen de sus propias consultas se filtran aparte
-  const descuadresVis   = descuadres.filter(d => visible(`descuadre|${d.consumidor_id}|${d.litros_descuadre}`));
-  const entregadasVis   = entregadasSinMov.filter(v => visible(`entrega|${v.id}`));
 
   const limpiarMut = useMutation({
     mutationFn: async () => {
@@ -613,21 +465,6 @@ function IntegridadDatos() {
     },
     onError: (e) => toast.error(e.message ?? 'Error al sanear datos'),
   });
-
-  // Saneables = los que el botón puede resolver solo. Los descuadres cuentan
-  // como problema detectado pero exigen decisión humana.
-  const saneables      = huerfanos.length + canceladasConMov.length;
-  const totalProblemas = saneables + descuadresVis.length + entregadasVis.length +
-    anomalias.fechaFutura.length + anomalias.duplicados.length +
-    anomalias.ajusteSinMotivo.length + anomalias.sobrellenado.length;
-  const isFetching     = fetchingH || fetchingC || fetchingD || fetchingM || fetchingE;
-  const refrescar = () => {
-    qc.invalidateQueries({ queryKey: ['integridad-despachos-huerfanos'] });
-    qc.invalidateQueries({ queryKey: ['integridad-ventas-canceladas-con-mov'] });
-    qc.invalidateQueries({ queryKey: ['integridad-stock-descuadre'] });
-    qc.invalidateQueries({ queryKey: ['integridad-movimientos-recientes'] });
-    qc.invalidateQueries({ queryKey: ['integridad-entregadas-sin-mov'] });
-  };
 
   return (
     <div className={`rounded-xl border p-4 space-y-3 ${totalProblemas > 0 ? 'border-orange-200 bg-orange-50/60 dark:bg-orange-950/20 dark:border-orange-800' : 'border-slate-100 bg-slate-50/40 dark:border-slate-700'}`}>
