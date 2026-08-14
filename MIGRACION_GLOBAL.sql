@@ -1183,8 +1183,14 @@ BEGIN
   IF NEW.registrado_por IS DISTINCT FROM OLD.registrado_por THEN
     RAISE EXCEPTION 'Campo registrado_por es inmutable';
   END IF;
-  IF OLD.movimiento_id IS NOT NULL AND NEW.movimiento_id IS DISTINCT FROM OLD.movimiento_id THEN
-    RAISE EXCEPTION 'Campo movimiento_id no puede modificarse una vez establecido';
+  -- Se permite desvincular el despacho al cancelar (el movimiento se borra
+  -- justo después y el combustible vuelve al tanque); sigue prohibido
+  -- reapuntar la bonificación a otro movimiento.
+  -- Ver migrations/2026-08-14_permitir_desvincular_movimiento_al_cancelar.sql
+  IF OLD.movimiento_id IS NOT NULL
+     AND NEW.movimiento_id IS DISTINCT FROM OLD.movimiento_id
+     AND NOT (NEW.movimiento_id IS NULL AND NEW.estado IN ('CANCELADO','ANULADO')) THEN
+    RAISE EXCEPTION 'El despacho asociado solo puede desvincularse al cancelar la bonificación';
   END IF;
   -- Fuera de PENDIENTE se congela lo que define la operación. El precio y el
   -- monto quedan fuera de esta lista: son corregibles en cualquier estado,

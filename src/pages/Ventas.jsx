@@ -873,6 +873,33 @@ function VentaRow({ v, canOperar, canEntregar, canDelete, canEditar, onCambiarEs
   );
 }
 
+const ETIQUETA_CAMPO_VENTA = {
+  precio:                'Precio por litro',
+  precio_por_litro:      'Precio por litro',
+  precio_venta_unitario: 'Precio de cobro',
+  monto:                 'Monto total',
+  litros:                'Litros',
+  estado:                'Estado',
+  beneficiario:          'Trabajador',
+};
+
+// Los cambios se guardan como pares campo_anterior / campo_nuevo. Se extraen
+// aquí para mostrar exactamente qué se modificó y con qué valores, en vez de
+// limitarse a decir que hubo un cambio.
+const fmtAudit = (v) => (v === null || v === undefined || v === '' ? '—' : String(v));
+
+function cambiosDe(metadata) {
+  const md = metadata ?? {};
+  const claves = Object.keys(md);
+  return claves
+    .filter(k => k.endsWith('_anterior') && claves.includes(`${k.slice(0, -'_anterior'.length)}_nuevo`))
+    .map(k => {
+      const campo = k.slice(0, -'_anterior'.length);
+      return { campo, antes: fmtAudit(md[k]), despues: fmtAudit(md[`${campo}_nuevo`]) };
+    })
+    .filter(c => c.antes !== c.despues);
+}
+
 // Nombres legibles de las acciones registradas, para el historial de la factura
 const ETIQUETA_AUDIT = {
   CORRECCION_PRECIO_BONIFICACION: 'Corrección de precio',
@@ -1168,18 +1195,14 @@ function FormEditBonificacion({ venta, onClose }) {
                   </span>
                 </div>
                 <div className="text-slate-400 truncate">{h.user_name || h.user_email || 'usuario desconocido'}</div>
-                {h.metadata?.precio_anterior != null && h.metadata?.precio_nuevo != null &&
-                  h.metadata.precio_anterior !== h.metadata.precio_nuevo && (
-                  <div className="text-slate-500">
-                    Precio: <span className="line-through text-slate-400">{h.metadata.precio_anterior}</span>
-                    {' → '}<strong className="text-slate-700">{h.metadata.precio_nuevo}</strong>
+                {cambiosDe(h.metadata).map(c => (
+                  <div key={c.campo} className="text-slate-500">
+                    <span className="capitalize">{ETIQUETA_CAMPO_VENTA[c.campo] ?? c.campo.replace(/_/g, ' ')}</span>
+                    {': '}
+                    <span className="line-through text-slate-400">{c.antes}</span>
+                    {' → '}<strong className="text-slate-700">{c.despues}</strong>
                   </div>
-                )}
-                {h.metadata?.estado_anterior && h.metadata?.estado_nuevo && (
-                  <div className="text-slate-500">
-                    {h.metadata.estado_anterior} → <strong className="text-slate-700">{h.metadata.estado_nuevo}</strong>
-                  </div>
-                )}
+                ))}
               </div>
             ))}
           </div>

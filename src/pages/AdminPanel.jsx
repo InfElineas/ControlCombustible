@@ -496,6 +496,95 @@ function PermisosTab() {
 
 // ── Tab: Auditoría ───────────────────────────────────────────────────────────
 
+const ETIQUETA_CAMPO = {
+  precio:              'Precio por litro',
+  precio_por_litro:    'Precio por litro',
+  precio_venta_unitario: 'Precio de cobro',
+  monto:               'Monto total',
+  litros:              'Litros',
+  estado:              'Estado',
+  beneficiario:        'Trabajador',
+  rol:                 'Rol',
+};
+
+const fmtValor = (v) => {
+  if (v === null || v === undefined || v === '') return '—';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+};
+
+// Muestra qué cambió realmente. Las acciones del sistema guardan los cambios
+// como pares campo_anterior / campo_nuevo, que antes no se renderizaban: el
+// detalle se abría vacío y solo se veía que "algo" había pasado.
+function DetalleAuditoria({ log }) {
+  const md = log.metadata ?? {};
+  const claves = Object.keys(md);
+
+  const pares = [];
+  const sueltas = [];
+  claves.forEach(k => {
+    if (k.endsWith('_anterior')) {
+      const base = k.slice(0, -'_anterior'.length);
+      if (claves.includes(`${base}_nuevo`)) {
+        pares.push({ campo: base, antes: md[k], despues: md[`${base}_nuevo`] });
+      }
+      return;
+    }
+    if (k.endsWith('_nuevo') && claves.includes(`${k.slice(0, -'_nuevo'.length)}_anterior`)) return;
+    sueltas.push(k);
+  });
+
+  const cambiados = pares.filter(p => fmtValor(p.antes) !== fmtValor(p.despues));
+  const nombre = (c) => ETIQUETA_CAMPO[c] ?? c.replace(/_/g, ' ');
+
+  return (
+    <div className="bg-slate-50 rounded-lg p-3 text-[11px] text-slate-600 overflow-x-auto max-h-52 overflow-y-auto space-y-3">
+      {cambiados.length > 0 && (
+        <div>
+          <p className="text-[9px] uppercase tracking-wide text-slate-400 mb-1 font-semibold">Qué cambió</p>
+          <div className="space-y-1">
+            {cambiados.map(p => (
+              <div key={p.campo} className="flex items-baseline gap-2 flex-wrap">
+                <span className="text-slate-500 min-w-[8rem] capitalize">{nombre(p.campo)}</span>
+                <span className="line-through text-slate-400 tabular-nums">{fmtValor(p.antes)}</span>
+                <span className="text-slate-400">→</span>
+                <strong className="text-slate-800 tabular-nums">{fmtValor(p.despues)}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sueltas.length > 0 && (
+        <div>
+          <p className="text-[9px] uppercase tracking-wide text-slate-400 mb-1 font-semibold">Contexto</p>
+          <div className="space-y-0.5">
+            {sueltas.map(k => (
+              <div key={k} className="flex items-baseline gap-2 flex-wrap">
+                <span className="text-slate-500 min-w-[8rem] capitalize">{nombre(k)}</span>
+                <span className="text-slate-700 tabular-nums">{fmtValor(md[k])}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {log.payload && (
+        <div>
+          <p className="text-[9px] uppercase tracking-wide text-slate-400 mb-1 font-semibold">
+            {log.action === 'DELETE' ? 'Registro eliminado' : 'Estado guardado'}
+          </p>
+          <pre className="whitespace-pre-wrap font-mono text-[10px]">{JSON.stringify(log.payload, null, 2)}</pre>
+        </div>
+      )}
+
+      {cambiados.length === 0 && sueltas.length === 0 && !log.payload && (
+        <p className="text-slate-400">Sin detalle registrado para esta acción.</p>
+      )}
+    </div>
+  );
+}
+
 function AuditoriaTab() {
   const [page, setPage] = useState(1);
   const [filtroAction, setFiltroAction] = useState('all');
@@ -686,28 +775,7 @@ function AuditoriaTab() {
                     {/* Expanded detail */}
                     {isExp && (
                       <div className="px-4 pb-3 ml-10">
-                        <div className="bg-slate-50 rounded-lg p-3 text-[10px] font-mono text-slate-600 overflow-x-auto max-h-52 overflow-y-auto space-y-2">
-                          {log.metadata?.changes && (
-                            <div>
-                              <p className="text-[9px] uppercase tracking-wide text-slate-400 mb-1 font-sans font-semibold">Campos modificados</p>
-                              <pre className="whitespace-pre-wrap">{JSON.stringify(log.metadata.changes, null, 2)}</pre>
-                            </div>
-                          )}
-                          {log.metadata?.newRole && (
-                            <div>
-                              <p className="text-[9px] uppercase tracking-wide text-slate-400 mb-1 font-sans font-semibold">Cambio de rol</p>
-                              <p>{log.metadata.prevRole} → {log.metadata.newRole}</p>
-                            </div>
-                          )}
-                          {log.payload && (
-                            <div>
-                              <p className="text-[9px] uppercase tracking-wide text-slate-400 mb-1 font-sans font-semibold">
-                                {log.action === 'DELETE' ? 'Registro eliminado' : 'Estado guardado'}
-                              </p>
-                              <pre className="whitespace-pre-wrap">{JSON.stringify(log.payload, null, 2)}</pre>
-                            </div>
-                          )}
-                        </div>
+                        <DetalleAuditoria log={log} />
                       </div>
                     )}
                   </div>
