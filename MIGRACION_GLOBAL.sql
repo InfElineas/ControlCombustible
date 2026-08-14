@@ -1418,26 +1418,37 @@ CREATE POLICY "cpp_ajuste_manage_eco" ON cpp_ajuste FOR ALL    TO authenticated
   USING     (get_my_role() IN ('superadmin', 'economico'))
   WITH CHECK (get_my_role() IN ('superadmin', 'economico'));
 
+-- Se parte del consumidor y tanto el cálculo como el ajuste manual se enganchan
+-- por LEFT JOIN: antes la vista arrancaba de los depósitos con costo, así que en
+-- un tanque sin ninguno el ajuste manual no tenía fila donde aplicarse y no
+-- surtía efecto. Ver migrations/2026-08-14_cpp_ajuste_manual_sin_depositos.sql
 CREATE OR REPLACE VIEW v_cpp_por_tanque AS
 SELECT
-  base.consumidor_id,
-  COALESCE(
-    (SELECT ca.cpp_manual FROM cpp_ajuste ca WHERE ca.consumidor_id = base.consumidor_id ORDER BY ca.fecha DESC, ca.created_at DESC LIMIT 1),
-    base.cpp_calc
-  ) AS cpp,
+  c.id AS consumidor_id,
+  COALESCE(aj.cpp_manual, base.cpp_calc)      AS cpp,
   base.cpp_calc,
-  base.num_entradas,
-  base.litros_con_precio
-FROM (
+  (aj.cpp_manual IS NOT NULL)                 AS cpp_es_manual,
+  COALESCE(base.num_entradas, 0)              AS num_entradas,
+  COALESCE(base.litros_con_precio, 0)         AS litros_con_precio
+FROM consumidor c
+LEFT JOIN LATERAL (
+  SELECT ca.cpp_manual
+  FROM cpp_ajuste ca
+  WHERE ca.consumidor_id = c.id
+  ORDER BY ca.fecha DESC, ca.created_at DESC
+  LIMIT 1
+) aj ON true
+LEFT JOIN (
   SELECT
     consumidor_id,
     SUM(litros * precio_costo_unitario) / NULLIF(SUM(litros), 0) AS cpp_calc,
-    COUNT(*) AS num_entradas,
+    COUNT(*)    AS num_entradas,
     SUM(litros) AS litros_con_precio
   FROM movimiento
   WHERE tipo = 'DEPOSITO' AND precio_costo_unitario IS NOT NULL
   GROUP BY consumidor_id
-) base;
+) base ON base.consumidor_id = c.id
+WHERE aj.cpp_manual IS NOT NULL OR base.consumidor_id IS NOT NULL;
 
 CREATE OR REPLACE VIEW v_cpp_por_combustible AS
 SELECT

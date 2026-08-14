@@ -758,8 +758,13 @@ function BonificacionesTab({ ventas, loading, gananciaBruta = 0, ingresoVentas =
                         <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-slate-800">{formatMonto(v.monto)}</td>
                         {tieneGanancia && (() => {
                           const cpp = cppMap[v.tanque_origen_id];
-                          if (v.precio_venta_unitario != null && cpp != null) {
-                            const g = (v.precio_venta_unitario - cpp) * (v.litros || 0);
+                          // Si no se guardó precio de cobro, se deduce del monto
+                          // facturado: son equivalentes y así no quedan fuera las
+                          // ventas anteriores a que existiera ese campo.
+                          const precioVenta = v.precio_venta_unitario
+                            ?? (v.litros > 0 && v.monto != null ? v.monto / v.litros : null);
+                          if (precioVenta != null && cpp != null) {
+                            const g = (precioVenta - cpp) * (v.litros || 0);
                             return <td className={`px-4 py-2.5 text-right tabular-nums text-xs font-medium ${g >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{formatMonto(g)}</td>;
                           }
                           return <td className="px-4 py-2.5 text-right text-slate-300 text-xs">—</td>;

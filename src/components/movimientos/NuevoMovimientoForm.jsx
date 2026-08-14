@@ -488,7 +488,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       } else if (form.referencia) {
         data.referencia = form.referencia;
       }
-      if (canVerPrecios && form.precio_costo_unitario) data.precio_costo_unitario = parseFloat(form.precio_costo_unitario);
+      if (form.precio_costo_unitario) data.precio_costo_unitario = parseFloat(form.precio_costo_unitario);
     } else if (tipo === 'DESPACHO') {
       data.consumidor_origen_id = consumidorOrigen.id;
       data.consumidor_origen_nombre = consumidorOrigen.nombre;
@@ -1027,10 +1027,13 @@ export default function NuevoMovimientoForm({ onSuccess }) {
         </div>
       )}
 
-      {/* Precio de costo (solo COMPRA/DEPOSITO, solo economico/superadmin) */}
-      {canVerPrecios && tipo === 'DEPOSITO' && (
+      {/* Precio de costo del depósito. Visible para cualquiera que registre el
+          movimiento: antes dependía de canVerPrecios y el operador, que es quien
+          suele registrar los depósitos, no llegaba a verlo. Sin este dato no hay
+          costo del combustible y la ganancia no puede calcularse. */}
+      {tipo === 'DEPOSITO' && (
         <div>
-          <Label className="text-xs text-slate-500 font-medium block mb-1">Precio de costo/L (opcional)</Label>
+          <Label className="text-xs text-slate-500 font-medium block mb-1">Precio de costo por litro</Label>
           <Input
             type="number"
             step="0.0001"
@@ -1040,7 +1043,9 @@ export default function NuevoMovimientoForm({ onSuccess }) {
             value={form.precio_costo_unitario}
             onChange={e => setForm(f => ({ ...f, precio_costo_unitario: e.target.value }))}
           />
-          <p className="text-[11px] text-slate-400 mt-0.5">Se usa para calcular el costo promedio ponderado del tanque.</p>
+          {form.precio_costo_unitario
+            ? <p className="text-[11px] text-slate-400 mt-0.5">Se usa para calcular el costo promedio del tanque.</p>
+            : <p className="text-[11px] text-amber-600 mt-0.5">Sin este dato no se podrá calcular la ganancia de las bonificaciones que salgan de este tanque.</p>}
         </div>
       )}
 
