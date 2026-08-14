@@ -1057,6 +1057,44 @@ DO $$ BEGIN
 END $$;
 
 -- ─────────────────────────────────────────────────────────────
+--  Anomalías revisadas y descartadas (2026-08-14)
+-- ─────────────────────────────────────────────────────────────
+-- Ver migrations/2026-08-14_anomalia_descartada.sql
+-- Las comprobaciones del panel son heurísticas: un aviso puede ser correcto y
+-- aun así no ser un error. La clave incluye la magnitud del caso, de modo que
+-- si el caso cambia el aviso reaparece en vez de quedar silenciado para siempre.
+
+CREATE TABLE IF NOT EXISTS anomalia_descartada (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tipo         TEXT NOT NULL,
+  clave        TEXT NOT NULL,
+  motivo       TEXT,
+  user_id      UUID,
+  user_email   TEXT,
+  created_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (clave)
+);
+
+CREATE INDEX IF NOT EXISTS idx_anomalia_descartada_tipo ON anomalia_descartada (tipo);
+
+ALTER TABLE anomalia_descartada ENABLE ROW LEVEL SECURITY;
+
+DO $$ BEGIN
+  DROP POLICY IF EXISTS "anomalia_descartada_select_all"  ON anomalia_descartada;
+  DROP POLICY IF EXISTS "anomalia_descartada_insert_ops"  ON anomalia_descartada;
+  DROP POLICY IF EXISTS "anomalia_descartada_delete_ops"  ON anomalia_descartada;
+  CREATE POLICY "anomalia_descartada_select_all" ON anomalia_descartada
+    FOR SELECT TO authenticated USING (true);
+  CREATE POLICY "anomalia_descartada_insert_ops" ON anomalia_descartada
+    FOR INSERT TO authenticated
+    WITH CHECK (get_my_role() IN ('superadmin', 'operador', 'economico'));
+  CREATE POLICY "anomalia_descartada_delete_ops" ON anomalia_descartada
+    FOR DELETE TO authenticated
+    USING (get_my_role() IN ('superadmin', 'operador', 'economico'));
+END $$;
+
+
+-- ─────────────────────────────────────────────────────────────
 --  21. Waypoints de ruta (relación ordenada ruta ↔ marcadores)
 -- ─────────────────────────────────────────────────────────────
 

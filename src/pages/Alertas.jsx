@@ -9,8 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertTriangle, Settings2, Mail, ChevronDown, ChevronUp, Send, Fuel, ShieldAlert, Trash2, RefreshCw, CheckCircle2, Wrench, Truck } from 'lucide-react';
+import { AlertTriangle, Settings2, Mail, ChevronDown, ChevronUp, Send, Fuel, ShieldAlert, Trash2, RefreshCw, CheckCircle2, Wrench, Truck, Check, Undo2 } from 'lucide-react';
 import { createPageUrl } from '@/utils';
+import { logAudit } from '@/api/auditLog';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import { toast } from 'sonner';
 
@@ -377,18 +378,79 @@ function BloqueAnomalia({ titulo, nivel = 'warn', children }) {
   );
 }
 
-function FilaAnomalia({ nivel = 'warn', children }) {
+function FilaAnomalia({ nivel = 'warn', children, onDescartar, puedeDescartar }) {
   return (
     <div className={`flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg px-3 py-2 border text-xs gap-2 ${
       nivel === 'crit' ? 'border-red-100 dark:border-red-900' : 'border-orange-100 dark:border-orange-900'
     }`}>
       {children}
+      {onDescartar && puedeDescartar && (
+        <Button variant="ghost" size="icon"
+          className="h-6 w-6 shrink-0 text-slate-300 hover:text-emerald-600"
+          title="Revisado: es correcto, dejar de avisar"
+          onClick={onDescartar}>
+          <Check className="w-3.5 h-3.5" />
+        </Button>
+      )}
     </div>
   );
 }
 
 function IntegridadDatos() {
   const qc = useQueryClient();
+  const { user, canWrite, canManageFinanzas } = useUserRole();
+  const puedeDescartar = canWrite || canManageFinanzas;
+  const [verDescartados, setVerDescartados] = useState(false);
+
+  // Casos revisados y confirmados como correctos. Se excluyen de las listas.
+  const { data: descartadas = [] } = useQuery({
+    queryKey: ['anomalias-descartadas'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('anomalia_descartada')
+        .select('id, tipo, clave, user_email, created_date')
+        .order('created_date', { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
+
+  const clavesDescartadas = React.useMemo(
+    () => new Set(descartadas.map(d => d.clave)),
+    [descartadas],
+  );
+  const visible = (clave) => !clavesDescartadas.has(clave);
+
+  const descartarMut = useMutation({
+    mutationFn: async ({ tipo, clave }) => {
+      const { error } = await supabase.from('anomalia_descartada').insert({
+        tipo, clave, user_id: user?.id ?? null, user_email: user?.email ?? null,
+      });
+      if (error) throw error;
+      await logAudit({
+        action: 'DESCARTAR_ANOMALIA', entityType: 'AnomaliaDescartada',
+        entityId: clave, entityLabel: `${tipo}: ${clave}`, metadata: { tipo, clave },
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['anomalias-descartadas'] });
+      toast.success('Marcado como revisado');
+    },
+    onError: (e) => toast.error(e?.message ?? 'No se pudo descartar'),
+  });
+
+  const restaurarMut = useMutation({
+    mutationFn: async (id) => {
+      const { error } = await supabase.from('anomalia_descartada').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['anomalias-descartadas'] });
+      toast.success('Vuelve a vigilarse');
+    },
+    onError: (e) => toast.error(e?.message ?? 'No se pudo restaurar'),
+  });
 
   const { data: huerfanos = [], isFetching: fetchingH } = useQuery({
     queryKey: ['integridad-despachos-huerfanos'],
@@ -495,22 +557,39 @@ function IntegridadDatos() {
         (m.referencia || '').trim().toLowerCase()].join('|');
       (grupos[k] ||= []).push(m);
     });
-    const duplicados = Object.values(grupos).filter(g => g.length > 1);
+    // La clave lleva el número de repeticiones: si más adelante aparece otro
+    // registro en el mismo grupo, el caso cambia y vuelve a avisarse aunque se
+    // hubiera descartado antes.
+    const duplicados = Object.entries(grupos)
+      .filter(([, g]) => g.length > 1)
+      .map(([k, g]) => ({ items: g, clave: `dup|${k}|${g.length}` }))
+      .filter(d => visible(d.clave));
 
     // Corrección manual sin justificar: imposible de auditar después
-    const ajusteSinMotivo = movRecientes.filter(
-      m => m.tipo === 'AJUSTE' && !(m.referencia || '').trim()
-    );
+    const ajusteSinMotivo = movRecientes
+      .filter(m => m.tipo === 'AJUSTE' && !(m.referencia || '').trim())
+      .filter(m => visible(`ajuste|${m.id}`));
 
     // Entrada mayor que la capacidad del depósito que la recibe
     const sobrellenado = movRecientes.filter(m => {
       if (!m.consumidor_id || !['COMPRA', 'DEPOSITO', 'DESPACHO'].includes(m.tipo)) return false;
       const cap = Number(porId[m.consumidor_id]?.datos_tanque?.capacidad_litros) || 0;
       return cap > 0 && Number(m.litros || 0) > cap;
-    }).map(m => ({ ...m, capacidad: Number(porId[m.consumidor_id]?.datos_tanque?.capacidad_litros) }));
+    })
+      .map(m => ({ ...m, capacidad: Number(porId[m.consumidor_id]?.datos_tanque?.capacidad_litros) }))
+      .filter(m => visible(`sobre|${m.id}`));
 
-    return { fechaFutura, duplicados, ajusteSinMotivo, sobrellenado };
-  }, [movRecientes, consumidoresInt, hoyStr]);
+    return {
+      fechaFutura: fechaFutura.filter(m => visible(`futura|${m.id}`)),
+      duplicados,
+      ajusteSinMotivo,
+      sobrellenado,
+    };
+  }, [movRecientes, consumidoresInt, hoyStr, clavesDescartadas]);
+
+  // Las dos listas que vienen de sus propias consultas se filtran aparte
+  const descuadresVis   = descuadres.filter(d => visible(`descuadre|${d.consumidor_id}|${d.litros_descuadre}`));
+  const entregadasVis   = entregadasSinMov.filter(v => visible(`entrega|${v.id}`));
 
   const limpiarMut = useMutation({
     mutationFn: async () => {
@@ -538,7 +617,7 @@ function IntegridadDatos() {
   // Saneables = los que el botón puede resolver solo. Los descuadres cuentan
   // como problema detectado pero exigen decisión humana.
   const saneables      = huerfanos.length + canceladasConMov.length;
-  const totalProblemas = saneables + descuadres.length + entregadasSinMov.length +
+  const totalProblemas = saneables + descuadresVis.length + entregadasVis.length +
     anomalias.fechaFutura.length + anomalias.duplicados.length +
     anomalias.ajusteSinMotivo.length + anomalias.sobrellenado.length;
   const isFetching     = fetchingH || fetchingC || fetchingD || fetchingM || fetchingE;
@@ -588,7 +667,8 @@ function IntegridadDatos() {
       {anomalias.sobrellenado.length > 0 && (
         <BloqueAnomalia nivel="crit" titulo={`Entrada mayor que la capacidad del depósito (${anomalias.sobrellenado.length})`}>
           {anomalias.sobrellenado.map(m => (
-            <FilaAnomalia key={m.id} nivel="crit">
+            <FilaAnomalia key={m.id} nivel="crit" puedeDescartar={puedeDescartar}
+              onDescartar={() => descartarMut.mutate({ tipo: 'sobrellenado', clave: `sobre|${m.id}` })}>
               <span className="font-mono text-slate-400 shrink-0">{m.fecha}</span>
               <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{m.consumidor_nombre}</span>
               <span className="text-red-600 font-semibold shrink-0 tabular-nums">
@@ -599,10 +679,11 @@ function IntegridadDatos() {
         </BloqueAnomalia>
       )}
 
-      {entregadasSinMov.length > 0 && (
-        <BloqueAnomalia nivel="crit" titulo={`Bonificaciones entregadas sin movimiento asociado (${entregadasSinMov.length})`}>
-          {entregadasSinMov.map(v => (
-            <FilaAnomalia key={v.id} nivel="crit">
+      {entregadasVis.length > 0 && (
+        <BloqueAnomalia nivel="crit" titulo={`Bonificaciones entregadas sin movimiento asociado (${entregadasVis.length})`}>
+          {entregadasVis.map(v => (
+            <FilaAnomalia key={v.id} nivel="crit" puedeDescartar={puedeDescartar}
+              onDescartar={() => descartarMut.mutate({ tipo: 'entrega_sin_mov', clave: `entrega|${v.id}` })}>
               <span className="font-mono text-slate-400 shrink-0">{v.fecha_venta}</span>
               <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{v.beneficiario_nombre}</span>
               <span className="text-slate-500 shrink-0">{v.litros} L {v.combustible_nombre}</span>
@@ -614,8 +695,9 @@ function IntegridadDatos() {
 
       {anomalias.duplicados.length > 0 && (
         <BloqueAnomalia titulo={`Posibles registros duplicados (${anomalias.duplicados.length})`}>
-          {anomalias.duplicados.map(g => (
-            <FilaAnomalia key={g[0].id}>
+          {anomalias.duplicados.map(({ items: g, clave }) => (
+            <FilaAnomalia key={clave} puedeDescartar={puedeDescartar}
+              onDescartar={() => descartarMut.mutate({ tipo: 'duplicado', clave })}>
               <span className="font-mono text-slate-400 shrink-0">{g[0].fecha}</span>
               <span className="flex-1 truncate text-slate-600 dark:text-slate-300">
                 {g[0].consumidor_nombre}
@@ -631,7 +713,8 @@ function IntegridadDatos() {
       {anomalias.fechaFutura.length > 0 && (
         <BloqueAnomalia titulo={`Movimientos con fecha futura (${anomalias.fechaFutura.length})`}>
           {anomalias.fechaFutura.map(m => (
-            <FilaAnomalia key={m.id}>
+            <FilaAnomalia key={m.id} puedeDescartar={puedeDescartar}
+              onDescartar={() => descartarMut.mutate({ tipo: 'fecha_futura', clave: `futura|${m.id}` })}>
               <span className="font-mono text-orange-600 font-semibold shrink-0">{m.fecha}</span>
               <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{m.consumidor_nombre}</span>
               <span className="text-slate-500 shrink-0">{m.tipo} · {m.litros} L</span>
@@ -643,7 +726,8 @@ function IntegridadDatos() {
       {anomalias.ajusteSinMotivo.length > 0 && (
         <BloqueAnomalia titulo={`Ajustes sin motivo escrito (${anomalias.ajusteSinMotivo.length})`}>
           {anomalias.ajusteSinMotivo.map(m => (
-            <FilaAnomalia key={m.id}>
+            <FilaAnomalia key={m.id} puedeDescartar={puedeDescartar}
+              onDescartar={() => descartarMut.mutate({ tipo: 'ajuste_sin_motivo', clave: `ajuste|${m.id}` })}>
               <span className="font-mono text-slate-400 shrink-0">{m.fecha}</span>
               <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{m.consumidor_nombre}</span>
               <span className="text-slate-500 shrink-0">{m.litros} L</span>
@@ -653,14 +737,18 @@ function IntegridadDatos() {
         </BloqueAnomalia>
       )}
 
-      {descuadres.length > 0 && (
+      {descuadresVis.length > 0 && (
         <div className="space-y-1.5">
           <p className="text-[10px] font-semibold text-red-600 uppercase tracking-wide">
-            Stock descuadrado: salieron más litros de los que entraron ({descuadres.length})
+            Stock descuadrado: salieron más litros de los que entraron ({descuadresVis.length})
           </p>
-          {descuadres.map(d => (
-            <div key={`${d.consumidor_id}-${d.combustible_nombre}`}
-              className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg px-3 py-2 border border-red-100 dark:border-red-900 text-xs gap-2">
+          {descuadresVis.map(d => (
+            <FilaAnomalia key={`${d.consumidor_id}-${d.combustible_nombre}`} nivel="crit"
+              puedeDescartar={puedeDescartar}
+              onDescartar={() => descartarMut.mutate({
+                tipo: 'descuadre',
+                clave: `descuadre|${d.consumidor_id}|${d.litros_descuadre}`,
+              })}>
               <span className="flex-1 font-medium text-slate-700 dark:text-slate-200 truncate">{d.nombre}</span>
               <span className="text-slate-500 shrink-0">{d.combustible_nombre}</span>
               <span className="text-slate-400 shrink-0 tabular-nums hidden sm:inline">
@@ -669,7 +757,7 @@ function IntegridadDatos() {
               <span className="text-red-600 font-semibold shrink-0 tabular-nums">
                 faltan {Number(d.litros_descuadre).toFixed(2)} L
               </span>
-            </div>
+            </FilaAnomalia>
           ))}
           <p className="text-[10px] text-slate-400">
             Requiere revisión manual: falta registrar una entrada o sobra una salida. Corrígelo
@@ -700,6 +788,31 @@ function IntegridadDatos() {
               <span className="flex-1 font-medium text-slate-700 dark:text-slate-200 truncate">{v.beneficiario_nombre}</span>
               <span className="text-slate-500 shrink-0">{v.litros} L {v.combustible_nombre}</span>
               <span className="text-orange-600 font-semibold shrink-0">DESPACHO vivo</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {descartadas.length > 0 && (
+        <div className="pt-1 space-y-1.5">
+          <button type="button"
+            className="text-[10px] text-slate-400 hover:text-slate-600 flex items-center gap-1"
+            onClick={() => setVerDescartados(v => !v)}>
+            {verDescartados ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {descartadas.length} revisado{descartadas.length > 1 ? 's' : ''} y confirmado{descartadas.length > 1 ? 's' : ''} como correcto{descartadas.length > 1 ? 's' : ''}
+          </button>
+          {verDescartados && descartadas.map(d => (
+            <div key={d.id} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-1.5 border border-slate-100 dark:border-slate-700 text-[11px] gap-2">
+              <span className="text-slate-400 shrink-0">{d.tipo}</span>
+              <span className="flex-1 truncate font-mono text-slate-400">{d.clave}</span>
+              <span className="text-slate-400 shrink-0 hidden sm:inline">{d.user_email}</span>
+              {puedeDescartar && (
+                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-slate-300 hover:text-orange-600"
+                  title="Volver a vigilar este caso"
+                  onClick={() => restaurarMut.mutate(d.id)}>
+                  <Undo2 className="w-3 h-3" />
+                </Button>
+              )}
             </div>
           ))}
         </div>
