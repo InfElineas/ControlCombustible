@@ -426,7 +426,16 @@ function IntegridadDatos() {
       qc.invalidateQueries({ queryKey: ['anomalias-descartadas'] });
       toast.success('Marcado como revisado');
     },
-    onError: (e) => toast.error(e?.message ?? 'No se pudo descartar'),
+    onError: (e) => {
+      // Clave única: el caso ya estaba descartado, normalmente por doble clic o
+      // porque otro usuario lo revisó antes. No es un fallo que deba alarmar.
+      if (e?.code === '23505') {
+        qc.invalidateQueries({ queryKey: ['anomalias-descartadas'] });
+        toast.info('Ese caso ya estaba marcado como revisado');
+        return;
+      }
+      toast.error(e?.message ?? 'No se pudo descartar');
+    },
   });
 
   const restaurarMut = useMutation({
