@@ -19,7 +19,7 @@ import {
   Droplets, Plus, Users, Fuel, Clock, CheckCircle2, Check,
   X, XCircle, Loader2, Pencil, Trash2, Search, BadgeDollarSign,
   PackageCheck, ShieldAlert, Upload, Banknote, ListFilter,
-  CalendarDays, UserCircle2, TrendingUp, AlertTriangle,
+  CalendarDays, UserCircle2, TrendingUp, AlertTriangle, History,
 } from 'lucide-react';
 import { logAudit } from '@/api/auditLog';
 
@@ -875,13 +875,49 @@ function VentaRow({ v, canOperar, canEntregar, canDelete, canEditar, onCambiarEs
   );
 }
 
+// Nombres legibles de las acciones registradas, para el historial de la factura
+const ETIQUETA_AUDIT = {
+  CORRECCION_PRECIO_BONIFICACION: 'Corrección de precio',
+  EDITAR_BONIFICACION:            'Edición',
+  ESTADO_VENTA:                   'Cambio de estado',
+  DESPACHO_BON_CREADO:            'Despacho generado',
+  DESPACHO_BON_ELIMINADO:         'Despacho eliminado',
+  DESPACHO_BON_REVERTIDO:         'Despacho revertido',
+  CREATE:                         'Registro creado',
+  UPDATE:                         'Actualización',
+  DELETE:                         'Eliminación',
+};
+
 // ── Formulario edición de bonificación ───────────────────────────────────────
 
 function FormEditBonificacion({ venta, onClose }) {
   const qc = useQueryClient();
   const { role } = useUserRole();
   const esPendiente = venta.estado === 'PENDIENTE';
-  const puedeCorregirPrecio = (role === 'superadmin' || role === 'cajero') && venta.estado === 'PAGADO_FINALIZADO';
+  // Superadmin y cajero corrigen el precio en cualquier estado: un error de
+  // tarifa se detecta a menudo después de entregar o cobrar, y hasta ahora solo
+  // era corregible en PAGADO_FINALIZADO. El resto de campos financieros
+  // (litros, combustible, tanque, beneficiario) siguen siendo inmutables fuera
+  // de PENDIENTE, y cada corrección queda registrada con autor y fecha.
+  const puedeCorregirPrecio = role === 'superadmin' || role === 'cajero';
+
+  // Historial visible en la propia factura: quién la tocó y cuándo, sin tener
+  // que entrar al panel de administración.
+  const { data: historial = [] } = useQuery({
+    queryKey: ['audit-venta', venta.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('audit_log')
+        .select('id, action, user_name, user_email, created_date, metadata')
+        .eq('entity_type', 'VentaTrabajador')
+        .eq('entity_id', String(venta.id))
+        .order('created_date', { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 30_000,
+  });
   const [form, setForm] = useState({
     fecha_venta:      venta.fecha_venta,
     beneficiario_id:  venta.beneficiario_id,
@@ -922,8 +958,11 @@ function FormEditBonificacion({ venta, onClose }) {
     mutationFn: async (payload) => {
       const { error } = await supabase.from('venta_trabajador').update(payload).eq('id', venta.id);
       if (error) throw error;
-      const esPagoFinalizado = venta.estado === 'PAGADO_FINALIZADO';
-      const huboCorreccionPrecio = esPagoFinalizado && payload.precio_por_litro !== venta.precio_por_litro;
+      // Una corrección de precio sobre una factura ya entregada o cobrada se
+      // etiqueta aparte de una edición normal en PENDIENTE: es la que interesa
+      // poder rastrear después.
+      const huboCorreccionPrecio = venta.estado !== 'PENDIENTE'
+        && Number(payload.precio_por_litro) !== Number(venta.precio_por_litro);
       await logAudit({
         action: huboCorreccionPrecio ? 'CORRECCION_PRECIO_BONIFICACION' : 'EDITAR_BONIFICACION',
         entityType: 'VentaTrabajador',
@@ -942,6 +981,7 @@ function FormEditBonificacion({ venta, onClose }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['ventas'] });
       qc.invalidateQueries({ queryKey: ['movimientos'] });
+      qc.invalidateQueries({ queryKey: ['audit-venta', venta.id] });
       toast.success('Bonificación actualizada');
       onClose();
     },
@@ -1105,10 +1145,44 @@ function FormEditBonificacion({ venta, onClose }) {
           Estado <strong>{venta.estado}</strong> — los campos financieros son inmutables. Solo se puede modificar fecha y referencia.
         </p>
       )}
-      {puedeCorregirPrecio && (
+      {!esPendiente && puedeCorregirPrecio && (
         <p className="text-[11px] text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-          Corrección de precio habilitada. Cualquier cambio quedará registrado en el historial de auditoría.
+          Estado <strong>{venta.estado}</strong> — puedes corregir el precio. Litros, combustible,
+          tanque y trabajador quedan fijos. El cambio se registra con tu nombre y la fecha.
         </p>
+      )}
+
+      {historial.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide flex items-center gap-1">
+            <History className="w-3 h-3" /> Historial de cambios
+          </p>
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {historial.map(h => (
+              <div key={h.id} className="text-[11px] bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-slate-600">{ETIQUETA_AUDIT[h.action] ?? h.action}</span>
+                  <span className="text-slate-400 font-mono shrink-0">
+                    {new Date(h.created_date).toLocaleString('es', { dateStyle: 'short', timeStyle: 'short' })}
+                  </span>
+                </div>
+                <div className="text-slate-400 truncate">{h.user_name || h.user_email || 'usuario desconocido'}</div>
+                {h.metadata?.precio_anterior != null && h.metadata?.precio_nuevo != null &&
+                  h.metadata.precio_anterior !== h.metadata.precio_nuevo && (
+                  <div className="text-slate-500">
+                    Precio: <span className="line-through text-slate-400">{h.metadata.precio_anterior}</span>
+                    {' → '}<strong className="text-slate-700">{h.metadata.precio_nuevo}</strong>
+                  </div>
+                )}
+                {h.metadata?.estado_anterior && h.metadata?.estado_nuevo && (
+                  <div className="text-slate-500">
+                    {h.metadata.estado_anterior} → <strong className="text-slate-700">{h.metadata.estado_nuevo}</strong>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       <div className="flex gap-2 justify-end pt-1">
