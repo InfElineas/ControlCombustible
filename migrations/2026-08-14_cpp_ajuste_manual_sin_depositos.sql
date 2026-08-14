@@ -13,7 +13,12 @@
 -- cpp_calc aparte para poder distinguir el costo real del fijado a mano, y la
 -- vista sigue devolviendo solo los tanques que tienen algun CPP.
 
-CREATE OR REPLACE VIEW v_cpp_por_tanque AS
+-- DROP antes de crear: CREATE OR REPLACE solo admite añadir columnas al final,
+-- y aquí se intercala cpp_es_manual, así que Postgres lo tomaría por un intento
+-- de renombrar num_entradas y fallaría con 42P16.
+DROP VIEW IF EXISTS v_cpp_por_tanque;
+
+CREATE VIEW v_cpp_por_tanque AS
 SELECT
   c.id AS consumidor_id,
   COALESCE(aj.cpp_manual, base.cpp_calc)      AS cpp,

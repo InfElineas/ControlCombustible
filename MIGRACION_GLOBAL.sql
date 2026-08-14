@@ -1422,7 +1422,9 @@ CREATE POLICY "cpp_ajuste_manage_eco" ON cpp_ajuste FOR ALL    TO authenticated
 -- por LEFT JOIN: antes la vista arrancaba de los depósitos con costo, así que en
 -- un tanque sin ninguno el ajuste manual no tenía fila donde aplicarse y no
 -- surtía efecto. Ver migrations/2026-08-14_cpp_ajuste_manual_sin_depositos.sql
-CREATE OR REPLACE VIEW v_cpp_por_tanque AS
+-- DROP explícito: CREATE OR REPLACE no admite intercalar una columna nueva.
+DROP VIEW IF EXISTS v_cpp_por_tanque;
+CREATE VIEW v_cpp_por_tanque AS
 SELECT
   c.id AS consumidor_id,
   COALESCE(aj.cpp_manual, base.cpp_calc)      AS cpp,
