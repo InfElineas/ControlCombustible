@@ -44,88 +44,26 @@ function WorkerAvatar({ nombre }) {
 // ── Calcula stock disponible de un tanque (stock real − reservas pendientes) ──
 // DESPACHOs generados automáticamente por bonificaciones no representan
 // entradas físicas al tanque — se excluyen del cálculo de stock.
-const ES_BON = m => m.tipo === 'DESPACHO' && (m.referencia || '').startsWith('Bonificación combustible:');
 
-function useStockDisponible(tanqueId, combustibleId, movimientos, ventasPendientes, consumidores) {
+// Litros que quedarían libres en el tanque: el stock que sirve la base de datos
+// menos lo ya comprometido por bonificaciones pendientes de entregar. El stock
+// viene de v_stock_tanques —misma fuente que el resto de la app y que el trigger
+// que autoriza los despachos— en lugar de recalcularse aquí sobre la lista de
+// movimientos, que además estaba limitada a 5000 registros.
+function useStockDisponible(tanqueId, combustibleId, stockView, ventasPendientes) {
   return useMemo(() => {
     if (!tanqueId || !combustibleId) return null;
-    const tanque = consumidores.find(c => c.id === tanqueId);
-    if (!tanque) return null;
-
-    const litrosIniciales = tanque.litros_iniciales ?? 0;
-    const movsTanque = movimientos.filter(m => m.combustible_id === combustibleId);
-
-    const entradas = movsTanque
-      .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO') && m.consumidor_id === tanqueId && !ES_BON(m))
-      .reduce((s, m) => s + (m.litros || 0), 0);
-
-    const salidas = movsTanque
-      .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === tanqueId)
-      .reduce((s, m) => s + (m.litros || 0), 0);
-
-    const stockReal = litrosIniciales + entradas - salidas;
+    const fila = stockView.find(r => r.consumidor_id === tanqueId);
+    if (!fila) return null;
 
     const reservadas = ventasPendientes
       .filter(v => v.tanque_origen_id === tanqueId && v.combustible_id === combustibleId)
       .reduce((s, v) => s + (v.litros || 0), 0);
 
-    return Math.max(stockReal - reservadas, 0);
-  }, [tanqueId, combustibleId, movimientos, ventasPendientes, consumidores]);
+    return Math.max((Number(fila.stock_actual) || 0) - reservadas, 0);
+  }, [tanqueId, combustibleId, stockView, ventasPendientes]);
 }
 
-function calcStockTanque(tanque, combustibleNombre, combustibleId, movimientos, ventasPendientes, tarjetas) {
-  if (!tanque || !combustibleNombre) return null;
-
-  const esSurtidor = tanque.categoria === 'surtidor';
-  const ini = (() => {
-    const v = Number(tanque.litros_iniciales) || 0;
-    if (v <= 0) return 0;
-    if (tanque.combustible_id && combustibleId) return tanque.combustible_id === combustibleId ? v : 0;
-    if (tanque.combustible_nombre) return tanque.combustible_nombre.toLowerCase() === combustibleNombre.toLowerCase() ? v : 0;
-    return v;
-  })();
-
-  let stockReal;
-  if (esSurtidor) {
-    const tarjetasIds = (() => {
-      const arr = tanque.datos_tanque?.tarjetas_vinculadas_ids;
-      if (Array.isArray(arr) && arr.length > 0) return arr;
-      const single = tanque.datos_tanque?.tarjeta_vinculada_id;
-      return single ? [single] : [];
-    })();
-    const entradas = movimientos
-      .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DESPACHO' || m.tipo === 'DEPOSITO') && m.consumidor_id === tanque.id && !ES_BON(m))
-      .reduce((s, m) => s + (m.litros || 0), 0);
-    const salidasDespacho = movimientos
-      .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === tanque.id
-        && (!m.combustible_id || m.combustible_id === combustibleId))
-      .reduce((s, m) => s + (m.litros || 0), 0);
-    const salidasCompra = tarjetasIds.length > 0
-      ? movimientos.filter(m => m.tipo === 'COMPRA' && tarjetasIds.includes(m.tarjeta_id)
-          && (!m.combustible_id || m.combustible_id === combustibleId))
-          .reduce((s, m) => s + (m.litros || 0), 0)
-      : 0;
-    stockReal = ini + entradas - salidasDespacho - salidasCompra;
-  } else {
-    const entradas = movimientos
-      .filter(m => (m.tipo === 'COMPRA' || m.tipo === 'DEPOSITO' || m.tipo === 'DESPACHO')
-        && m.consumidor_id === tanque.id
-        && (m.combustible_nombre === combustibleNombre || m.combustible_id === combustibleId)
-        && !ES_BON(m))
-      .reduce((s, m) => s + (m.litros || 0), 0);
-    const salidas = movimientos
-      .filter(m => m.tipo === 'DESPACHO' && m.consumidor_origen_id === tanque.id
-        && (!m.combustible_id || m.combustible_id === combustibleId))
-      .reduce((s, m) => s + (m.litros || 0), 0);
-    stockReal = ini + entradas - salidas;
-  }
-
-  const reservadas = ventasPendientes
-    .filter(v => v.tanque_origen_id === tanque.id && v.combustible_id === combustibleId)
-    .reduce((s, v) => s + (v.litros || 0), 0);
-
-  return { stock: Math.max(stockReal - reservadas, 0), stockReal };
-}
 
 const esTanqueBonificacion = c =>
   c.categoria === 'surtidor' ||
@@ -151,7 +89,15 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
   const { data: combustibles  = [] } = useQuery({ queryKey: ['combustibles'],  queryFn: () => base44.entities.TipoCombustible.list() });
   const { data: preciosDespacho = [] } = useQuery({ queryKey: ['precios-despacho'], queryFn: () => base44.entities.PrecioDespachoTipo.list('-fecha_desde', 200) });
   const { data: tiposConsumidor = [] } = useQuery({ queryKey: ['tipos-consumidor'], queryFn: () => base44.entities.TipoConsumidor.list() });
-  const { data: movimientos   = [] } = useQuery({ queryKey: ['movimientos'],   queryFn: () => base44.entities.Movimiento.list('-fecha', 5000), staleTime: 5 * 60_000 });
+  const { data: stockView = [] } = useQuery({
+    queryKey: ['v-stock-tanques'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('v_stock_tanques').select('*');
+      if (error) throw error;
+      return data ?? [];
+    },
+    staleTime: 60_000,
+  });
 
   const tanques = consumidores.filter(esTanqueBonificacion);
 
@@ -185,7 +131,7 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
   }, [form.combustible_id, form.fecha_venta, preciosDespacho, tipoBonificacionId]);
 
   const montoCalculado = precioVigente && form.litros ? parseFloat(form.litros) * precioVigente.precio_por_litro : null;
-  const stockDisponible = useStockDisponible(form.tanque_origen_id, form.combustible_id, movimientos, ventasPendientes, consumidores);
+  const stockDisponible = useStockDisponible(form.tanque_origen_id, form.combustible_id, stockView, ventasPendientes);
   const stockInsuficiente = stockDisponible !== null && form.litros && parseFloat(form.litros) > stockDisponible;
 
   // Ventana en la que dos bonificaciones idénticas se consideran un doble
