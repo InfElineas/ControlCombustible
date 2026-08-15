@@ -28,6 +28,19 @@ import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
+
+// Litros que consume el viaje segun el indice del vehiculo. Hasta ahora
+// litros_estimados solo llegaba en las importaciones del chat, asi que los
+// viajes registrados a mano no sumaban nada a los litros del dia ni del mes
+// aunque tuvieran kilometros. Devuelve null si falta cualquiera de los dos
+// datos, para no inventar una cifra.
+function estimarLitros(vehiculo, km) {
+  const consumo = Number(vehiculo?.datos_vehiculo?.indice_consumo_real)
+    || Number(vehiculo?.datos_vehiculo?.indice_consumo_fabricante)
+    || 0;
+  if (!km || km <= 0 || consumo <= 0) return null;
+  return +(km / consumo).toFixed(2);
+}
 const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
 
 const ESTADO_CFG = {
@@ -85,13 +98,14 @@ function DialogNovedad({ ruta, novedad, consumidores, conductores, onClose, onSa
 
   const vehGpsId = consumidores.find(c => c.id === form.consumidor_id)?.gps_device_id ?? null;
 
+  const fechaGps = ruta.fecha_hoy ?? new Date().toISOString().slice(0, 10);
+
   const fetchGpsKm = async () => {
     if (!vehGpsId) return;
     setGpsKmLoading(true);
     try {
-      const fecha = ruta.fecha_hoy ?? new Date().toISOString().slice(0, 10);
-      const from  = new Date(fecha + 'T00:00:00');
-      const to    = new Date(fecha + 'T23:59:59');
+      const from  = new Date(fechaGps + 'T00:00:00');
+      const to    = new Date(fechaGps + 'T23:59:59');
       const summary = await gpsApi.summary(vehGpsId, from, to);
       const dist = summary?.[0]?.distance ?? 0;
       const km   = metersToKm(dist);
@@ -101,10 +115,31 @@ function DialogNovedad({ ruta, novedad, consumidores, conductores, onClose, onSa
     finally { setGpsKmLoading(false); }
   };
 
+  // Trae los km en cuanto hay vehículo con GPS y el campo sigue vacío, para no
+  // depender de que alguien pulse el botón. Va en silencio: si el GPS falla o
+  // no reporta nada, el campo queda como estaba y se escribe a mano.
+  useEffect(() => {
+    if (!vehGpsId || form.km_reales !== '') return;
+    let cancelado = false;
+    (async () => {
+      try {
+        const summary = await gpsApi.summary(
+          vehGpsId, new Date(fechaGps + 'T00:00:00'), new Date(fechaGps + 'T23:59:59'),
+        );
+        const km = metersToKm(summary?.[0]?.distance ?? 0);
+        if (!cancelado && km > 0) set('km_reales', String(km));
+      } catch { /* el usuario siempre puede escribirlos */ }
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vehGpsId, fechaGps]);
+
   const handleSave = () => {
     if (form.estado !== 'cancelada' && !form.consumidor_id) {
       toast.error('Selecciona un vehículo'); return;
     }
+    const km  = form.km_reales !== '' ? Number(form.km_reales) : null;
+    const veh = consumidores.find(c => c.id === form.consumidor_id);
     onSave({
       consumidor_id:     form.estado !== 'cancelada' ? form.consumidor_id     : (ruta.consumidor_id     || null),
       consumidor_nombre: form.estado !== 'cancelada' ? form.consumidor_nombre : (ruta.consumidor_nombre || null),
@@ -112,7 +147,10 @@ function DialogNovedad({ ruta, novedad, consumidores, conductores, onClose, onSa
       conductor_nombre:  form.inclConductor ? (form.conductor_nombre || null) : null,
       ayudante_id:       form.inclAyudante  ? (form.ayudante_id     || null) : null,
       ayudante_nombre:   form.inclAyudante  ? (form.ayudante_nombre || null) : null,
-      km_reales:         form.km_reales !== '' ? Number(form.km_reales) : null,
+      km_reales:         km,
+      // Si no hay con qué calcularlo se conserva el valor previo, que puede
+      // venir de una importación del chat.
+      litros_estimados:  estimarLitros(veh, km) ?? (novedad?.litros_estimados ?? null),
       observaciones:     form.observaciones.trim() || null,
       estado:            form.estado,
     });
@@ -359,9 +397,29 @@ function DialogAsignacion({ asignacion, consumidores, conductores, onClose, onSa
     finally { setGpsKmLoading(false); }
   };
 
+  // Mismo automatismo que en las novedades: en cuanto hay vehículo con GPS y el
+  // campo está vacío, se traen los km sin esperar a que pulsen el botón.
+  useEffect(() => {
+    if (!vehGpsId || form.km_reales !== '' || !form.fecha) return;
+    let cancelado = false;
+    (async () => {
+      try {
+        const summary = await gpsApi.summary(
+          vehGpsId, new Date(form.fecha + 'T00:00:00'), new Date(form.fecha + 'T23:59:59'),
+        );
+        const km = metersToKm(summary?.[0]?.distance ?? 0);
+        if (!cancelado && km > 0) set('km_reales', String(km));
+      } catch { /* el usuario siempre puede escribirlos */ }
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vehGpsId, form.fecha]);
+
   const handleSave = () => {
     if (!form.consumidor_id)                         { toast.error('Selecciona un vehículo'); return; }
     if (!form.descripcion_emergencia.trim())          { toast.error('Describe el destino o motivo'); return; }
+    const km  = form.km_reales !== '' ? Number(form.km_reales) : null;
+    const veh = consumidores.find(c => c.id === form.consumidor_id);
     onSave({
       fecha:                  form.fecha,
       tipo_viaje:             form.tipo_viaje,
@@ -373,7 +431,8 @@ function DialogAsignacion({ asignacion, consumidores, conductores, onClose, onSa
       conductor_nombre:       form.inclConductor ? (form.conductor_nombre || null) : null,
       ayudante_id:            form.inclAyudante  ? (form.ayudante_id     || null) : null,
       ayudante_nombre:        form.inclAyudante  ? (form.ayudante_nombre || null) : null,
-      km_reales:              form.km_reales !== '' ? Number(form.km_reales) : null,
+      km_reales:              km,
+      litros_estimados:       estimarLitros(veh, km) ?? (asignacion?.litros_estimados ?? null),
       observaciones:          form.observaciones.trim() || null,
       estado:                 form.estado,
     });
