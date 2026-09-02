@@ -1,7 +1,20 @@
+// Versiones ajustadas a lo que hay instalado en el SDK de esta maquina.
+// Capacitor genero compileSdk/targetSdk 35, pero el SDK local solo tiene las
+// plataformas 34 y 36, y de build-tools la 35 en adelante. Como el gestor del
+// SDK descarga de dl.google.com —filtrado desde esta red, ver
+// LEEME-espejo-gradle.md— no se pueden instalar las que faltan, asi que se usa
+// lo disponible.
+//
+// buildToolsVersion se fija explicitamente porque AGP 8.7.2 asume 34.0.0 por
+// omision y esa no esta instalada.
+//
+// Nota para el futuro: si algun dia la aplicacion se publica en Play Store,
+// exigira targetSdk 35 o superior y habra que instalar esa plataforma.
 ext {
     minSdkVersion = 23
-    compileSdkVersion = 35
-    targetSdkVersion = 35
+    compileSdkVersion = 34
+    targetSdkVersion = 34
+    buildToolsVersion = '35.0.0'
     androidxActivityVersion = '1.9.2'
     androidxAppCompatVersion = '1.7.0'
     androidxCoordinatorLayoutVersion = '1.2.0'

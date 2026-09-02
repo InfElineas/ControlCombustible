@@ -3,6 +3,7 @@ apply plugin: 'com.android.application'
 android {
     namespace "com.mercadoelineas.combustible"
     compileSdk rootProject.ext.compileSdkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
     defaultConfig {
         applicationId "com.mercadoelineas.combustible"
         minSdkVersion rootProject.ext.minSdkVersion

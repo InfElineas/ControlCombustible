@@ -1,8 +1,16 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
+// dl.google.com responde 404 a todo el arbol de artefactos desde esta red: es un
+// filtrado geografico, no una version inexistente. Se resuelve por el espejo
+// publico de Aliyun, que sirve el mismo repositorio. Maven Central si es
+// accesible directamente, asi que se deja tal cual.
+//
+// google() se conserva detras del espejo: si algun dia la red deja de estar
+// filtrada, Gradle volvera a usar el origen oficial sin tocar nada.
 buildscript {
-    
+
     repositories {
+        maven { url 'https://maven.aliyun.com/repository/google' }
         google()
         mavenCentral()
     }
@@ -19,8 +27,23 @@ apply from: "variables.gradle"
 
 allprojects {
     repositories {
+        maven { url 'https://maven.aliyun.com/repository/google' }
         google()
         mavenCentral()
+    }
+}
+
+// Los modulos de Capacitor que viven en node_modules traen su propio bloque
+// android y no leen variables.gradle, asi que piden el build-tools por omision
+// de AGP (34.0.0) que no esta instalado y no se puede descargar desde esta red.
+// Se les impone aqui la version disponible, en lugar de editar node_modules,
+// que se pierde en cada npm install. Ver LEEME-espejo-gradle.md
+subprojects {
+    afterEvaluate { proyecto ->
+        if (proyecto.hasProperty('android')) {
+            proyecto.android.buildToolsVersion = rootProject.ext.buildToolsVersion
+            proyecto.android.compileSdkVersion = rootProject.ext.compileSdkVersion
+        }
     }
 }
 
