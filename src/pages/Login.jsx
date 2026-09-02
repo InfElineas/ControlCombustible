@@ -21,10 +21,13 @@ export default function Login() {
 
   // Dentro de la aplicacion, el inicio con Google sale al navegador y vuelve por
   // un enlace propio; aqui se recoge esa vuelta para terminar la sesion dentro.
-  useEffect(() => escucharVueltaDeLogin(() => {
+  useEffect(() => escucharVueltaDeLogin((resultado) => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) window.location.href = '/';
-      else { setLoading(false); setError('No se pudo completar el inicio de sesión. Inténtalo de nuevo.'); }
+      if (session) { window.location.href = '/'; return; }
+      setLoading(false);
+      // Se muestra el motivo tal cual lo da Supabase o el proveedor: sin el, no
+      // hay forma de distinguir un enlace mal autorizado de un permiso negado.
+      setError(resultado?.motivo || 'No se pudo completar el inicio de sesión. Inténtalo de nuevo.');
     });
   }), []);
 
