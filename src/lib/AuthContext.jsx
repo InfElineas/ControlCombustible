@@ -1,5 +1,8 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
+import { queryClientInstance } from '@/lib/query-client';
+import { limpiarCachePersistida } from '@/lib/query-persist';
+import { olvidarRolConocido } from '@/components/ui-helpers/useUserRole';
 
 const AuthContext = createContext();
 
@@ -17,7 +20,16 @@ export const AuthProvider = ({ children }) => {
     });
 
     // Escuchar cambios de sesión (login / logout / token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      // Al cerrar sesión hay que borrar la caché guardada en el dispositivo:
+      // contiene datos de operación y quien entre después no debe verlos. Se
+      // hace aquí, sobre el evento, porque el cierre de sesión se dispara desde
+      // varios sitios de la interfaz y así queda cubierto en todos.
+      if (event === 'SIGNED_OUT') {
+        limpiarCachePersistida().catch(() => {});
+        queryClientInstance.clear();
+        olvidarRolConocido();
+      }
       setSession(s);
       setUser(s?.user ?? null);
       setIsLoadingAuth(false);

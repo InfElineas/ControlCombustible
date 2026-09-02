@@ -1,6 +1,32 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
 
+// Último rol conocido, para que la aplicación arranque con los permisos
+// correctos cuando no hay red. Se guarda junto al correo para no aplicar el rol
+// de un usuario a otro que entre en el mismo dispositivo.
+const CLAVE_ROL = 'webcombustible-rol-conocido';
+
+function guardarRolConocido(email, fila) {
+  try {
+    localStorage.setItem(CLAVE_ROL, JSON.stringify({
+      email, role: fila.role, status: fila.status, full_name: fila.full_name,
+    }));
+  } catch { /* almacenamiento lleno o bloqueado: se seguirá pidiendo al servidor */ }
+}
+
+function leerRolConocido(email) {
+  try {
+    const guardado = JSON.parse(localStorage.getItem(CLAVE_ROL) || 'null');
+    return guardado?.email === email ? guardado : null;
+  } catch {
+    return null;
+  }
+}
+
+export function olvidarRolConocido() {
+  try { localStorage.removeItem(CLAVE_ROL); } catch { /* nada que limpiar */ }
+}
+
 export function useUserRole() {
   const [user, setUser]       = useState(/** @type {any} */(null));
   const [role, setRole]       = useState(null);
@@ -23,13 +49,28 @@ export function useUserRole() {
         p_full_name: authUser.user_metadata?.full_name ?? authUser.email,
       });
 
-      const normalizedRole = (roleRow?.role ?? 'auditor') === 'admin' ? 'superadmin' : (roleRow?.role ?? 'auditor');
-      const status = roleRow?.status ?? 'active';
+      // Sin respuesta del servidor —normalmente por falta de conexión— se usa el
+      // último rol conocido de este mismo usuario. Sin esto la aplicación abría
+      // degradada a auditor y el operador perdía su menú y sus permisos.
+      //
+      // Solo afecta a lo que se muestra: el servidor sigue aplicando sus propias
+      // reglas con el rol real, así que manipular este valor no da acceso a nada,
+      // únicamente a ver botones que fallarían al usarse.
+      let fila = roleRow;
+      if (fila) {
+        guardarRolConocido(authUser.email, fila);
+      } else {
+        fila = leerRolConocido(authUser.email);
+      }
+
+      const rolCrudo = fila?.role ?? 'auditor';
+      const normalizedRole = rolCrudo === 'admin' ? 'superadmin' : rolCrudo;
+      const status = fila?.status ?? 'active';
       if (active) {
         setUser({
           id:        authUser.id,
           email:     authUser.email,
-          full_name: roleRow?.full_name ?? authUser.user_metadata?.full_name ?? authUser.email,
+          full_name: fila?.full_name ?? authUser.user_metadata?.full_name ?? authUser.email,
           role:      normalizedRole,
           status,
         });
