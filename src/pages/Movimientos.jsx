@@ -60,6 +60,15 @@ export default function Movimientos() {
     if (match) setTabCombustible(match.id);
   }, [searchParams, combustibles]);
 
+  // Llegada desde el buscador global: deja la lista ya filtrada por ese
+  // vehículo o tanque en lugar de mostrarla entera.
+  useEffect(() => {
+    const consumidorId = searchParams.get('consumidor');
+    if (!consumidorId) return;
+    setFilters(f => ({ ...f, consumidor: consumidorId }));
+    setShowFilters(true);
+  }, [searchParams]);
+
   useEffect(() => {
     const movId = searchParams.get('movimientoId');
     if (!movId || movimientos.length === 0) return;

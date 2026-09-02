@@ -5,6 +5,12 @@ import pluginReactHooks from "eslint-plugin-react-hooks";
 import pluginUnusedImports from "eslint-plugin-unused-imports";
 
 export default [
+  // El proyecto Android no es codigo fuente nuestro: su carpeta de compilacion
+  // recibe copias de la web y del puente de Capacitor, y analizarlas producia un
+  // error sobre una regla de TypeScript que este proyecto no configura.
+  {
+    ignores: ["android/**", "dist/**"],
+  },
   {
     files: [
       "src/components/**/*.{js,mjs,cjs,jsx}",

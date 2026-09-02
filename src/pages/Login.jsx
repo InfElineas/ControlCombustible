@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
 import { Fuel, Eye, EyeOff } from 'lucide-react';
+import { entrarConGoogle, escucharVueltaDeLogin } from '@/lib/authNativa';
 
 export default function Login() {
   const [mode, setMode]               = useState('login'); // 'login' | 'register'
@@ -17,6 +18,15 @@ export default function Login() {
       if (session) window.location.href = '/';
     });
   }, []);
+
+  // Dentro de la aplicacion, el inicio con Google sale al navegador y vuelve por
+  // un enlace propio; aqui se recoge esa vuelta para terminar la sesion dentro.
+  useEffect(() => escucharVueltaDeLogin(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) window.location.href = '/';
+      else { setLoading(false); setError('No se pudo completar el inicio de sesión. Inténtalo de nuevo.'); }
+    });
+  }), []);
 
   const resetForm = () => {
     setError(null);
@@ -74,10 +84,7 @@ export default function Login() {
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
-    const { error: err } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin + '/' },
-    });
+    const { error: err } = await entrarConGoogle();
     if (err) {
       setError(err.message);
       setLoading(false);

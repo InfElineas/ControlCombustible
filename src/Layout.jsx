@@ -9,25 +9,44 @@ import {
   LayoutDashboard, List, Fuel, BarChart3, Menu, ChevronRight,
   LogOut, Settings, ShieldCheck, Bell, BookOpen, Shield,
   Moon, Sun, WalletCards, Navigation, HelpCircle, ShoppingCart, Truck,
-  Clock, ShieldAlert, WifiOff,
+  Clock, ShieldAlert, WifiOff, Search,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import BuscadorGlobal from '@/components/ui-helpers/BuscadorGlobal';
 import { supabase } from '@/api/supabaseClient';
 
+// El campo movil ordena la barra inferior de la aplicación: las cuatro
+// entradas accesibles con el número más bajo van abajo y el resto pasa a «Más».
+// Se ordena por prioridad y no por posición en esta lista porque cada rol ve un
+// subconjunto distinto, y así el cajero no se queda con pestañas vacías.
+// El campo corto es el rótulo de la pestaña, donde solo caben unas diez letras.
 const navItems = [
-  { name: 'Inicio',         page: 'Dashboard',     icon: LayoutDashboard, roles: ['superadmin', 'operador', 'auditor', 'economico', 'cajero'] },
-  { name: 'Movimientos',    page: 'Movimientos',   icon: List,             roles: ['superadmin', 'operador', 'auditor', 'economico'] },
-  { name: 'Bonificaciones', page: 'Ventas',        icon: ShoppingCart,     roles: ['superadmin', 'economico', 'auditor', 'cajero'] },
-  { name: 'Finanzas',       page: 'Finanzas',      icon: WalletCards,      roles: ['superadmin', 'economico', 'auditor'] },
-  { name: 'Catálogos',      page: 'Catalogos',     icon: BookOpen,         roles: ['superadmin', 'operador', 'economico', 'auditor'] },
-  { name: 'Rutas',          page: 'Rutas',         icon: Navigation,       roles: ['superadmin', 'operador', 'auditor'] },
-  { name: 'Transporte',     page: 'Transporte',    icon: Truck,            roles: ['superadmin', 'operador', 'auditor'] },
-  { name: 'Alertas',        page: 'Alertas',       icon: Bell,             roles: ['superadmin', 'operador', 'auditor'] },
-  { name: 'Reportes',       page: 'Reportes',      icon: BarChart3,        roles: ['superadmin', 'operador', 'auditor', 'economico', 'cajero'] },
-  { name: 'Configuración',  page: 'Configuracion', icon: Settings,         roles: ['superadmin', 'operador'] },
+  { name: 'Inicio',         page: 'Dashboard',     icon: LayoutDashboard, movil: 1,  roles: ['superadmin', 'operador', 'auditor', 'economico', 'cajero'] },
+  { name: 'Movimientos',    page: 'Movimientos',   icon: List,            movil: 2,  corto: 'Movim.',  roles: ['superadmin', 'operador', 'auditor', 'economico'] },
+  { name: 'Bonificaciones', page: 'Ventas',        icon: ShoppingCart,    movil: 3,  corto: 'Bonif.',  roles: ['superadmin', 'economico', 'auditor', 'cajero'] },
+  { name: 'Finanzas',       page: 'Finanzas',      icon: WalletCards,     movil: 7,  roles: ['superadmin', 'economico', 'auditor'] },
+  { name: 'Catálogos',      page: 'Catalogos',     icon: BookOpen,        movil: 8,  roles: ['superadmin', 'operador', 'economico', 'auditor'] },
+  { name: 'Rutas',          page: 'Rutas',         icon: Navigation,      movil: 5,  roles: ['superadmin', 'operador', 'auditor'] },
+  { name: 'Transporte',     page: 'Transporte',    icon: Truck,           movil: 9,  corto: 'Transp.', roles: ['superadmin', 'operador', 'auditor'] },
+  { name: 'Alertas',        page: 'Alertas',       icon: Bell,            movil: 4,  roles: ['superadmin', 'operador', 'auditor'] },
+  { name: 'Reportes',       page: 'Reportes',      icon: BarChart3,       movil: 6,  roles: ['superadmin', 'operador', 'auditor', 'economico', 'cajero'] },
+  { name: 'Configuración',  page: 'Configuracion', icon: Settings,        movil: 10, corto: 'Config.', roles: ['superadmin', 'operador'] },
 ];
+
+const PESTANAS_MOVIL = 4;
+
+// Iniciales para el botón de cuenta de la barra superior.
+const iniciales = (usuario) => {
+  const base = (usuario?.full_name || usuario?.email || '?').trim();
+  const partes = base.split(/[\s.@_-]+/).filter(Boolean);
+  return ((partes[0]?.[0] || '') + (partes[1]?.[0] || '')).toUpperCase() || '?';
+};
 
 const adminNavItem = { name: 'Administración', page: 'AdminPanel', icon: Shield, roles: ['superadmin'] };
 
@@ -72,6 +91,18 @@ function ThemeToggle({ isDark, toggle, className = '' }) {
   );
 }
 
+// Globo de aviso sobre el icono de una pestaña.
+function PuntoContador({ n }) {
+  return (
+    <span
+      className="absolute -top-1.5 -right-2 min-w-[1rem] h-4 px-1 rounded-full bg-orange-500 text-white text-[9px] font-bold flex items-center justify-center tabular-nums"
+      title={`${n} ${n === 1 ? 'asunto pendiente' : 'asuntos pendientes'} de revisar`}
+    >
+      {n > 99 ? '99+' : n}
+    </span>
+  );
+}
+
 function NavLink({ item, active, onNavigate, contador = 0 }) {
   return (
     <Link
@@ -98,15 +129,10 @@ function NavLink({ item, active, onNavigate, contador = 0 }) {
   );
 }
 
-function NavContent({ currentPageName, role, onNavigate, isDark, toggle }) {
+function NavContent({ currentPageName, role, onNavigate, isDark, toggle, alertasPendientes = 0 }) {
   const filtered = navItems.filter(item => item.roles.includes(role));
   const rl = roleLabels[role] || { label: role, color: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' };
   const showAdmin = adminNavItem.roles.includes(role);
-
-  // Contador de integridad en el menú. Mismo cálculo que el panel de Alertas,
-  // y solo se consulta para los roles que pueden abrir esa página.
-  const puedeVerAlertas = navItems.find(i => i.page === 'Alertas')?.roles.includes(role) ?? false;
-  const { total: alertasPendientes } = useIntegridadAlertas({ enabled: puedeVerAlertas });
 
   return (
     <nav className="flex flex-col gap-1 p-3">
@@ -150,9 +176,16 @@ export default function Layout() {
   const { isDark, toggle } = useTheme();
   const online = useConexion();
   const [open, setOpen] = useState(false);
+  const [buscando, setBuscando] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const currentPageName = location.pathname === '/' ? 'Dashboard' : location.pathname.replace('/', '');
+
+  // Contador de integridad, compartido por el menú lateral y la barra inferior.
+  // Mismo cálculo que el panel de Alertas, y solo se consulta para los roles que
+  // pueden abrir esa página.
+  const puedeVerAlertas = navItems.find(i => i.page === 'Alertas')?.roles.includes(role) ?? false;
+  const { total: alertasPendientes } = useIntegridadAlertas({ enabled: puedeVerAlertas });
 
   useEffect(() => {
     if (!loading && !user) {
@@ -224,46 +257,78 @@ export default function Layout() {
   }
 
   const rl = roleLabels[role] || { label: role, color: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300' };
+  const inicialesUsuario = iniciales(user);
+  const accesibles = navItems.filter(i => i.roles.includes(role));
+  const pestanas = [...accesibles].sort((a, b) => a.movil - b.movil).slice(0, PESTANAS_MOVIL);
+  // Si Alertas no cabe en la barra, su contador se muestra sobre «Más» para que
+  // el aviso no quede escondido dentro del panel.
+  const alertasEnBarra = pestanas.some(i => i.page === 'Alertas');
+  const contadorMas = !alertasEnBarra ? alertasPendientes : 0;
+  const itemsMenuUsuario = [navItems.find(i => i.page === 'Configuracion'), adminNavItem]
+    .filter(i => i?.roles.includes(role));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-100 dark:from-slate-950 dark:via-sky-950/20 dark:to-indigo-950">
-      {/* Top bar mobile */}
-      <header className="lg:hidden sticky top-0 z-40 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl border-b border-white/50 dark:border-white/[0.08] px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
+      {/* Barra superior en móvil: identidad, búsqueda, tema y cuenta */}
+      <header className="lg:hidden sticky top-0 z-40 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border-b border-white/50 dark:border-white/[0.08] px-3 py-2.5 flex items-center gap-2">
+        <Link to={createPageUrl('Dashboard')} className="flex items-center gap-2 shrink-0" aria-label="Inicio">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center">
             <Fuel className="w-4 h-4 text-white" />
           </div>
-          <span className="font-semibold text-slate-800 dark:text-slate-100 text-sm">Control Combustible</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <ThemeToggle isDark={isDark} toggle={toggle} />
-          <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9">
-                <Menu className="w-5 h-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-64 p-0 pt-10 dark:bg-slate-900 dark:border-slate-800">
-              <NavContent
-                currentPageName={currentPageName}
-                role={role}
-                onNavigate={() => setOpen(false)}
-                isDark={isDark}
-                toggle={null}
-              />
-              <div className="absolute bottom-4 left-4 right-4">
-                <div className="text-xs text-slate-400 mb-2 truncate">{user?.full_name || user?.email}</div>
-                <Button
-                  variant="ghost" size="sm"
-                  className="w-full justify-start text-xs text-slate-400 hover:text-red-500 px-0 h-7"
-                  onClick={() => supabase.auth.signOut().then(() => navigate('/Login', { replace: true }))}
-                >
-                  <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
-                </Button>
-              </div>
-            </SheetContent>
-          </Sheet>
-        </div>
+        </Link>
+
+        <button
+          type="button"
+          onClick={() => setBuscando(true)}
+          className="flex-1 flex items-center gap-2 h-9 px-3 rounded-full bg-slate-100/80 dark:bg-slate-800/80 text-slate-400 text-xs min-w-0"
+        >
+          <Search className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">Buscar</span>
+        </button>
+
+        <ThemeToggle isDark={isDark} toggle={toggle} />
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="w-8 h-8 shrink-0 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200 text-xs font-semibold flex items-center justify-center"
+              aria-label="Cuenta"
+            >
+              {inicialesUsuario}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-60">
+            <div className="px-2 py-1.5">
+              <p className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">
+                {user?.full_name || user?.email}
+              </p>
+              <Badge className={`text-[10px] mt-1 font-semibold ${rl.color} border-0`}>
+                <ShieldCheck className="w-2.5 h-2.5 mr-1" />{rl.label}
+              </Badge>
+            </div>
+            <DropdownMenuSeparator />
+            {itemsMenuUsuario.map(item => (
+              <DropdownMenuItem key={item.page} asChild>
+                <Link to={createPageUrl(item.page)} className="flex items-center gap-2 cursor-pointer">
+                  <item.icon className="w-3.5 h-3.5 text-slate-400" /> {item.name}
+                </Link>
+              </DropdownMenuItem>
+            ))}
+            <DropdownMenuItem asChild>
+              <Link to={`${createPageUrl('Ayuda')}?from=${currentPageName}`} className="flex items-center gap-2 cursor-pointer">
+                <HelpCircle className="w-3.5 h-3.5 text-slate-400" /> Centro de ayuda
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-red-500 focus:text-red-500 cursor-pointer"
+              onClick={() => supabase.auth.signOut().then(() => navigate('/Login', { replace: true }))}
+            >
+              <LogOut className="w-3.5 h-3.5 mr-2" /> Cerrar sesión
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
       <div className="flex">
@@ -285,6 +350,7 @@ export default function Layout() {
               onNavigate={() => {}}
               isDark={isDark}
               toggle={toggle}
+              alertasPendientes={alertasPendientes}
             />
           </div>
           <div className="p-4 border-t border-slate-100 dark:border-slate-800">
@@ -317,18 +383,78 @@ export default function Layout() {
               Sin conexión — los datos que ves son los últimos descargados y no se puede guardar todavía
             </div>
           )}
-          <div className="max-w-6xl mx-auto px-4 py-5 lg:px-8 lg:py-6">
+          {/* El relleno inferior deja libre la altura de la barra de pestañas */}
+          <div className="max-w-6xl mx-auto px-4 py-5 pb-24 lg:px-8 lg:py-6 lg:pb-6">
             <Outlet />
           </div>
         </main>
       </div>
 
-      {/* Floating help button */}
+      {/* Barra de pestañas en móvil: enlaces principales por icono y «Más» */}
+      <nav
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200/70 dark:border-white/[0.08]"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        {pestanas.map(item => {
+          const activo = currentPageName === item.page;
+          const contador = item.page === 'Alertas' ? alertasPendientes : 0;
+          return (
+            <Link
+              key={item.page}
+              to={createPageUrl(item.page)}
+              className={`flex-1 min-w-0 flex flex-col items-center gap-1 pt-2 pb-1.5 transition-colors ${
+                activo ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500'
+              }`}
+            >
+              <span className="relative">
+                <item.icon className="w-5 h-5" />
+                {contador > 0 && <PuntoContador n={contador} />}
+              </span>
+              <span className="text-[10px] leading-none font-medium truncate max-w-full px-0.5">
+                {item.corto || item.name}
+              </span>
+            </Link>
+          );
+        })}
+
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetTrigger asChild>
+            <button
+              type="button"
+              className="flex-1 min-w-0 flex flex-col items-center gap-1 pt-2 pb-1.5 text-slate-400 dark:text-slate-500"
+            >
+              <span className="relative">
+                <Menu className="w-5 h-5" />
+                {contadorMas > 0 && <PuntoContador n={contadorMas} />}
+              </span>
+              <span className="text-[10px] leading-none font-medium">Más</span>
+            </button>
+          </SheetTrigger>
+          <SheetContent
+            side="bottom"
+            className="max-h-[80dvh] overflow-y-auto rounded-t-2xl p-0 pt-4 pb-6 dark:bg-slate-900 dark:border-slate-800"
+          >
+            <SheetTitle className="sr-only">Menú de navegación</SheetTitle>
+            <NavContent
+              currentPageName={currentPageName}
+              role={role}
+              onNavigate={() => setOpen(false)}
+              isDark={isDark}
+              toggle={null}
+              alertasPendientes={alertasPendientes}
+            />
+          </SheetContent>
+        </Sheet>
+      </nav>
+
+      <BuscadorGlobal abierto={buscando} onCerrar={() => setBuscando(false)} />
+
+      {/* Botón flotante de ayuda, por encima de la barra de pestañas */}
       {currentPageName !== 'Ayuda' && (
         <Link
           to={`${createPageUrl('Ayuda')}?from=${currentPageName}`}
           title="Centro de ayuda"
-          className="fixed bottom-5 right-5 z-50 w-11 h-11 rounded-full bg-sky-600 hover:bg-sky-700 shadow-lg flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+          className="fixed bottom-20 right-5 lg:bottom-5 z-50 w-11 h-11 rounded-full bg-sky-600 hover:bg-sky-700 shadow-lg flex items-center justify-center transition-all hover:scale-105 active:scale-95"
         >
           <HelpCircle className="w-5 h-5 text-white" />
         </Link>

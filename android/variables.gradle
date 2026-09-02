@@ -12,9 +12,14 @@
 // exigira targetSdk 35 o superior y habra que instalar esa plataforma.
 ext {
     minSdkVersion = 23
-    compileSdkVersion = 34
-    targetSdkVersion = 34
-    buildToolsVersion = '35.0.0'
+    // El codigo de Capacitor 7 referencia constantes de la API 35
+    // (VANILLA_ICE_CREAM, windowOptOutEdgeToEdgeEnforcement), asi que compilar
+    // contra la 34 es imposible por mucho que se bajen las librerias. De las
+    // plataformas instaladas en esta maquina —34 y 36— se usa la 36, que las
+    // incluye. La 35 seria la natural pero no esta y no se puede descargar.
+    compileSdkVersion = 36
+    targetSdkVersion = 35
+    buildToolsVersion = '36.0.0'
     androidxActivityVersion = '1.9.2'
     androidxAppCompatVersion = '1.7.0'
     androidxCoordinatorLayoutVersion = '1.2.0'
