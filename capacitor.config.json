@@ -1,0 +1,16 @@
+{
+  "appId": "com.mercadoelineas.combustible",
+  "appName": "Control Combustible",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": false
+    }
+  }
+}

@@ -4,11 +4,12 @@ import { createPageUrl } from '@/utils';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import { useIntegridadAlertas } from '@/components/ui-helpers/useIntegridadAlertas';
 import { useTheme } from '@/components/ui-helpers/useTheme';
+import { useConexion } from '@/lib/useConexion';
 import {
   LayoutDashboard, List, Fuel, BarChart3, Menu, ChevronRight,
   LogOut, Settings, ShieldCheck, Bell, BookOpen, Shield,
   Moon, Sun, WalletCards, Navigation, HelpCircle, ShoppingCart, Truck,
-  Clock, ShieldAlert,
+  Clock, ShieldAlert, WifiOff,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -147,6 +148,7 @@ function NavContent({ currentPageName, role, onNavigate, isDark, toggle }) {
 export default function Layout() {
   const { user, role, loading } = useUserRole();
   const { isDark, toggle } = useTheme();
+  const online = useConexion();
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -309,6 +311,12 @@ export default function Layout() {
 
         {/* Content */}
         <main className="flex-1 lg:ml-56 min-h-screen">
+          {!online && (
+            <div className="bg-slate-800 text-slate-100 text-xs px-4 py-2 flex items-center gap-2 justify-center">
+              <WifiOff className="w-3.5 h-3.5 shrink-0" />
+              Sin conexión — los datos que ves son los últimos descargados y no se puede guardar todavía
+            </div>
+          )}
           <div className="max-w-6xl mx-auto px-4 py-5 lg:px-8 lg:py-6">
             <Outlet />
           </div>

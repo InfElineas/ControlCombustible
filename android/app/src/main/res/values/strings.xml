@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Control Combustible</string>
+    <string name="title_activity_main">Control Combustible</string>
+    <string name="package_name">com.mercadoelineas.combustible</string>
+    <string name="custom_url_scheme">com.mercadoelineas.combustible</string>
+</resources>
