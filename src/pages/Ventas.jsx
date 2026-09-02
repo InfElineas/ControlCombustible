@@ -312,7 +312,7 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
           </SelectContent>
         </Select>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Select value={form.combustible_id} onValueChange={v => set('combustible_id', v)} disabled={!form.tanque_origen_id}>
             <SelectTrigger className="h-9 text-sm bg-white"><SelectValue placeholder="Tipo…" /></SelectTrigger>
             <SelectContent>
@@ -552,7 +552,7 @@ function PanelBeneficiarios({ onClose }) {
               </button>
             </div>
 
-            <div className="grid grid-cols-4 gap-1.5 text-[10px]">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 text-[10px]">
               {[
                 { label: 'Total',      value: importRows.length,                        cls: 'bg-slate-100 text-slate-600' },
                 { label: 'Activos',    value: importRows.filter(r => r.esActivo).length, cls: 'bg-emerald-100 text-emerald-700' },
@@ -626,7 +626,7 @@ function PanelBeneficiarios({ onClose }) {
             </label>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <div className="col-span-2 space-y-1">
             <Label className="text-xs text-slate-500">Nombre completo *</Label>
             <Input className="h-8 text-sm" value={form.nombre} onChange={e => set('nombre', e.target.value)} placeholder="Nombre completo…" />
@@ -1066,7 +1066,7 @@ function FormEditBonificacion({ venta, onClose }) {
         </Select>
 
         {/* Combustible + Litros */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <Select value={form.combustible_id} onValueChange={v => set('combustible_id', v)} disabled={!esPendiente}>
             <SelectTrigger className="h-9 text-sm bg-white">
               <SelectValue placeholder="Tipo…" />
@@ -1602,7 +1602,10 @@ export default function Ventas() {
 
       {/* Modal nueva bonificación */}
       <Dialog open={showFormVenta} onOpenChange={setShowFormVenta}>
-        <DialogContent className="max-w-md overflow-hidden">
+        {/* Sin overflow-hidden: recortaba el formulario por abajo y dejaba el
+            boton de guardar fuera de alcance en pantallas de movil. El alto
+            maximo y el scroll los pone DialogContent. */}
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base flex items-center gap-2">
               <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center shrink-0">

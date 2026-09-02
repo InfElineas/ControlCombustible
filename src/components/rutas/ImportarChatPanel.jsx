@@ -203,7 +203,7 @@ export default function ImportarChatPanel({ fechaVista, consumidores, rutasCatal
                 </button>
               </div>
 
-              <div className="mt-2 grid grid-cols-3 gap-2">
+              <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div>
                   <Label className="text-[10px] text-slate-400">Vehículo</Label>
                   <Select

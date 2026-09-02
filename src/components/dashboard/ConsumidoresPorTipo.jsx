@@ -583,7 +583,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL', stock
           <DialogHeader>
             <DialogTitle className="text-base">Autorizaciones — {consumidor.nombre}</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[65vh] overflow-y-auto -mx-1 px-1">
+          <div className="max-h-[65vh] overflow-auto -mx-1 px-1">
             {despachosRecibidos.length === 0 ? (
               <p className="text-sm text-slate-400 py-6 text-center">Sin autorizaciones registradas</p>
             ) : (
@@ -878,7 +878,7 @@ function ConsumidorCard({ consumidor, movimientos, hoy, mesFiltro = 'ALL', stock
           <DialogHeader>
             <DialogTitle className="text-base">Consumo por mes — {consumidor.nombre}</DialogTitle>
           </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto -mx-1 px-1">
+          <div className="max-h-[60vh] overflow-auto -mx-1 px-1">
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-white dark:bg-slate-900">
                 <tr className="border-b border-slate-100 dark:border-slate-700 text-[11px] text-slate-400 uppercase tracking-wide">

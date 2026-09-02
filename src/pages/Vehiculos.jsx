@@ -410,7 +410,7 @@ export default function Vehiculos() {
             {/* Identificación */}
             <div>
               <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Identificación</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="col-span-2 sm:col-span-1">
                   <Label className="text-xs text-slate-500">Chapa/Matrícula *</Label>
                   <Input value={form.chapa} onChange={e => setForm(f => ({ ...f, chapa: e.target.value }))} disabled={!!editing} className="mt-1" placeholder="Ej: M-12345" />
@@ -433,7 +433,7 @@ export default function Vehiculos() {
             {/* Datos técnicos */}
             <div>
               <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Datos Técnicos</p>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <Label className="text-xs text-slate-500">Marca</Label>
                   <Input value={form.marca} onChange={e => setForm(f => ({ ...f, marca: e.target.value }))} placeholder="Toyota" className="mt-1" />
@@ -460,7 +460,7 @@ export default function Vehiculos() {
             {/* Consumo */}
             <div>
               <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Índices de Consumo</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs text-slate-500">Fabricante (km/L)</Label>
                   <Input type="number" step="0.01" value={form.indice_consumo_fabricante} onChange={e => setForm(f => ({ ...f, indice_consumo_fabricante: e.target.value }))} placeholder="12.5" className="mt-1" />
@@ -475,7 +475,7 @@ export default function Vehiculos() {
             {/* Operación */}
             <div>
               <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Operación</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs text-slate-500">Responsable</Label>
                   <Input value={form.responsable} onChange={e => setForm(f => ({ ...f, responsable: e.target.value }))} placeholder="Nombre del responsable" className="mt-1" />

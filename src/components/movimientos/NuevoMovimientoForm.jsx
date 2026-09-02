@@ -842,7 +842,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
               <Input type="number" step="0.01" min="0.01" value={form.litros} onChange={e => set('litros', e.target.value)} placeholder="0.00" className="mt-1" />
               {errors.litros && <p className="text-xs text-red-500 mt-1">{errors.litros}</p>}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs text-slate-500">Monto (opcional)</Label>
                 <Input type="number" step="0.01" value={form.monto} onChange={e => set('monto', e.target.value)} placeholder="0.00" className="mt-1" />

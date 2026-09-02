@@ -135,7 +135,7 @@ export default function BackfillGpsDialog({ open, onClose, vehiculos }) {
           </p>
 
           {/* Date range */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Desde</Label>
               <Input type="date" value={fechaDesde}

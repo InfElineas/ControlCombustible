@@ -1453,7 +1453,7 @@ export default function Dashboard() {
       )}
 
       <Dialog open={statModal.open} onOpenChange={(open) => { setStatModal(s => ({ ...s, open })); setModalGrupoIdx(0); }}>
-        <DialogContent className="max-w-2xl p-0 overflow-hidden">
+        <DialogContent className="max-w-2xl p-0 max-h-[90dvh] flex flex-col overflow-hidden">
           <DialogHeader className="px-5 pt-5 pb-3 border-b border-slate-100">
             <DialogTitle className="text-base">
               {statModal.tipo === 'consumo' && 'Despachos por combustible'}
@@ -1465,9 +1465,9 @@ export default function Dashboard() {
           {modalDataPorCard.length === 0 ? (
             <p className="text-sm text-slate-500 px-5 py-8 text-center">No hay operaciones para el período.</p>
           ) : (
-            <div className="flex h-[62vh]">
+            <div className="flex flex-1 min-h-0">
               {/* Panel izquierdo: lista de combustibles */}
-              <div className="w-44 shrink-0 border-r border-slate-100 overflow-y-auto py-2">
+              <div className="w-28 sm:w-44 shrink-0 border-r border-slate-100 overflow-y-auto py-2">
                 {modalDataPorCard.map((grupo, idx) => (
                   <button
                     key={grupo.combustible}

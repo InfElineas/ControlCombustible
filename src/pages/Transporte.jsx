@@ -117,7 +117,7 @@ function ModalMantenimiento({ vehiculo, onClose }) {
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label>Fecha</Label>
               <Input type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} className="mt-1" />
@@ -136,7 +136,7 @@ function ModalMantenimiento({ vehiculo, onClose }) {
             </div>
           </div>
           <p className="text-xs text-slate-500 -mt-2">{TIPOS_MANTENIMIENTO[form.tipo]}</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label>Km en servicio</Label>
               <Input type="number" value={form.km_en_servicio} onChange={e => set('km_en_servicio', e.target.value)} className="mt-1" />

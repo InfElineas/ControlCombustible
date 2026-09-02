@@ -376,15 +376,23 @@ export default function Layout() {
         </aside>
 
         {/* Content */}
-        <main className="flex-1 lg:ml-56 min-h-screen">
+        {/* min-w-0 es lo que impide que un bloque ancho ensanche la pagina
+            entera: sin el, un hijo de flex crece con su contenido y arrastra
+            consigo las tarjetas, las barras y los margenes, que es como se veian
+            los bordes saliendose del marco en el movil. */}
+        <main className="flex-1 min-w-0 lg:ml-56 min-h-screen">
           {!online && (
             <div className="bg-slate-800 text-slate-100 text-xs px-4 py-2 flex items-center gap-2 justify-center">
               <WifiOff className="w-3.5 h-3.5 shrink-0" />
               Sin conexión — los datos que ves son los últimos descargados y no se puede guardar todavía
             </div>
           )}
-          {/* El relleno inferior deja libre la altura de la barra de pestañas */}
-          <div className="max-w-6xl mx-auto px-4 py-5 pb-24 lg:px-8 lg:py-6 lg:pb-6">
+          {/* El relleno inferior deja libre la altura de la barra de pestañas.
+              El recorte horizontal es la red de seguridad: si una pagina se
+              pasa de ancho, se queda dentro en lugar de desplazar la barra
+              superior, la de pestañas y los modales. Solo en movil, porque en
+              escritorio romperia el indice fijo de la pagina de Ayuda. */}
+          <div className="max-w-6xl mx-auto px-4 py-5 pb-24 overflow-x-clip lg:overflow-x-visible lg:px-8 lg:py-6 lg:pb-6">
             <Outlet />
           </div>
         </main>

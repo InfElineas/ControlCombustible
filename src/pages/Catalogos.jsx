@@ -506,7 +506,7 @@ function TabConductores({ canWrite, canDelete }) {
           <div className="space-y-4 py-2">
             <div>
               <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Datos Personales</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="col-span-2">
                   <Label className="text-xs text-slate-500">Nombre completo *</Label>
                   <Input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Juan Pérez" className="mt-1" />
@@ -532,7 +532,7 @@ function TabConductores({ canWrite, canDelete }) {
 
             <div>
               <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Licencia de Conducir</p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs text-slate-500">Número</Label>
                   <Input value={form.licencia_numero} onChange={e => setForm(f => ({ ...f, licencia_numero: e.target.value }))} placeholder="LIC-001234" className="mt-1" />
@@ -806,7 +806,7 @@ function TabDepositos({ canWrite, canDelete }) {
             <DialogTitle>{editing ? 'Editar depósito' : 'Nuevo depósito'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="col-span-2">
                 <Label className="text-xs text-slate-500">Nombre *</Label>
                 <Input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Isotanque principal" className="mt-1" />
@@ -1045,7 +1045,7 @@ function TabSurtidores({ canWrite, canDelete }) {
             <DialogTitle>{editing ? 'Editar surtidor' : 'Nuevo surtidor / Cupet'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="col-span-2">
                 <Label className="text-xs text-slate-500">Nombre *</Label>
                 <Input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} placeholder="Cupet Miramar" className="mt-1" />
@@ -1648,7 +1648,7 @@ function TabPrecios({ canManage }) {
               <Input type="number" step="0.001" min="0.001" className="mt-1" value={form.precio_por_litro}
                 onChange={e => setForm(f => ({ ...f, precio_por_litro: e.target.value }))} placeholder="0.00" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs text-slate-500">Vigente desde *</Label>
                 <Input type="date" className="mt-1" value={form.fecha_desde} onChange={e => setForm(f => ({ ...f, fecha_desde: e.target.value }))} />

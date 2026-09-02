@@ -53,7 +53,7 @@ export default function LogConsumidorMovimientosModal({ consumidor, movimientos,
         </div>
 
         {/* Tabla */}
-        <div className="overflow-y-auto flex-1 mt-1">
+        <div className="overflow-auto flex-1 mt-1">
           {logs.length === 0 ? (
             <p className="text-center text-sm text-slate-400 py-8">Sin movimientos registrados</p>
           ) : (

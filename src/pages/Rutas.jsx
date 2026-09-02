@@ -298,7 +298,7 @@ function DialogNovedad({ ruta, novedad, consumidores, conductores, onClose, onSa
           </div>
 
           {/* Km + Observaciones */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-slate-500">Km reales <span className="text-slate-300">(opcional)</span></Label>
               <div className="flex gap-1.5 mt-1">
@@ -448,7 +448,7 @@ function DialogAsignacion({ asignacion, consumidores, conductores, onClose, onSa
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-1">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-slate-500">Fecha</Label>
               <Input type="date" value={form.fecha} onChange={e => set('fecha', e.target.value)} className="mt-1" />
@@ -566,7 +566,7 @@ function DialogAsignacion({ asignacion, consumidores, conductores, onClose, onSa
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-slate-500">Km reales <span className="text-slate-300">(opcional)</span></Label>
               <div className="flex gap-1.5 mt-1">
@@ -812,7 +812,7 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave, guardand
           </div>
 
           {/* Frecuencia + Municipio */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-slate-500">Frecuencia</Label>
               <Select value={form.frecuencia} onValueChange={v => set('frecuencia', v)}>
@@ -912,7 +912,7 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave, guardand
           </div>
 
           {/* Puntos + Distancia + Grupo */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-slate-500">Punto de inicio</Label>
               <Select
@@ -987,7 +987,7 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave, guardand
           {/* Asignación habitual */}
           <div className="border-t border-slate-100 dark:border-slate-700 pt-3">
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Asignación habitual</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs text-slate-500">Vehículo habitual</Label>
                 <Select value={form.consumidor_id || '_none'} onValueChange={v => {
@@ -1032,7 +1032,7 @@ function DialogRuta({ ruta, consumidores, conductores, onClose, onSave, guardand
                 {paradas.length >= 2 ? '(calculadas desde paradas)' : '(opcionales — para visualizar en el mapa)'}
               </span>
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label className="text-[11px] text-slate-500">Inicio <span className="text-slate-400">(lat, lng)</span></Label>
                 <Input value={form.coord_inicio} onChange={e => set('coord_inicio', e.target.value)}
@@ -2323,24 +2323,26 @@ export default function Rutas() {
                     Recorridos GPS · {v._gps.length} registros · <span className="font-bold">{v.kmGps} km</span>
                   </p>
                   {v._gps.length > 0 ? (
-                    <table className="w-full rounded-lg overflow-hidden border border-slate-100 dark:border-slate-700">
-                      <thead className="bg-slate-50 dark:bg-slate-800">
-                        <tr>
-                          <th className="px-3 py-1.5 text-left text-slate-500">Fecha</th>
-                          <th className="px-3 py-1.5 text-right text-slate-500">Km</th>
-                          <th className="px-3 py-1.5 text-left text-slate-500">Fuente</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                        {v._gps.map((r, i) => (
-                          <tr key={r.id || i}>
-                            <td className="px-3 py-1.5 tabular-nums">{r.fecha}</td>
-                            <td className="px-3 py-1.5 text-right font-semibold text-violet-600 tabular-nums">{r.km_reales ?? '—'}</td>
-                            <td className="px-3 py-1.5 text-slate-400">Auto-guardado GPS</td>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[26rem] rounded-lg overflow-hidden border border-slate-100 dark:border-slate-700">
+                        <thead className="bg-slate-50 dark:bg-slate-800">
+                          <tr>
+                            <th className="px-3 py-1.5 text-left text-slate-500">Fecha</th>
+                            <th className="px-3 py-1.5 text-right text-slate-500">Km</th>
+                            <th className="px-3 py-1.5 text-left text-slate-500">Fuente</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                          {v._gps.map((r, i) => (
+                            <tr key={r.id || i}>
+                              <td className="px-3 py-1.5 tabular-nums">{r.fecha}</td>
+                              <td className="px-3 py-1.5 text-right font-semibold text-violet-600 tabular-nums">{r.km_reales ?? '—'}</td>
+                              <td className="px-3 py-1.5 text-slate-400">Auto-guardado GPS</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   ) : (
                     <p className="text-slate-400 italic px-1">Sin registros GPS en este período. La columna Km GPS muestra —.</p>
                   )}
@@ -2353,24 +2355,26 @@ export default function Rutas() {
                     Novedades / Viajes · {v._trips.length} registros · <span className="font-bold">{v.kmReg} km</span>
                   </p>
                   {v._trips.length > 0 ? (
-                    <table className="w-full rounded-lg overflow-hidden border border-slate-100 dark:border-slate-700">
-                      <thead className="bg-slate-50 dark:bg-slate-800">
-                        <tr>
-                          <th className="px-3 py-1.5 text-left text-slate-500">Fecha</th>
-                          <th className="px-3 py-1.5 text-right text-slate-500">Km</th>
-                          <th className="px-3 py-1.5 text-left text-slate-500">Tipo</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                        {v._trips.map((r, i) => (
-                          <tr key={r.id || i}>
-                            <td className="px-3 py-1.5 tabular-nums">{r.fecha}</td>
-                            <td className="px-3 py-1.5 text-right font-semibold text-sky-600 tabular-nums">{r.km_reales ?? '—'}</td>
-                            <td className="px-3 py-1.5 text-slate-400">{tipoViajeLbl(r.tipo_viaje)}</td>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[26rem] rounded-lg overflow-hidden border border-slate-100 dark:border-slate-700">
+                        <thead className="bg-slate-50 dark:bg-slate-800">
+                          <tr>
+                            <th className="px-3 py-1.5 text-left text-slate-500">Fecha</th>
+                            <th className="px-3 py-1.5 text-right text-slate-500">Km</th>
+                            <th className="px-3 py-1.5 text-left text-slate-500">Tipo</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                          {v._trips.map((r, i) => (
+                            <tr key={r.id || i}>
+                              <td className="px-3 py-1.5 tabular-nums">{r.fecha}</td>
+                              <td className="px-3 py-1.5 text-right font-semibold text-sky-600 tabular-nums">{r.km_reales ?? '—'}</td>
+                              <td className="px-3 py-1.5 text-slate-400">{tipoViajeLbl(r.tipo_viaje)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   ) : (
                     <p className="text-slate-400 italic px-1">Sin novedades declaradas. La columna Km Reg. muestra —.</p>
                   )}
@@ -2383,30 +2387,32 @@ export default function Rutas() {
                     Combustible · {v._movs.length} registros · <span className="font-bold">{fmtL(v.litros)} L</span>
                   </p>
                   {v._movs.length > 0 ? (
-                    <table className="w-full rounded-lg overflow-hidden border border-slate-100 dark:border-slate-700">
-                      <thead className="bg-slate-50 dark:bg-slate-800">
-                        <tr>
-                          <th className="px-3 py-1.5 text-left text-slate-500">Fecha</th>
-                          <th className="px-3 py-1.5 text-left text-slate-500">Tipo</th>
-                          <th className="px-3 py-1.5 text-right text-slate-500">Litros</th>
-                          <th className="px-3 py-1.5 text-right text-slate-500">Odómetro</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                        {v._movs.map((m, i) => (
-                          <tr key={m.id || i}>
-                            <td className="px-3 py-1.5 tabular-nums">{m.fecha}</td>
-                            <td className="px-3 py-1.5">
-                              <span className={m.tipo === 'COMPRA' ? 'text-orange-600 font-medium' : 'text-emerald-600 font-medium'}>{m.tipo}</span>
-                            </td>
-                            <td className="px-3 py-1.5 text-right font-semibold text-emerald-600 tabular-nums">{fmtL(Number(m.litros))} L</td>
-                            <td className="px-3 py-1.5 text-right text-slate-400 tabular-nums">
-                              {m.odometro ? `${Number(m.odometro).toLocaleString()} km` : '—'}
-                            </td>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[26rem] rounded-lg overflow-hidden border border-slate-100 dark:border-slate-700">
+                        <thead className="bg-slate-50 dark:bg-slate-800">
+                          <tr>
+                            <th className="px-3 py-1.5 text-left text-slate-500">Fecha</th>
+                            <th className="px-3 py-1.5 text-left text-slate-500">Tipo</th>
+                            <th className="px-3 py-1.5 text-right text-slate-500">Litros</th>
+                            <th className="px-3 py-1.5 text-right text-slate-500">Odómetro</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                          {v._movs.map((m, i) => (
+                            <tr key={m.id || i}>
+                              <td className="px-3 py-1.5 tabular-nums">{m.fecha}</td>
+                              <td className="px-3 py-1.5">
+                                <span className={m.tipo === 'COMPRA' ? 'text-orange-600 font-medium' : 'text-emerald-600 font-medium'}>{m.tipo}</span>
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-semibold text-emerald-600 tabular-nums">{fmtL(Number(m.litros))} L</td>
+                              <td className="px-3 py-1.5 text-right text-slate-400 tabular-nums">
+                                {m.odometro ? `${Number(m.odometro).toLocaleString()} km` : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   ) : (
                     <p className="text-slate-400 italic px-1">Sin movimientos de combustible. La columna Litros muestra —.</p>
                   )}

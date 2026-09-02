@@ -954,7 +954,7 @@ function PreciosDespacho() {
         {showForm && (
           <form onSubmit={handleSave} className="border border-slate-200 rounded-lg p-3 space-y-3 bg-slate-50/60">
             <p className="text-xs font-semibold text-slate-600">{editId ? 'Editar precio' : 'Nuevo precio'}</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs text-slate-500">Tipo de consumidor *</Label>
                 <Select value={form.tipo_consumidor_id} onValueChange={v => setForm(f => ({ ...f, tipo_consumidor_id: v }))}>

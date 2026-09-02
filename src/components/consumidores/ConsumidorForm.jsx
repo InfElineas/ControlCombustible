@@ -81,7 +81,7 @@ export default function ConsumidorForm({ form, setForm, tipos, combustibles, edi
         </Select>
       </Field>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Field label="Responsable" required={isVeh}>
           <Input
             list="responsable-suggestions"
@@ -100,7 +100,7 @@ export default function ConsumidorForm({ form, setForm, tipos, combustibles, edi
       </div>
 
       {isVeh && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Conductor principal">
             <Select
               value={form.conductor_id || '_none'}
@@ -157,7 +157,7 @@ export default function ConsumidorForm({ form, setForm, tipos, combustibles, edi
       {isVeh && (
         <div className="border border-slate-100 rounded-xl p-3 space-y-3 bg-slate-50/50">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Datos del Vehículo</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Marca">
               <Input value={dv.marca || ''} onChange={e => setVeh('marca', e.target.value)} />
             </Field>
@@ -219,7 +219,7 @@ export default function ConsumidorForm({ form, setForm, tipos, combustibles, edi
       {isTanque && (
         <div className="border border-slate-100 rounded-xl p-3 space-y-3 bg-slate-50/50">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Datos del Tanque</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Capacidad (L)">
               <Input type="number" value={dt.capacidad_litros || ''} onChange={e => setTanq('capacidad_litros', parseFloat(e.target.value) || '')} />
             </Field>
@@ -237,7 +237,7 @@ export default function ConsumidorForm({ form, setForm, tipos, combustibles, edi
       {isSurtidor && (
         <div className="border border-orange-100 rounded-xl p-3 space-y-3 bg-orange-50/30">
           <p className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Datos del Surtidor Externo</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Capacidad (L)">
               <Input type="number" value={dt.capacidad_litros || ''} onChange={e => setTanq('capacidad_litros', parseFloat(e.target.value) || '')} placeholder="Ej: 5000" />
             </Field>
@@ -289,7 +289,7 @@ export default function ConsumidorForm({ form, setForm, tipos, combustibles, edi
       {isEquipo && (
         <div className="border border-slate-100 rounded-xl p-3 space-y-3 bg-slate-50/50">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Datos del Equipo</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Categoría">
               <Input value={de.categoria || ''} onChange={e => setEquip('categoria', e.target.value)} placeholder="Planta, Generador..." />
             </Field>

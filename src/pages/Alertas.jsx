@@ -306,7 +306,7 @@ function ConfigAlertaDialog({ consumidor, config, onClose }) {
           <p className="text-xs text-slate-500">
             Define a qué % de capacidad del tanque se activa cada nivel de alerta.
           </p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label className="text-xs text-slate-500">Alerta (%)</Label>
               <Input
