@@ -118,13 +118,14 @@ naciera roto. Está comentado dentro de cada archivo.
 ## Pendiente
 
 ### Vista móvil
-Quedan errores visuales sin identificar. Para retomarlo hace falta una captura de
-la pantalla concreta que falle.
+Las nueve páginas se recorrieron a 375 puntos y **ninguna desborda**: Inicio,
+Movimientos, Bonificaciones, Rutas, Transporte, Finanzas, Catálogos, Alertas,
+Reportes y Configuración dan 375 de contenido en 375 de ventana.
 
-Sí se pueden ver las páginas sin credenciales: sirve el build y siembra la sesión
-caducada como se explica en «Cómo probar el arranque sin conexión». La aplicación
-abre en modo solo lectura y se puede recorrer con el navegador. Lo que no se ve
-así son los datos reales, porque esa caché arranca vacía.
+El límite de esa comprobación es que se hizo con las listas casi vacías, y la
+mayoría de los desbordes vienen del contenido. Bonificaciones sí se probó con
+datos sembrados y nombres largos. Para el resto, si aparece algo, hace falta una
+captura de la pantalla concreta o sembrar sus consultas como se explica arriba.
 
 ### Cómo probar el arranque sin conexión
 Sin tocar la configuración del proyecto: crear `.env.production.local` (está en
@@ -134,6 +135,28 @@ sesión caducada bajo `sb-127-auth-token` más la entrada
 `webcombustible-rol-conocido`. Reproduce el escenario exacto sin necesidad de un
 dispositivo ni de cortar la red. **Borrar los dos archivos y recompilar
 después**: el build se queda con la URL falsa.
+
+### Cómo ver cualquier página con datos, sin credenciales
+Para revisar la vista de una página hace falta contenido, y la caché arranca
+vacía. Se puede sembrar la caché persistida desde la consola del navegador:
+
+- La clave es `webcombustible-cache-v1` en IndexedDB, base `keyval-store`,
+  almacén `keyval`.
+- **El valor es una cadena JSON, no un objeto** — `createAsyncStoragePersister`
+  serializa. Guardar un objeto no rehidrata nada y cuesta un rato descubrirlo.
+- La forma es `{buster:'', timestamp, clientState:{mutations:[], queries:[…]}}`,
+  y cada consulta `{queryKey, queryHash: JSON.stringify(queryKey), state:{data,
+  status:'success', dataUpdatedAt, fetchStatus:'idle', …}}`.
+- Solo se rehidrata lo que está en la lista blanca de
+  [query-persist.js](src/lib/query-persist.js).
+
+Sembrar, recargar, y la página se dibuja con esos datos aunque las peticiones al
+servidor fallen. Sirve para probar nombres largos y cifras grandes, que es de
+donde salen la mayoría de los desbordes.
+
+Para detectar desbordes hay un recorrido del DOM que compara el borde derecho de
+cada elemento con el de su contenedor, saltándose los que tienen desplazamiento
+propio. Con él se comprobaron las nueve páginas a 375 puntos.
 
 ### Escritura sin conexión (fase 2)
 Alcance ya acordado: cola de escritura **solo** para bonificaciones en estado
