@@ -85,6 +85,12 @@ export function useUserRole() {
 
   useEffect(() => {
     let active = true;
+    // Deja de hacer falta el plazo en cuanto se sabe si hay sesión o no. Sin
+    // esta marca el temporizador seguia disparando despues de una carga
+    // correcta y volvia a encender el aviso de sesion sin validar aunque
+    // hubiera conexion.
+    let resuelto = false;
+    let plazo;
 
     // Abre con el último usuario conocido cuando no hay sesión validada pero sí
     // credencial guardada en el dispositivo, para que los datos ya descargados
@@ -110,10 +116,17 @@ export function useUserRole() {
     async function loadUser(session) {
       const authUser = session?.user;
       if (!authUser) {
+        resuelto = true;
+        clearTimeout(plazo);
         if (abrirConLoGuardado()) return;
         if (active) setLoading(false);
         return;
       }
+
+      // Hay sesión validada: el plazo ya no debe encender nada, aunque la
+      // consulta del rol que viene ahora tarde más que él.
+      resuelto = true;
+      clearTimeout(plazo);
 
       // RPC con SECURITY DEFINER: bypasea RLS, obtiene o crea la fila del usuario.
       // Evita la dependencia circular donde leer el rol requiere conocer el rol.
@@ -160,6 +173,8 @@ export function useUserRole() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
       if (event === 'SIGNED_OUT') {
+        resuelto = true;
+        clearTimeout(plazo);
         setUser(null); setRole(null); setSesionOffline(false); setLoading(false);
         return;
       }
@@ -168,8 +183,8 @@ export function useUserRole() {
 
     // auth-js no emite INITIAL_SESSION hasta terminar sus reintentos de
     // refresco, así que sin red el arranque se decide aquí.
-    const plazo = setTimeout(() => {
-      if (active) abrirConLoGuardado();
+    plazo = setTimeout(() => {
+      if (active && !resuelto) abrirConLoGuardado();
     }, ESPERA_MAXIMA_MS);
 
     return () => {
