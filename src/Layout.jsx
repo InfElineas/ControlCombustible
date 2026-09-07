@@ -9,7 +9,7 @@ import {
   LayoutDashboard, List, Fuel, BarChart3, Menu, ChevronRight,
   LogOut, Settings, ShieldCheck, Bell, BookOpen, Shield,
   Moon, Sun, WalletCards, Navigation, HelpCircle, ShoppingCart, Truck,
-  Clock, ShieldAlert, WifiOff, Search,
+  Clock, ShieldAlert, WifiOff, Search, KeyRound,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -19,6 +19,7 @@ import {
   DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import BuscadorGlobal from '@/components/ui-helpers/BuscadorGlobal';
+import ClaveAcceso, { MARCA_DEFINIR_CLAVE } from '@/components/ui-helpers/ClaveAcceso';
 import { supabase } from '@/api/supabaseClient';
 
 // El campo movil ordena la barra inferior de la aplicación: las cuatro
@@ -177,6 +178,16 @@ export default function Layout() {
   const online = useConexion();
   const [open, setOpen] = useState(false);
   const [buscando, setBuscando] = useState(false);
+  const [cambiandoClave, setCambiandoClave] = useState(false);
+
+  // Quien llega desde el correo de recuperación entra directo a la aplicación;
+  // sin esto se quedaría dentro sin saber que venía a poner una contraseña.
+  useEffect(() => {
+    if (sessionStorage.getItem(MARCA_DEFINIR_CLAVE)) {
+      sessionStorage.removeItem(MARCA_DEFINIR_CLAVE);
+      setCambiandoClave(true);
+    }
+  }, []);
   const navigate = useNavigate();
   const location = useLocation();
   const currentPageName = location.pathname === '/' ? 'Dashboard' : location.pathname.replace('/', '');
@@ -333,6 +344,9 @@ export default function Layout() {
                 </Link>
               </DropdownMenuItem>
             ))}
+            <DropdownMenuItem className="cursor-pointer" onClick={() => setCambiandoClave(true)}>
+              <KeyRound className="w-3.5 h-3.5 mr-2 text-slate-400" /> Contraseña de acceso
+            </DropdownMenuItem>
             <DropdownMenuItem asChild>
               <Link to={`${createPageUrl('Ayuda')}?from=${currentPageName}`} className="flex items-center gap-2 cursor-pointer">
                 <HelpCircle className="w-3.5 h-3.5 text-slate-400" /> Centro de ayuda
@@ -377,6 +391,13 @@ export default function Layout() {
               <ShieldCheck className="w-2.5 h-2.5 mr-1" />
               {rl.label}
             </Badge>
+            <button
+              type="button"
+              onClick={() => setCambiandoClave(true)}
+              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 mb-1 transition-colors"
+            >
+              <KeyRound className="w-3.5 h-3.5" /> Contraseña de acceso
+            </button>
             <Link
               to={`${createPageUrl('Ayuda')}?from=${currentPageName}`}
               className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 mb-1 transition-colors"
@@ -476,6 +497,7 @@ export default function Layout() {
       </nav>
 
       <BuscadorGlobal abierto={buscando} onCerrar={() => setBuscando(false)} />
+      <ClaveAcceso abierto={cambiandoClave} onCerrar={() => setCambiandoClave(false)} />
 
       {/* Botón flotante de ayuda, por encima de la barra de pestañas */}
       {currentPageName !== 'Ayuda' && (

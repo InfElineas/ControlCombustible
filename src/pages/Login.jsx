@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
 import { Fuel, Eye, EyeOff } from 'lucide-react';
-import { entrarConGoogle, escucharVueltaDeLogin } from '@/lib/authNativa';
+import { entrarConGoogle, escucharVueltaDeLogin, ENLACE_VUELTA, esApp } from '@/lib/authNativa';
+import { MARCA_DEFINIR_CLAVE } from '@/components/ui-helpers/ClaveAcceso';
 
 export default function Login() {
   const [mode, setMode]               = useState('login'); // 'login' | 'register'
@@ -13,6 +14,20 @@ export default function Login() {
   const [error, setError]     = useState(/** @type {string|null} */(null));
   const [successMsg, setSuccessMsg] = useState(/** @type {string|null} */(null));
 
+  // Antes que nada: si la dirección viene del correo de recuperación, se deja la
+  // marca para que la aplicación abra el formulario de contraseña al entrar. Va
+  // primero porque el efecto siguiente redirige en cuanto encuentra sesión.
+  useEffect(() => {
+    const partes = window.location.hash.slice(1) + '&' + window.location.search.slice(1);
+    if (new URLSearchParams(partes).get('type') === 'recovery') {
+      sessionStorage.setItem(MARCA_DEFINIR_CLAVE, '1');
+    }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((evento) => {
+      if (evento === 'PASSWORD_RECOVERY') sessionStorage.setItem(MARCA_DEFINIR_CLAVE, '1');
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) window.location.href = '/';
@@ -22,6 +37,7 @@ export default function Login() {
   // Dentro de la aplicacion, el inicio con Google sale al navegador y vuelve por
   // un enlace propio; aqui se recoge esa vuelta para terminar la sesion dentro.
   useEffect(() => escucharVueltaDeLogin((resultado) => {
+    if (resultado?.recuperacion) sessionStorage.setItem(MARCA_DEFINIR_CLAVE, '1');
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) { window.location.href = '/'; return; }
       setLoading(false);
@@ -82,6 +98,28 @@ export default function Login() {
     } else {
       setSuccessMsg('Revisa tu correo y confirma tu cuenta para poder iniciar sesión.');
     }
+  };
+
+  // Envía el enlace por correo para poner una contraseña.
+  //
+  // Sirve tanto a quien la olvidó como a quien entró siempre con Google y nunca
+  // ha tenido una: en los dos casos la cuenta ya existe y lo que falta es fijar
+  // la clave. Supabase responde igual exista o no el correo, así que esto no
+  // permite averiguar quién está registrado.
+  const handleRecuperar = async () => {
+    if (!email) {
+      setError('Escribe tu correo y vuelve a pulsar.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setSuccessMsg(null);
+    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: esApp() ? ENLACE_VUELTA : window.location.origin + '/Login',
+    });
+    setLoading(false);
+    if (err) { setError(traducirError(err.message)); return; }
+    setSuccessMsg('Te enviamos un enlace a ese correo. Ábrelo desde este dispositivo y podrás definir tu contraseña.');
   };
 
   const handleGoogleLogin = async () => {
@@ -199,6 +237,17 @@ export default function Login() {
                 </div>
               </div>
 
+              {mode === 'login' && (
+                <button
+                  type="button"
+                  onClick={handleRecuperar}
+                  disabled={loading}
+                  className="text-xs text-sky-600 hover:text-sky-700 dark:text-sky-400 disabled:opacity-60"
+                >
+                  ¿Olvidaste la contraseña o entras siempre con Google?
+                </button>
+              )}
+
               <button
                 type="submit"
                 disabled={loading}
@@ -249,5 +298,7 @@ function traducirError(msg) {
   if (msg.includes('User already registered'))     return 'Ya existe una cuenta con ese correo.';
   if (msg.includes('Password should be'))          return 'La contraseña debe tener al menos 6 caracteres.';
   if (msg.includes('Unable to validate'))          return 'Correo inválido.';
+  if (msg.includes('rate limit') || msg.includes('For security purposes'))
+    return 'Demasiados intentos seguidos. Espera un minuto y vuelve a probar.';
   return msg;
 }

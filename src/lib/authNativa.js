@@ -61,11 +61,15 @@ async function abrirSesionDesde(url) {
   const fallo = dato('error_description') || dato('error');
   if (fallo) return { ok: false, motivo: decodeURIComponent(fallo.replace(/\+/g, ' ')) };
 
+  // El correo de recuperación vuelve marcado, y eso decide si al entrar hay que
+  // pedir la contraseña nueva o no.
+  const recuperacion = dato('type') === 'recovery';
+
   const codigo = dato('code');
   if (codigo) {
     const { error } = await supabase.auth.exchangeCodeForSession(codigo);
     if (error) return { ok: false, motivo: `No se pudo canjear el código: ${error.message}` };
-    return { ok: true };
+    return { ok: true, recuperacion };
   }
 
   const acceso = dato('access_token');
@@ -73,7 +77,7 @@ async function abrirSesionDesde(url) {
   if (acceso && refresco) {
     const { error } = await supabase.auth.setSession({ access_token: acceso, refresh_token: refresco });
     if (error) return { ok: false, motivo: `No se pudo abrir la sesión: ${error.message}` };
-    return { ok: true };
+    return { ok: true, recuperacion };
   }
 
   return { ok: false, motivo: 'La vuelta del navegador no trajo credenciales.' };
