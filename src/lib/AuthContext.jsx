@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
 import { queryClientInstance } from '@/lib/query-client';
 import { limpiarCachePersistida } from '@/lib/query-persist';
+import { limpiarCola } from '@/lib/colaEscritura';
 import { olvidarRolConocido, hayCredencialGuardada, ESPERA_MAXIMA_MS } from '@/components/ui-helpers/useUserRole';
 
 const AuthContext = createContext();
@@ -50,6 +51,7 @@ export const AuthProvider = ({ children }) => {
       // varios sitios de la interfaz y así queda cubierto en todos.
       if (event === 'SIGNED_OUT') {
         limpiarCachePersistida().catch(() => {});
+        limpiarCola().catch(() => {});
         queryClientInstance.clear();
         olvidarRolConocido();
       }

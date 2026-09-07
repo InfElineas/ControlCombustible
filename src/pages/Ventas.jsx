@@ -19,9 +19,11 @@ import {
   Droplets, Plus, Users, Fuel, Clock, CheckCircle2, Check,
   X, XCircle, Loader2, Pencil, Trash2, Search, BadgeDollarSign,
   PackageCheck, ShieldAlert, Upload, Banknote, ListFilter,
-  CalendarDays, UserCircle2, TrendingUp, AlertTriangle, History,
+  CalendarDays, UserCircle2, TrendingUp, AlertTriangle, History, CloudUpload,
 } from 'lucide-react';
 import { logAudit } from '@/api/auditLog';
+import { encolar, esFalloDeRed } from '@/lib/colaEscritura';
+import BandejaPendientes, { useColaPendiente } from '@/components/ui-helpers/BandejaPendientes';
 
 
 function WorkerAvatar({ nombre }) {
@@ -141,11 +143,25 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
   const MINUTOS_ANTIDUPLICADO = 3;
   const [duplicadoPendiente, setDuplicadoPendiente] = useState(null);
 
+  // Guarda la bonificación en el teléfono para enviarla cuando vuelva la red.
+  // Solo se hace con PENDIENTE, que es un compromiso y no una salida de
+  // combustible: esperar no descuadra el stock de nadie.
+  async function dejarEnEspera(fila) {
+    await encolar('bonificacion', fila, `${fila.beneficiario_nombre} · ${fila.litros} L`);
+    return { enEspera: true };
+  }
+
   const crearMut = useMutation({
     mutationFn: async ({ forzar, ...data }) => {
+      // Con el identificador puesto desde aquí, un reenvío de la cola choca
+      // contra la clave primaria en vez de duplicar el registro.
+      const fila = { id: crypto.randomUUID(), ...data };
+
+      if (!navigator.onLine) return dejarEnEspera(fila);
+
       if (!forzar) {
         const desde = new Date(Date.now() - MINUTOS_ANTIDUPLICADO * 60_000).toISOString();
-        const { data: previas } = await supabase
+        const { data: previas, error: errorPrevias } = await supabase
           .from('venta_trabajador')
           .select('id, created_date')
           .eq('beneficiario_id', data.beneficiario_id)
@@ -154,6 +170,7 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
           .eq('combustible_id', data.combustible_id)
           .gte('created_date', desde)
           .limit(1);
+        if (errorPrevias && esFalloDeRed(errorPrevias)) return dejarEnEspera(fila);
         if (previas?.length) {
           const err = new Error('DUPLICADO_RECIENTE');
           err.datosPendientes = data;
@@ -162,16 +179,23 @@ function FormBonificacion({ onClose, ventasPendientes, ventasRaw = [], user, can
       }
       const { data: result, error } = await supabase
         .from('venta_trabajador')
-        .insert(data)
+        .insert(fila)
         .select()
         .single();
+      // La red se puede caer entre la comprobación y el envío, o estar el
+      // teléfono conectado a un wifi sin salida.
+      if (error && esFalloDeRed(error)) return dejarEnEspera(fila);
       if (error) throw error;
       return result;
     },
-    onSuccess: () => {
+    onSuccess: (resultado) => {
       qc.invalidateQueries({ queryKey: ['ventas'] });
       setDuplicadoPendiente(null);
-      toast.success('Bonificación registrada');
+      if (resultado?.enEspera) {
+        toast.success('Guardada en el teléfono. Se enviará al recuperar la conexión.');
+      } else {
+        toast.success('Bonificación registrada');
+      }
       onClose();
     },
     onError: (e) => {
@@ -1191,6 +1215,8 @@ export default function Ventas() {
   const [toCobrar, setToCobrar] = useState(null);
   const [precioVentaInput, setPrecioVentaInput] = useState('');
   const [filtroMes, setFiltroMes] = useState(new Date().toISOString().slice(0, 7));
+  const [viendoEnEspera, setViendoEnEspera] = useState(false);
+  const { total: enEspera } = useColaPendiente();
   const [filtroBen, setFiltroBen] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('PENDIENTE');
 
@@ -1517,6 +1543,26 @@ export default function Ventas() {
         </div>
       )}
 
+      {enEspera > 0 && (
+        <button
+          type="button"
+          onClick={() => setViendoEnEspera(true)}
+          className="w-full flex items-center gap-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 rounded-xl px-4 py-3 text-left"
+        >
+          <CloudUpload className="w-4 h-4 text-amber-500 shrink-0" />
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-amber-700 dark:text-amber-400">
+              {enEspera === 1
+                ? '1 bonificación guardada en el teléfono'
+                : `${enEspera} bonificaciones guardadas en el teléfono`}
+            </span>
+            <span className="block text-xs text-amber-600/80 dark:text-amber-500/80 mt-0.5">
+              Todavía no están en el servidor, así que no aparecen en la lista. Toca para verlas.
+            </span>
+          </span>
+        </button>
+      )}
+
       {ventasBloqueadas.length > 0 && (
         <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
           <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
@@ -1620,6 +1666,8 @@ export default function Ventas() {
           )}
         </CardContent>
       </Card>
+
+      <BandejaPendientes abierto={viendoEnEspera} onCerrar={() => setViendoEnEspera(false)} />
 
       {/* Modal nueva bonificación */}
       <Dialog open={showFormVenta} onOpenChange={setShowFormVenta}>

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import { useIntegridadAlertas } from '@/components/ui-helpers/useIntegridadAlertas';
 import { useTheme } from '@/components/ui-helpers/useTheme';
@@ -9,7 +11,7 @@ import {
   LayoutDashboard, List, Fuel, BarChart3, Menu, ChevronRight,
   LogOut, Settings, ShieldCheck, Bell, BookOpen, Shield,
   Moon, Sun, WalletCards, Navigation, HelpCircle, ShoppingCart, Truck,
-  Clock, ShieldAlert, WifiOff, Search, KeyRound,
+  Clock, ShieldAlert, WifiOff, Search, KeyRound, CloudUpload,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -20,6 +22,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import BuscadorGlobal from '@/components/ui-helpers/BuscadorGlobal';
 import ClaveAcceso, { MARCA_DEFINIR_CLAVE } from '@/components/ui-helpers/ClaveAcceso';
+import BandejaPendientes, { useColaPendiente } from '@/components/ui-helpers/BandejaPendientes';
+import { procesarCola } from '@/lib/colaEscritura';
 import { supabase } from '@/api/supabaseClient';
 
 // El campo movil ordena la barra inferior de la aplicación: las cuatro
@@ -176,9 +180,28 @@ export default function Layout() {
   const { user, role, loading, sesionOffline } = useUserRole();
   const { isDark, toggle } = useTheme();
   const online = useConexion();
+  const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [buscando, setBuscando] = useState(false);
   const [cambiandoClave, setCambiandoClave] = useState(false);
+  const [viendoBandeja, setViendoBandeja] = useState(false);
+  const { total: sinEnviar, rechazadas } = useColaPendiente();
+
+  // Lo guardado sin conexión sale solo: al abrir la aplicación y en cuanto
+  // vuelve la red. Sin esto habría que acordarse de entrar en la bandeja.
+  useEffect(() => {
+    // Sin sesión validada el servidor rechaza todo por el token, y eso marcaría
+    // como rechazados registros que no tienen nada malo.
+    if (!online || sesionOffline) return;
+    procesarCola().then(r => {
+      if (r.enviadas) {
+        qc.invalidateQueries({ queryKey: ['ventas'] });
+        toast.success(r.enviadas === 1
+          ? 'Se envió 1 registro que estaba en espera'
+          : `Se enviaron ${r.enviadas} registros que estaban en espera`);
+      }
+    }).catch(() => { /* se reintenta en el próximo cambio de conexión */ });
+  }, [online, sesionOffline, qc]);
 
   // Quien llega desde el correo de recuperación entra directo a la aplicación;
   // sin esto se quedaría dentro sin saber que venía a poner una contraseña.
@@ -344,6 +367,12 @@ export default function Layout() {
                 </Link>
               </DropdownMenuItem>
             ))}
+            {sinEnviar > 0 && (
+              <DropdownMenuItem className="cursor-pointer" onClick={() => setViendoBandeja(true)}>
+                <CloudUpload className="w-3.5 h-3.5 mr-2 text-amber-500" />
+                Sin enviar ({sinEnviar})
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem className="cursor-pointer" onClick={() => setCambiandoClave(true)}>
               <KeyRound className="w-3.5 h-3.5 mr-2 text-slate-400" /> Contraseña de acceso
             </DropdownMenuItem>
@@ -391,6 +420,15 @@ export default function Layout() {
               <ShieldCheck className="w-2.5 h-2.5 mr-1" />
               {rl.label}
             </Badge>
+            {sinEnviar > 0 && (
+              <button
+                type="button"
+                onClick={() => setViendoBandeja(true)}
+                className="flex items-center gap-1.5 text-xs text-amber-600 hover:text-amber-700 mb-1 transition-colors"
+              >
+                <CloudUpload className="w-3.5 h-3.5" /> Sin enviar ({sinEnviar})
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setCambiandoClave(true)}
@@ -498,6 +536,7 @@ export default function Layout() {
 
       <BuscadorGlobal abierto={buscando} onCerrar={() => setBuscando(false)} />
       <ClaveAcceso abierto={cambiandoClave} onCerrar={() => setCambiandoClave(false)} />
+      <BandejaPendientes abierto={viendoBandeja} onCerrar={() => setViendoBandeja(false)} />
 
       {/* Botón flotante de ayuda, por encima de la barra de pestañas */}
       {currentPageName !== 'Ayuda' && (

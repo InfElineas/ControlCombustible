@@ -158,11 +158,34 @@ Para detectar desbordes hay un recorrido del DOM que compara el borde derecho de
 cada elemento con el de su contenedor, saltándose los que tienen desplazamiento
 propio. Con él se comprobaron las nueve páginas a 375 puntos.
 
-### Escritura sin conexión (fase 2)
-Alcance ya acordado: cola de escritura **solo** para bonificaciones en estado
-PENDIENTE y novedades de ruta, con bandeja de pendientes y rechazados. **No** para
-despachos, compras ni cobros — esos tocan stock y dinero, y una cola los
-descuadraría.
+### Escritura sin conexión (fase 2) — bonificaciones hecho, rutas pendiente
+La cola vive en [colaEscritura.js](src/lib/colaEscritura.js) y la bandeja en
+[BandejaPendientes.jsx](src/components/ui-helpers/BandejaPendientes.jsx). Entra
+**solo** lo que no toca stock ni dinero: una bonificación en PENDIENTE es un
+compromiso, no una salida de combustible, y el descuento ocurre al entregarla.
+Despachos, compras y cobros quedan fuera a propósito — dos personas registrando
+el mismo despacho sin verse acabarían en stock negativo, y eso no lo arregla
+ninguna cola.
+
+Tres decisiones que no se leen en el código:
+
+1. **El identificador se genera en el cliente** y viaja en el insert. Si un envío
+   llega pero su respuesta se pierde, el reintento choca contra la clave primaria
+   y eso se lee como «ya estaba guardado». Sin ello, una respuesta perdida
+   duplicaría el registro.
+2. **El número de factura se recalcula al enviar** si choca. Se calcula en el
+   cliente sobre una lista que sin conexión puede estar vieja; cuando el choque
+   ocurre se le pide el siguiente al servidor en vez de rechazar el registro.
+3. **Los fallos de red y de sesión se reintentan; los de validación o permiso,
+   no.** Un token caducado se renueva solo en cuanto hay conexión, así que
+   tratarlo como rechazo definitivo descartaba registros buenos. Por el mismo
+   motivo la cola no se procesa mientras la sesión no esté validada.
+
+Lo guardado no aparece en la lista de bonificaciones, porque no está en el
+servidor. Para que no se pierda de vista hay un aviso en la propia página y un
+acceso en el menú de cuenta, ambos con el número de registros en espera.
+
+**Falta** el mismo tratamiento para las novedades de ruta.
 
 ### Datos que dependen del usuario
 - Registrar los ajustes manuales de CPP en Finanzas para que se llene la columna

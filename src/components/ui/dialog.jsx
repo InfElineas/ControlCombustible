@@ -36,7 +36,10 @@ const DialogContent = React.forwardRef(({ className, children, ...props }, ref) 
         // el contenido se salia por abajo sin manera de alcanzarlo, y el cuadro
         // quedaba pegado a los bordes laterales. Con el alto maximo y el scroll
         // propio, un formulario largo sigue siendo utilizable.
-        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100vw-1.5rem)] max-w-lg max-h-[90dvh] overflow-y-auto overscroll-contain translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-4 sm:p-6 rounded-lg shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]",
+        // grid-cols-1 es minmax(0, 1fr): sin él las columnas del grid crecen con
+        // su contenido y una fila larga ensancha el cuadro por dentro, con lo
+        // que el texto se sale por la derecha en lugar de recortarse.
+        "fixed left-[50%] top-[50%] z-50 grid grid-cols-1 w-[calc(100vw-1.5rem)] max-w-lg max-h-[90dvh] overflow-y-auto overscroll-contain translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-4 sm:p-6 rounded-lg shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]",
         className
       )}
       {...props}>
