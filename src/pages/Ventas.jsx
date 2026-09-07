@@ -1409,25 +1409,27 @@ export default function Ventas() {
 
   return (
     <div className="space-y-6" translate="no">
-      {/* Encabezado */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center shadow-md">
+      {/* Encabezado. En un móvil el título y los dos botones no caben en la
+          misma fila: el título se partía en tres líneas y los botones se salían
+          del marco, así que se apilan hasta 640px. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-rose-500 to-pink-600 flex items-center justify-center shadow-md shrink-0">
             <Droplets className="w-5 h-5 text-white" />
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100 leading-tight">Bonificación de Combustible</h1>
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-100 leading-tight">Bonificación de Combustible</h1>
             <p className="text-xs text-slate-400 mt-0.5">Beneficio laboral de combustible al personal</p>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0">
           {canGestionarBeneficiarios && (
-            <Button size="sm" variant="outline" className="h-9 text-sm gap-1.5" onClick={() => setShowBeneficiarios(true)}>
+            <Button size="sm" variant="outline" className="h-9 flex-1 sm:flex-none text-sm gap-1.5" onClick={() => setShowBeneficiarios(true)}>
               <Users className="w-4 h-4" /> Trabajadores
             </Button>
           )}
           {canRegistrarVentas && (
-            <Button size="sm" className="h-9 text-sm gap-1.5 bg-rose-600 hover:bg-rose-700 shadow-sm" onClick={() => setShowFormVenta(true)}>
+            <Button size="sm" className="h-9 flex-1 sm:flex-none text-sm gap-1.5 bg-rose-600 hover:bg-rose-700 shadow-sm" onClick={() => setShowFormVenta(true)}>
               <Plus className="w-4 h-4" /> Nueva bonificación
             </Button>
           )}
@@ -1436,10 +1438,26 @@ export default function Ventas() {
 
       {/* Selector de mes + KPIs */}
       <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
-          <Input type="month" className="h-8 text-xs w-36" value={filtroMes}
-            onChange={e => setFiltroMes(e.target.value)} />
+        {/* Un mes concreto o el histórico completo. El filtro vacío ya
+            significaba "sin filtrar" en el resto de la página, así que ver todo
+            es dejarlo en blanco. */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <CalendarDays className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          {filtroMes ? (
+            <Input type="month" className="h-8 text-xs w-36" value={filtroMes}
+              onChange={e => setFiltroMes(e.target.value)} />
+          ) : (
+            <span className="h-8 px-3 inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300">
+              Todo el histórico
+            </span>
+          )}
+          <Button
+            size="sm" variant="ghost"
+            className="h-8 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+            onClick={() => setFiltroMes(filtroMes ? '' : new Date().toISOString().slice(0, 7))}
+          >
+            {filtroMes ? 'Ver todo el histórico' : 'Filtrar por mes'}
+          </Button>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
@@ -1482,13 +1500,16 @@ export default function Ventas() {
               const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
               return (
                 <div key={`${t.tanqueId}-${t.combustibleId}`}
-                  className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-medium ${color}`}>
+                  title={`${t.tanqueNombre} · ${t.combustibleNombre} · ${fmtL(s)} L`}
+                  className={`inline-flex max-w-full items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-medium ${color}`}>
                   <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
-                  <span className="truncate max-w-[120px]">{t.tanqueNombre}{t.codigoInterno ? ` · ${t.codigoInterno}` : ''}</span>
-                  <span className="opacity-60">·</span>
-                  <span>{t.combustibleNombre}</span>
-                  <span className="opacity-60">·</span>
-                  <span className="font-bold tabular-nums">{fmtL(s)} L</span>
+                  {/* El nombre del tanque es lo único que cede: el combustible y
+                      los litros son el dato que se viene a leer. */}
+                  <span className="truncate min-w-0">{t.tanqueNombre}{t.codigoInterno ? ` · ${t.codigoInterno}` : ''}</span>
+                  <span className="opacity-60 shrink-0">·</span>
+                  <span className="shrink-0">{t.combustibleNombre}</span>
+                  <span className="opacity-60 shrink-0">·</span>
+                  <span className="font-bold tabular-nums shrink-0">{fmtL(s)} L</span>
                 </div>
               );
             })}
@@ -1516,7 +1537,7 @@ export default function Ventas() {
       <Card className="border border-slate-100 shadow-sm rounded-2xl overflow-hidden">
         <CardHeader className="px-4 pt-3 pb-0 border-b border-slate-200 dark:border-slate-700">
           {/* Tabs por estado */}
-          <div className="flex gap-0.5 flex-wrap">
+          <div className="flex gap-0.5 overflow-x-auto -mx-4 px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {FILTRO_ESTADOS.map(fe => {
               const count = fe.value === 'all'
                 ? ventasHistorialBase.length
@@ -1524,7 +1545,7 @@ export default function Ventas() {
               const isActive = filtroEstado === fe.value;
               return (
                 <button key={fe.value} onClick={() => setFiltroEstado(fe.value)}
-                  className={`px-3 py-2 text-xs font-medium rounded-t border-b-2 transition-colors -mb-px ${
+                  className={`shrink-0 whitespace-nowrap px-3 py-2 text-xs font-medium rounded-t border-b-2 transition-colors -mb-px ${
                     isActive
                       ? 'border-rose-500 text-rose-600 dark:text-rose-400 bg-white dark:bg-slate-900'
                       : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
