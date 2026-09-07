@@ -95,7 +95,7 @@ function ThemeToggle({ isDark, toggle, className = '' }) {
 function PuntoContador({ n }) {
   return (
     <span
-      className="absolute -top-1.5 -right-2 min-w-[1rem] h-4 px-1 rounded-full bg-orange-500 text-white text-[9px] font-bold flex items-center justify-center tabular-nums"
+      className="absolute -top-1.5 -right-2.5 min-w-[1.125rem] h-[1.125rem] px-1 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums"
       title={`${n} ${n === 1 ? 'asunto pendiente' : 'asuntos pendientes'} de revisar`}
     >
       {n > 99 ? '99+' : n}
@@ -269,30 +269,48 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-100 dark:from-slate-950 dark:via-sky-950/20 dark:to-indigo-950">
-      {/* Barra superior en móvil: identidad, búsqueda, tema y cuenta */}
-      <header className="lg:hidden sticky top-0 z-40 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border-b border-white/50 dark:border-white/[0.08] px-3 py-2.5 flex items-center gap-2">
-        <Link to={createPageUrl('Dashboard')} className="flex items-center gap-2 shrink-0" aria-label="Inicio">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center">
-            <Fuel className="w-4 h-4 text-white" />
+      {/* Barra superior en móvil: identidad, búsqueda, tema y cuenta.
+          El relleno superior reserva el alto de la barra de estado del teléfono:
+          en Android 15 la ventana es de borde a borde por imposición del
+          sistema y esta barra se montaba sobre la hora y los avisos. Como es
+          relleno y no margen, el fondo difuminado cubre también esa franja. */}
+      <header
+        className="lg:hidden sticky top-0 z-40 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border-b border-white/50 dark:border-white/[0.08] px-3 pb-2.5 flex items-center gap-2.5"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top) + 0.625rem)' }}
+      >
+        <Link to={createPageUrl('Dashboard')} className="flex items-center shrink-0" aria-label="Inicio">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center">
+            <Fuel className="w-5 h-5 text-white" />
           </div>
         </Link>
 
         <button
           type="button"
           onClick={() => setBuscando(true)}
-          className="flex-1 flex items-center gap-2 h-9 px-3 rounded-full bg-slate-100/80 dark:bg-slate-800/80 text-slate-400 text-xs min-w-0"
+          className="flex-1 flex items-center gap-2 h-10 px-3.5 rounded-full bg-slate-100/80 dark:bg-slate-800/80 text-slate-400 text-sm min-w-0"
         >
-          <Search className="w-3.5 h-3.5 shrink-0" />
+          <Search className="w-4 h-4 shrink-0" />
           <span className="truncate">Buscar</span>
         </button>
 
-        <ThemeToggle isDark={isDark} toggle={toggle} />
+        {/* Botón propio en lugar de ThemeToggle: el Button de shadcn fija el
+            tamaño de sus iconos con más especificidad que cualquier clase que
+            se le pase, y aquí hacen falta más grandes. */}
+        <button
+          type="button"
+          onClick={toggle}
+          title={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+          aria-label={isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+          className="w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+        >
+          {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        </button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="w-8 h-8 shrink-0 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200 text-xs font-semibold flex items-center justify-center"
+              className="w-10 h-10 shrink-0 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-200 text-sm font-semibold flex items-center justify-center"
               aria-label="Cuenta"
             >
               {inicialesUsuario}
@@ -412,15 +430,15 @@ export default function Layout() {
             <Link
               key={item.page}
               to={createPageUrl(item.page)}
-              className={`flex-1 min-w-0 flex flex-col items-center gap-1 pt-2 pb-1.5 transition-colors ${
+              className={`flex-1 min-w-0 flex flex-col items-center gap-1 pt-2.5 pb-2 transition-colors ${
                 activo ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500'
               }`}
             >
               <span className="relative">
-                <item.icon className="w-5 h-5" />
+                <item.icon className="w-6 h-6" />
                 {contador > 0 && <PuntoContador n={contador} />}
               </span>
-              <span className="text-[10px] leading-none font-medium truncate max-w-full px-0.5">
+              <span className="text-[11px] leading-none font-medium truncate max-w-full px-0.5">
                 {item.corto || item.name}
               </span>
             </Link>
@@ -431,13 +449,13 @@ export default function Layout() {
           <SheetTrigger asChild>
             <button
               type="button"
-              className="flex-1 min-w-0 flex flex-col items-center gap-1 pt-2 pb-1.5 text-slate-400 dark:text-slate-500"
+              className="flex-1 min-w-0 flex flex-col items-center gap-1 pt-2.5 pb-2 text-slate-400 dark:text-slate-500"
             >
               <span className="relative">
-                <Menu className="w-5 h-5" />
+                <Menu className="w-6 h-6" />
                 {contadorMas > 0 && <PuntoContador n={contadorMas} />}
               </span>
-              <span className="text-[10px] leading-none font-medium">Más</span>
+              <span className="text-[11px] leading-none font-medium">Más</span>
             </button>
           </SheetTrigger>
           <SheetContent
@@ -464,9 +482,9 @@ export default function Layout() {
         <Link
           to={`${createPageUrl('Ayuda')}?from=${currentPageName}`}
           title="Centro de ayuda"
-          className="fixed bottom-20 right-5 lg:bottom-5 z-50 w-11 h-11 rounded-full bg-sky-600 hover:bg-sky-700 shadow-lg flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+          className="fixed right-5 bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] lg:bottom-5 z-50 w-12 h-12 rounded-full bg-sky-600 hover:bg-sky-700 shadow-lg flex items-center justify-center transition-all hover:scale-105 active:scale-95"
         >
-          <HelpCircle className="w-5 h-5 text-white" />
+          <HelpCircle className="w-6 h-6 text-white" />
         </Link>
       )}
     </div>

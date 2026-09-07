@@ -95,7 +95,16 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-100 dark:from-slate-950 dark:via-sky-950/20 dark:to-indigo-950">
+    <div
+      className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-sky-50 to-indigo-100 dark:from-slate-950 dark:via-sky-950/20 dark:to-indigo-950"
+      // El relleno respeta la barra de estado y la de gestos del teléfono: esta
+      // pantalla no pasa por Layout, y en Android 15 la ventana es de borde a
+      // borde, así que sin él el contenido puede quedar debajo de ellas.
+      style={{
+        paddingTop: 'env(safe-area-inset-top)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}
+    >
       <div className="w-full max-w-sm mx-4">
         {/* Logo */}
         <div className="flex flex-col items-center mb-8">

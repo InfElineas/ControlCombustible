@@ -3,7 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/logo-control-combustible.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover habilita las variables env(safe-area-inset-*). Sin
+         el valen cero, y en Android 15 la ventana es de borde a borde por
+         imposicion del sistema: la barra superior de la aplicacion se montaba
+         encima de la hora y los avisos del telefono. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="manifest" href="/manifest.json" />
     <title>Control Combustible</title>
   </head>
