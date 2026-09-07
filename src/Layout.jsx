@@ -172,7 +172,7 @@ function NavContent({ currentPageName, role, onNavigate, isDark, toggle, alertas
 }
 
 export default function Layout() {
-  const { user, role, loading } = useUserRole();
+  const { user, role, loading, sesionOffline } = useUserRole();
   const { isDark, toggle } = useTheme();
   const online = useConexion();
   const [open, setOpen] = useState(false);
@@ -381,10 +381,12 @@ export default function Layout() {
             consigo las tarjetas, las barras y los margenes, que es como se veian
             los bordes saliendose del marco en el movil. */}
         <main className="flex-1 min-w-0 lg:ml-56 min-h-screen">
-          {!online && (
-            <div className="bg-slate-800 text-slate-100 text-xs px-4 py-2 flex items-center gap-2 justify-center">
-              <WifiOff className="w-3.5 h-3.5 shrink-0" />
-              Sin conexión — los datos que ves son los últimos descargados y no se puede guardar todavía
+          {(!online || sesionOffline) && (
+            <div className="bg-slate-800 text-slate-100 text-xs px-4 py-2 flex items-start gap-2 justify-center text-center">
+              <WifiOff className="w-3.5 h-3.5 shrink-0 mt-px" />
+              {sesionOffline
+                ? 'Sesión sin validar por falta de conexión — puedes consultar lo ya descargado, pero no guardar. Al recuperar la red se revalida sola.'
+                : 'Sin conexión — los datos que ves son los últimos descargados y no se puede guardar todavía'}
             </div>
           )}
           {/* El relleno inferior deja libre la altura de la barra de pestañas.

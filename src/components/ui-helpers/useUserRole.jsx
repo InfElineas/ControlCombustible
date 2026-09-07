@@ -6,21 +6,71 @@ import { supabase } from '@/api/supabaseClient';
 // de un usuario a otro que entre en el mismo dispositivo.
 const CLAVE_ROL = 'webcombustible-rol-conocido';
 
-function guardarRolConocido(email, fila) {
+function guardarRolConocido(authUser, fila) {
   try {
     localStorage.setItem(CLAVE_ROL, JSON.stringify({
-      email, role: fila.role, status: fila.status, full_name: fila.full_name,
+      email: authUser.email, id: authUser.id,
+      role: fila.role, status: fila.status, full_name: fila.full_name,
     }));
   } catch { /* almacenamiento lleno o bloqueado: se seguirá pidiendo al servidor */ }
 }
 
-function leerRolConocido(email) {
+function leerIdentidadGuardada() {
   try {
-    const guardado = JSON.parse(localStorage.getItem(CLAVE_ROL) || 'null');
-    return guardado?.email === email ? guardado : null;
+    return JSON.parse(localStorage.getItem(CLAVE_ROL) || 'null');
   } catch {
     return null;
   }
+}
+
+function leerRolConocido(email) {
+  const guardado = leerIdentidadGuardada();
+  return guardado?.email === email ? guardado : null;
+}
+
+// ¿Queda en el dispositivo una sesión que Supabase no ha podido validar?
+//
+// Distingue "falta red para refrescar el token" de "aquí nadie ha entrado".
+// Hace falta porque getSession() devuelve null en cuanto el token de acceso
+// caduca —dura una hora— y el refresco falla: sin conexión eso pasa siempre, y
+// la aplicación mandaba al usuario a la pantalla de inicio de sesión, donde sin
+// red no puede hacer nada. Los datos descargados quedaban inalcanzables.
+//
+// La presencia de esta entrada es la señal de que la sesión sigue siendo
+// legítima: cuando el token de refresco muere de verdad y hay conexión para
+// comprobarlo, Supabase la borra él mismo al arrancar.
+export function hayCredencialGuardada() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const clave = localStorage.key(i) || '';
+      if (/^sb-.+-auth-token$/.test(clave) && (localStorage.getItem(clave) || '').length > 20) {
+        return true;
+      }
+    }
+  } catch { /* almacenamiento bloqueado */ }
+  return false;
+}
+
+// Plazo para las llamadas del arranque.
+//
+// Sin red, auth-js reintenta el refresco del token durante más de treinta
+// segundos antes de rendirse, y la aplicación se quedaba todo ese rato en la
+// pantalla de carga: cualquiera da por hecho que no funciona y la cierra. Se
+// arranca con lo guardado en cuanto vence el plazo, y si la respuesta llega
+// más tarde el estado se corrige solo.
+// 1,8 s: con red, getSession() y el RPC del rol responden muy por debajo de eso,
+// así que no se entra en modo sin conexión por error. El plazo se paga dos veces
+// seguidas —primero en AuthContext, después aquí— porque el menú no se monta
+// hasta que el primero cede.
+export const ESPERA_MAXIMA_MS = 1800;
+
+const SIN_RESPUESTA = Symbol('sin-respuesta');
+
+function conLimite(promesa) {
+  return Promise.race([
+    Promise.resolve(promesa),
+    new Promise(resolver => setTimeout(() => resolver(SIN_RESPUESTA), ESPERA_MAXIMA_MS)),
+  ]);
 }
 
 export function olvidarRolConocido() {
@@ -31,23 +81,47 @@ export function useUserRole() {
   const [user, setUser]       = useState(/** @type {any} */(null));
   const [role, setRole]       = useState(null);
   const [loading, setLoading] = useState(true);
+  const [sesionOffline, setSesionOffline] = useState(false);
 
   useEffect(() => {
     let active = true;
 
+    // Abre con el último usuario conocido cuando no hay sesión validada pero sí
+    // credencial guardada en el dispositivo, para que los datos ya descargados
+    // sigan siendo consultables. Es solo lectura: toda escritura necesita un
+    // token que el servidor acepte.
+    function abrirConLoGuardado() {
+      const guardada = hayCredencialGuardada() ? leerIdentidadGuardada() : null;
+      if (!guardada?.email || !active) return false;
+      const rolGuardado = guardada.role === 'admin' ? 'superadmin' : (guardada.role ?? 'auditor');
+      setUser({
+        id:        guardada.id ?? null,
+        email:     guardada.email,
+        full_name: guardada.full_name ?? guardada.email,
+        role:      rolGuardado,
+        status:    guardada.status ?? 'active',
+      });
+      setRole(rolGuardado);
+      setSesionOffline(true);
+      setLoading(false);
+      return true;
+    }
+
     async function loadUser(session) {
       const authUser = session?.user;
       if (!authUser) {
+        if (abrirConLoGuardado()) return;
         if (active) setLoading(false);
         return;
       }
 
       // RPC con SECURITY DEFINER: bypasea RLS, obtiene o crea la fila del usuario.
       // Evita la dependencia circular donde leer el rol requiere conocer el rol.
-      const { data: roleRow } = await supabase.rpc('get_or_create_user_role', {
+      const respuesta = await conLimite(supabase.rpc('get_or_create_user_role', {
         p_email:     authUser.email,
         p_full_name: authUser.user_metadata?.full_name ?? authUser.email,
-      });
+      }));
+      const roleRow = respuesta === SIN_RESPUESTA ? null : respuesta.data;
 
       // Sin respuesta del servidor —normalmente por falta de conexión— se usa el
       // último rol conocido de este mismo usuario. Sin esto la aplicación abría
@@ -58,7 +132,7 @@ export function useUserRole() {
       // únicamente a ver botones que fallarían al usarse.
       let fila = roleRow;
       if (fila) {
-        guardarRolConocido(authUser.email, fila);
+        guardarRolConocido(authUser, fila);
       } else {
         fila = leerRolConocido(authUser.email);
       }
@@ -75,6 +149,7 @@ export function useUserRole() {
           status,
         });
         setRole(normalizedRole);
+        setSesionOffline(false);
         setLoading(false);
       }
     }
@@ -85,14 +160,21 @@ export function useUserRole() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
       if (event === 'SIGNED_OUT') {
-        setUser(null); setRole(null); setLoading(false);
+        setUser(null); setRole(null); setSesionOffline(false); setLoading(false);
         return;
       }
       loadUser(session);
     });
 
+    // auth-js no emite INITIAL_SESSION hasta terminar sus reintentos de
+    // refresco, así que sin red el arranque se decide aquí.
+    const plazo = setTimeout(() => {
+      if (active) abrirConLoGuardado();
+    }, ESPERA_MAXIMA_MS);
+
     return () => {
       active = false;
+      clearTimeout(plazo);
       subscription.unsubscribe();
     };
   }, []);
@@ -108,6 +190,9 @@ export function useUserRole() {
     user,
     role,
     loading,
+    // Sesión recuperada del dispositivo sin validar contra el servidor: la
+    // interfaz debe avisar de que no se puede guardar nada.
+    sesionOffline,
     isAdmin,
     isSuperAdmin,
     isPending:   user?.status === 'pending',

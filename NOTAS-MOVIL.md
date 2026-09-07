@@ -28,6 +28,34 @@ fallo de red al consultar el rol degradaba a los operadores a `auditor`. El
 servidor sigue siendo quien manda: esto solo evita que la interfaz mienta
 mientras no hay red.
 
+### Arranque sin conexión
+La lectura sin conexión estaba implementada pero la aplicación no llegaba a
+abrirse. Dos causas encadenadas:
+
+1. **`getSession()` devuelve `null`** en cuanto el token de acceso caduca —dura
+   una hora, con 90 s de margen— y el refresco falla, aunque la sesión siga
+   guardada en el dispositivo
+   (`node_modules/@supabase/auth-js/dist/main/GoTrueClient.js:2369`). Como
+   `App.jsx` cortaba a la pantalla de inicio de sesión con `!isAuthenticated`, y
+   ahí sin red no se puede hacer nada, los datos descargados eran inalcanzables.
+2. **auth-js reintenta ese refresco más de 30 s** antes de rendirse. Medido sobre
+   el build: 42 s con la aplicación en blanco. Cualquiera la cierra antes.
+
+La solución: `hayCredencialGuardada()` distingue "falta red para refrescar" de
+"aquí nadie ha entrado" —cuando el token de refresco muere de verdad y hay
+conexión para comprobarlo, Supabase borra él mismo esa entrada—, y con ella la
+aplicación abre en modo solo lectura con el último usuario conocido. Un plazo de
+1,8 s en `AuthContext` y otro en `useUserRole` evitan esperar los reintentos.
+
+Medido sobre el build con el servidor de Supabase inalcanzable: **5,2 s** hasta el
+panel, con aviso en pantalla de que la sesión no está validada y no se puede
+guardar. Sin credencial guardada va a la pantalla de inicio de sesión en 1 s.
+
+Es solo lectura y no hay nada que ganar cerrando la puerta: el servidor rechaza
+cualquier escritura por su cuenta. La contrapartida es que quien tenga el móvil
+desbloqueado puede consultar los datos ya descargados sin volver a autenticarse,
+pero esos datos ya estaban en el dispositivo.
+
 ### Identidad y navegación — `aba4e5a`
 Icono generado desde el logo de la web con `scripts/gen-iconos.mjs` (sharp). Va a
 sangre y con el símbolo al 78 % porque Android recorta el icono adaptativo con
@@ -90,11 +118,22 @@ naciera roto. Está comentado dentro de cada archivo.
 ## Pendiente
 
 ### Vista móvil
-Quedan errores visuales sin identificar. **Nunca se verificaron en pantalla**:
-montar cualquier página exige sesión, así que las correcciones anteriores se
-apoyaron en lectura de código, en que el proyecto compila y en comprobar que
-Tailwind emitió cada clase nueva en el CSS final. Para retomarlo hace falta una
-captura de la pantalla concreta que falle.
+Quedan errores visuales sin identificar. Para retomarlo hace falta una captura de
+la pantalla concreta que falle.
+
+Sí se pueden ver las páginas sin credenciales: sirve el build y siembra la sesión
+caducada como se explica en «Cómo probar el arranque sin conexión». La aplicación
+abre en modo solo lectura y se puede recorrer con el navegador. Lo que no se ve
+así son los datos reales, porque esa caché arranca vacía.
+
+### Cómo probar el arranque sin conexión
+Sin tocar la configuración del proyecto: crear `.env.production.local` (está en
+`.gitignore`) con `VITE_SUPABASE_URL=http://127.0.0.1:9` y la clave anónima real,
+compilar, servir con `webcombustible-preview` y sembrar en `localStorage` una
+sesión caducada bajo `sb-127-auth-token` más la entrada
+`webcombustible-rol-conocido`. Reproduce el escenario exacto sin necesidad de un
+dispositivo ni de cortar la red. **Borrar los dos archivos y recompilar
+después**: el build se queda con la URL falsa.
 
 ### Escritura sin conexión (fase 2)
 Alcance ya acordado: cola de escritura **solo** para bonificaciones en estado
