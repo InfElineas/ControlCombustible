@@ -11,7 +11,7 @@ import {
   LayoutDashboard, List, Fuel, BarChart3, Menu, ChevronRight,
   LogOut, Settings, ShieldCheck, Bell, BookOpen, Shield,
   Moon, Sun, WalletCards, Navigation, HelpCircle, ShoppingCart, Truck,
-  Clock, ShieldAlert, WifiOff, Search, KeyRound, CloudUpload,
+  Clock, ShieldAlert, WifiOff, Search, KeyRound, CloudUpload, X,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import BuscadorGlobal from '@/components/ui-helpers/BuscadorGlobal';
 import DescargarApp from '@/components/ui-helpers/DescargarApp';
-import ClaveAcceso, { MARCA_DEFINIR_CLAVE } from '@/components/ui-helpers/ClaveAcceso';
+import ClaveAcceso, { MARCA_DEFINIR_CLAVE, useTieneClavePropia } from '@/components/ui-helpers/ClaveAcceso';
 import BandejaPendientes, { useColaPendiente } from '@/components/ui-helpers/BandejaPendientes';
 import { procesarCola } from '@/lib/colaEscritura';
 import { supabase } from '@/api/supabaseClient';
@@ -46,6 +46,8 @@ const navItems = [
 ];
 
 const PESTANAS_MOVIL = 4;
+
+const CLAVE_AVISO_SIN_CLAVE = 'webcombustible-aviso-sin-clave';
 
 // Iniciales para el botón de cuenta de la barra superior.
 const iniciales = (usuario) => {
@@ -186,6 +188,19 @@ export default function Layout() {
   const [buscando, setBuscando] = useState(false);
   const [cambiandoClave, setCambiandoClave] = useState(false);
   const [viendoBandeja, setViendoBandeja] = useState(false);
+
+  // Quien entró con Google no tiene contraseña propia y nada se lo dice: el
+  // acceso por correo le falla sin explicación. Solo se pregunta con la sesión
+  // validada, porque sin ella la consulta no puede responder.
+  const { data: proveedores } = useTieneClavePropia({ enabled: !!user && !sesionOffline && online });
+  const sinClavePropia = Array.isArray(proveedores) && !proveedores.includes('email');
+  const [avisoClaveCerrado, setAvisoClaveCerrado] = useState(() => {
+    try { return localStorage.getItem(CLAVE_AVISO_SIN_CLAVE) === '1'; } catch { return false; }
+  });
+  const cerrarAvisoClave = () => {
+    setAvisoClaveCerrado(true);
+    try { localStorage.setItem(CLAVE_AVISO_SIN_CLAVE, '1'); } catch { /* volverá a salir */ }
+  };
   const { total: sinEnviar, rechazadas } = useColaPendiente();
 
   // Lo guardado sin conexión sale solo: al abrir la aplicación y en cuanto
@@ -460,6 +475,37 @@ export default function Layout() {
             consigo las tarjetas, las barras y los margenes, que es como se veian
             los bordes saliendose del marco en el movil. */}
         <main className="flex-1 min-w-0 lg:ml-56 min-h-screen">
+          {sinClavePropia && !avisoClaveCerrado && (
+            <div className="bg-amber-50 dark:bg-amber-950/40 border-b border-amber-100 dark:border-amber-900 px-4 py-2.5">
+              <div className="max-w-6xl mx-auto flex items-center gap-3">
+                <KeyRound className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                    Tu cuenta entra solo con Google
+                  </p>
+                  <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80 mt-0.5">
+                    Crea una contraseña propia y podrás entrar también con tu correo.
+                    La de Google no sirve aquí: solo Google puede comprobarla.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCambiandoClave(true)}
+                  className="shrink-0 px-3 h-8 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium"
+                >
+                  Crear
+                </button>
+                <button
+                  type="button"
+                  onClick={cerrarAvisoClave}
+                  aria-label="No volver a mostrar"
+                  className="shrink-0 text-amber-400 hover:text-amber-600 dark:hover:text-amber-200"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
           <DescargarApp variante="banner" />
           {(!online || sesionOffline) && (
             <div className="bg-slate-800 text-slate-100 text-xs px-4 py-2 flex items-start gap-2 justify-center text-center">

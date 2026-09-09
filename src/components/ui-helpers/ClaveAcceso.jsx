@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/api/supabaseClient';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,25 @@ function traducir(msg = '') {
   return msg || 'No se pudo guardar la contraseña.';
 }
 
+// ¿Puede esta cuenta entrar con correo y contraseña?
+//
+// identities dice con qué proveedores está dada de alta. Quien entró con Google
+// no tiene la de tipo 'email' hasta que se fija una contraseña, y mientras no la
+// tenga el acceso por correo le falla sin explicación.
+export function useTieneClavePropia({ enabled = true } = {}) {
+  return useQuery({
+    queryKey: ['identidades-cuenta'],
+    queryFn: async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) throw error;
+      return (data?.user?.identities ?? []).map(i => i.provider);
+    },
+    enabled,
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+}
+
 // Define una contraseña propia de la aplicación para quien entró con Google.
 //
 // La contraseña de la cuenta de Google no sirve para el acceso por correo: solo
@@ -31,6 +51,7 @@ function traducir(msg = '') {
 // tener la misma cuenta es una contraseña propia, y es la que se fija aquí. A
 // partir de entonces valen las dos formas de entrar, con el mismo correo.
 export default function ClaveAcceso({ abierto, onCerrar }) {
+  const qc = useQueryClient();
   const [clave, setClave]         = useState('');
   const [repetida, setRepetida]   = useState('');
   const [ver, setVer]             = useState(false);
@@ -67,6 +88,9 @@ export default function ClaveAcceso({ abierto, onCerrar }) {
     const { error: err } = await supabase.auth.updateUser({ password: clave });
     setGuardando(false);
     if (err) { setError(traducir(err.message)); return; }
+    // Refresca la lista de proveedores para que el aviso de "sin contraseña"
+    // deje de salir sin tener que recargar.
+    qc.invalidateQueries({ queryKey: ['identidades-cuenta'] });
     setListo(true);
   };
 
