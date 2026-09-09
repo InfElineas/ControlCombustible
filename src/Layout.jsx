@@ -21,6 +21,7 @@ import {
   DropdownMenuItem, DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import BuscadorGlobal from '@/components/ui-helpers/BuscadorGlobal';
+import DescargarApp from '@/components/ui-helpers/DescargarApp';
 import ClaveAcceso, { MARCA_DEFINIR_CLAVE } from '@/components/ui-helpers/ClaveAcceso';
 import BandejaPendientes, { useColaPendiente } from '@/components/ui-helpers/BandejaPendientes';
 import { procesarCola } from '@/lib/colaEscritura';
@@ -459,6 +460,7 @@ export default function Layout() {
             consigo las tarjetas, las barras y los margenes, que es como se veian
             los bordes saliendose del marco en el movil. */}
         <main className="flex-1 min-w-0 lg:ml-56 min-h-screen">
+          <DescargarApp variante="banner" />
           {(!online || sesionOffline) && (
             <div className="bg-slate-800 text-slate-100 text-xs px-4 py-2 flex items-start gap-2 justify-center text-center">
               <WifiOff className="w-3.5 h-3.5 shrink-0 mt-px" />

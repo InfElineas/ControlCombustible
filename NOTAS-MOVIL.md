@@ -115,6 +115,25 @@ como intocables por ser de shadcn. Fue deliberado: el arreglo era idéntico en l
 treintena de sitios que los usan, y repetirlo garantizaba que el siguiente modal
 naciera roto. Está comentado dentro de cada archivo.
 
+### Aviso de descarga en la web
+La web invita a instalar la aplicación en dos sitios: una tarjeta bajo el
+formulario de inicio de sesión y un banner dentro, que se puede cerrar y no
+vuelve a salir (queda marcado en `localStorage`). No aparece dentro de la propia
+aplicación ni en un iPhone, donde el archivo no sirve.
+
+> **Hace falta subir el archivo.** El enlace apunta a
+> `/app/control-combustible.apk` en el propio dominio; hay que copiar ahí
+> `android/app/build/outputs/apk/debug/app-debug.apk` con ese nombre. Para
+> servirlo desde otro sitio, definir `VITE_URL_APK` antes de compilar.
+>
+> El `.htaccess` ya declara el tipo `application/vnd.android.package-archive`
+> —sin él Android no ofrece instalar el archivo, solo lo deja en Descargas— y le
+> pone `no-cache`, porque el nombre no lleva hash y una versión nueva quedaría
+> escondida detrás de la vieja.
+
+El archivo **no** está en el repositorio a propósito: son 6,5 MB por versión y
+engordaría el historial sin necesidad.
+
 ## Pendiente
 
 ### Vista móvil

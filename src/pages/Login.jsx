@@ -3,6 +3,7 @@ import { supabase } from '@/api/supabaseClient';
 import { Fuel, Eye, EyeOff } from 'lucide-react';
 import { entrarConGoogle, escucharVueltaDeLogin, ENLACE_VUELTA, esApp } from '@/lib/authNativa';
 import { MARCA_DEFINIR_CLAVE } from '@/components/ui-helpers/ClaveAcceso';
+import DescargarApp from '@/components/ui-helpers/DescargarApp';
 
 export default function Login() {
   const [mode, setMode]               = useState('login'); // 'login' | 'register'
@@ -286,6 +287,8 @@ export default function Login() {
             </>
           )}
         </div>
+
+        <DescargarApp variante="tarjeta" />
       </div>
     </div>
   );

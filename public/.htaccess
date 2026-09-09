@@ -18,6 +18,11 @@ RewriteRule ^ /index.html [QSA,L]
   AddType text/javascript .js
   AddType text/javascript .mjs
   AddType text/css .css
+
+  # El archivo de instalacion de la aplicacion. Con este tipo, Android ofrece
+  # instalarlo al abrirlo; servido como octet-stream se queda en la carpeta de
+  # descargas sin que el sistema sepa que hacer con el.
+  AddType application/vnd.android.package-archive .apk
 </IfModule>
 
 <IfModule mod_headers.c>
@@ -29,6 +34,12 @@ RewriteRule ^ /index.html [QSA,L]
   </FilesMatch>
   SetEnvIf Request_URI "^/assets/" ASSET_INMUTABLE
   Header always set Cache-Control "public, max-age=31536000, immutable" env=ASSET_INMUTABLE
+
+  # El .apk no lleva hash en el nombre: si se cachea, al subir una version
+  # nueva la gente seguiria descargando la vieja.
+  <FilesMatch "\.apk$">
+    Header always set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
 
   # Fuerza HTTPS por un año e incluye subdominios
   Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
