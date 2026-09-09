@@ -213,6 +213,8 @@ export default function Layout() {
       if (r.enviadas) {
         qc.invalidateQueries({ queryKey: ['ventas'] });
         qc.invalidateQueries({ queryKey: ['asignaciones_ruta'] });
+        qc.invalidateQueries({ queryKey: ['movimientos'] });
+        qc.invalidateQueries({ queryKey: ['v-stock-tanques'] });
         toast.success(r.enviadas === 1
           ? 'Se envió 1 registro que estaba en espera'
           : `Se enviaron ${r.enviadas} registros que estaban en espera`);

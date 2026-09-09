@@ -5,11 +5,23 @@ import { base44 } from '@/api/base44Client';
 // Cola de operaciones que se guardaron sin conexión y quedan a la espera de
 // llegar al servidor.
 //
-// Solo entra aquí lo que no toca stock ni dinero. Una bonificación en PENDIENTE
-// no descuenta combustible —eso pasa al entregarla—, así que puede esperar sin
-// descuadrar nada. Los despachos, las compras y los cobros quedan fuera a
-// propósito: dos personas registrando el mismo despacho sin verse acabarían en
-// stock negativo, y eso no lo arregla ninguna cola.
+// Una bonificación en PENDIENTE y una novedad de ruta no mueven combustible ni
+// dinero: pueden esperar sin descuadrar nada.
+//
+// Los movimientos sí mueven existencias, y se admiten por decisión expresa
+// —registrar en el campo sin cobertura era el motivo de todo esto—, pero no son
+// gratis: un DESPACHO encolado puede llegar al servidor cuando otro ya consumió
+// ese combustible, y entonces el trigger que impide el stock negativo lo rechaza
+// con el combustible ya entregado. Por eso:
+//
+//   · La entrada de existencias (COMPRA, DEPÓSITO) no puede fallar por stock.
+//   · La salida (DESPACHO) puede, así que el formulario avisa antes de guardar y
+//     el stock que se muestra descuenta lo que está en la cola: si no, el
+//     operador sigue despachando sobre existencias que ya comprometió.
+//   · Un rechazo por stock queda en la bandeja con su motivo, para resolverlo
+//     con una COMPRA o un AJUSTE en vez de perderse en silencio.
+//
+// Los cobros siguen fuera: son dinero y no admiten esta ambigüedad.
 const CLAVE = 'webcombustible-cola-escritura-v1';
 
 // Cada operación lleva su identificador definitivo desde que se crea, y ese es
@@ -65,9 +77,32 @@ const MANEJADORES = {
       throw e;
     }
   },
+
+  // Un movimiento se manda por la entidad para conservar su auditoría, igual
+  // que las novedades.
+  async movimiento(datos) {
+    try {
+      await base44.entities.Movimiento.create(datos);
+    } catch (e) {
+      if (e?.code === ERROR_CLAVE_DUPLICADA && (e.message || '').includes('pkey')) return;
+      throw e;
+    }
+  },
 };
 
 export const TIPOS = Object.keys(MANEJADORES);
+
+// Litros que la cola ya comprometió de un origen y todavía no están en el
+// servidor. El stock que ve el usuario tiene que restarlos: si no, sigue
+// despachando sobre existencias que ya gastó estando sin conexión.
+export function litrosComprometidos(cola, consumidorOrigenId, combustibleId) {
+  if (!consumidorOrigenId) return 0;
+  return cola
+    .filter(i => i.tipo === 'movimiento' && i.estado === 'pendiente')
+    .filter(i => i.datos?.consumidor_origen_id === consumidorOrigenId)
+    .filter(i => !combustibleId || i.datos?.combustible_id === combustibleId)
+    .reduce((s, i) => s + (Number(i.datos?.litros) || 0), 0);
+}
 
 // ── Estado y avisos ──────────────────────────────────────────────────────────
 
@@ -146,12 +181,15 @@ export async function procesarCola() {
         enviadas++;
       } catch (e) {
         const reintentable = esFalloDeRed(e);
+        const porStock = /stock|insuficiente|negativo/i.test(e?.message ?? '');
         const cola = await leerCola();
         await escribirCola(cola.map(i => (i.id === item.id ? {
           ...i,
           intentos: i.intentos + 1,
           estado: reintentable ? 'pendiente' : 'rechazado',
-          error: e?.message ?? 'Error desconocido',
+          error: porStock
+            ? `${e.message} — el combustible ya salió: regístralo con una COMPRA en el origen o corrígelo con un AJUSTE.`
+            : (e?.message ?? 'Error desconocido'),
         } : i)));
         if (!reintentable) rechazadas++;
         // Si se cayó la red, el resto tampoco va a salir: se deja para luego.

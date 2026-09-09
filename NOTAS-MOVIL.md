@@ -179,12 +179,28 @@ propio. Con él se comprobaron las nueve páginas a 375 puntos.
 
 ### Escritura sin conexión (fase 2) — hecho
 La cola vive en [colaEscritura.js](src/lib/colaEscritura.js) y la bandeja en
-[BandejaPendientes.jsx](src/components/ui-helpers/BandejaPendientes.jsx). Entra
-**solo** lo que no toca stock ni dinero: una bonificación en PENDIENTE es un
-compromiso, no una salida de combustible, y el descuento ocurre al entregarla.
-Despachos, compras y cobros quedan fuera a propósito — dos personas registrando
-el mismo despacho sin verse acabarían en stock negativo, y eso no lo arregla
-ninguna cola.
+[BandejaPendientes.jsx](src/components/ui-helpers/BandejaPendientes.jsx). Cubre
+bonificaciones en PENDIENTE, novedades de ruta y **movimientos**.
+
+Las dos primeras no mueven combustible ni dinero: una bonificación en PENDIENTE
+es un compromiso y el descuento ocurre al entregarla.
+
+Los **movimientos sí mueven existencias** y entraron por decisión expresa —
+registrar en el campo sin cobertura era el motivo de todo esto—, pero no son
+gratis: un DESPACHO encolado puede llegar cuando otro ya consumió ese
+combustible, y el trigger que impide el stock negativo lo rechaza con el
+combustible ya entregado. Tres defensas lo hacen manejable:
+
+1. La entrada de existencias (COMPRA, DEPÓSITO) no puede fallar por stock.
+2. **El stock que se muestra descuenta lo que está en la cola**
+   (`litrosComprometidos`). Sin eso el operador sigue despachando sobre
+   existencias que ya comprometió, que es la forma segura de descuadrar.
+3. Un rechazo por stock llega a la bandeja con el motivo y qué hacer: registrar
+   una COMPRA en el origen o corregir con un AJUSTE.
+
+El formulario avisa al guardar sin conexión, y en un DESPACHO lo dice más fuerte.
+
+**Los cobros siguen fuera**: son dinero y no admiten esta ambigüedad.
 
 Tres decisiones que no se leen en el código:
 

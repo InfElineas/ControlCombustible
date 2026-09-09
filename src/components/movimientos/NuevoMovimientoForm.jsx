@@ -1,18 +1,21 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { encolar, esFalloDeRed, litrosComprometidos } from '@/lib/colaEscritura';
+import { useColaPendiente } from '@/components/ui-helpers/BandejaPendientes';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { ArrowDownCircle, ArrowLeftRight, Warehouse, Save, Loader2, Gauge, Satellite, Paperclip, X, Tag, AlertTriangle } from 'lucide-react';
+import { ArrowDownCircle, ArrowLeftRight, Warehouse, Save, Loader2, Gauge, Satellite, Paperclip, X, Tag, AlertTriangle, WifiOff } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 import { obtenerPrecioVigente, formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import { calcularAuditoriaCompra, obtenerCapacidadTanque, AUDITORIA_ESTADO } from './auditoriaCombustible';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import { gpsApi, metersToKm } from '@/api/gpsClient';
+import { useConexion } from '@/lib/useConexion';
 
 export default function NuevoMovimientoForm({ onSuccess }) {
   const queryClient = useQueryClient();
@@ -294,11 +297,17 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   // operador es exactamente el que decide si el guardado pasa o no. El cálculo
   // local anterior no contaba los DEPOSITO como entrada ni contemplaba el array
   // tarjetas_vinculadas_ids, y además dependía del tope de 5000 movimientos.
+  const { items: enCola } = useColaPendiente();
+
   const stockOrigenDespacho = useMemo(() => {
     if (tipo !== 'DESPACHO' || !form.consumidor_origen_id) return null;
     const fila = stockView.find(r => r.consumidor_id === form.consumidor_origen_id);
-    return fila ? Number(fila.stock_actual) : null;
-  }, [tipo, form.consumidor_origen_id, stockView]);
+    if (!fila) return null;
+    // Lo que espera en la cola ya está comprometido aunque el servidor no lo
+    // sepa todavía.
+    const comprometido = litrosComprometidos(enCola, form.consumidor_origen_id, form.combustible_id);
+    return Number(fila.stock_actual) - comprometido;
+  }, [tipo, form.consumidor_origen_id, form.combustible_id, stockView, enCola]);
 
   // Ventana en la que dos movimientos idénticos se consideran un doble
   // registro. Dos cargas reales al mismo consumidor, con los mismos litros y
@@ -306,8 +315,22 @@ export default function NuevoMovimientoForm({ onSuccess }) {
   const MINUTOS_ANTIDUPLICADO = 3;
   const [duplicadoPendiente, setDuplicadoPendiente] = useState(null);
 
+  // Guarda el movimiento en el teléfono para enviarlo al recuperar la red.
+  async function dejarEnEspera(fila) {
+    const resumen = [fila.tipo, fila.litros ? `${fila.litros} L` : null,
+      fila.consumidor_nombre || fila.consumidor_origen_nombre, fila.fecha]
+      .filter(Boolean).join(' · ');
+    await encolar('movimiento', fila, resumen);
+    return { enEspera: true };
+  }
+
   const createMutation = useMutation({
     mutationFn: async ({ forzar, ...data }) => {
+      // El identificador se pone aquí para que un reenvío de la cola choque
+      // contra la clave primaria en vez de duplicar el movimiento.
+      const fila = { id: crypto.randomUUID(), ...data };
+      if (!navigator.onLine) return dejarEnEspera(fila);
+
       // La comprobación necesita una magnitud que comparar: litros en los
       // movimientos de combustible, monto en las recargas de tarjeta.
       const magnitud = Number(data.litros) > 0 ? 'litros'
@@ -324,20 +347,28 @@ export default function NuevoMovimientoForm({ onSuccess }) {
         if (data.consumidor_id)  q = q.eq('consumidor_id',  data.consumidor_id);
         if (data.combustible_id) q = q.eq('combustible_id', data.combustible_id);
         if (data.tarjeta_id)     q = q.eq('tarjeta_id',     data.tarjeta_id);
-        const { data: previas } = await q;
+        const { data: previas, error: errorPrevias } = await q;
+        if (errorPrevias && esFalloDeRed(errorPrevias)) return dejarEnEspera(fila);
         if (previas?.length) {
           const err = new Error('DUPLICADO_RECIENTE');
           err.datosPendientes = data;
           throw err;
         }
       }
-      return base44.entities.Movimiento.create(data);
+      try {
+        return await base44.entities.Movimiento.create(fila);
+      } catch (e) {
+        if (esFalloDeRed(e)) return dejarEnEspera(fila);
+        throw e;
+      }
     },
-    onSuccess: () => {
+    onSuccess: (resultado) => {
       queryClient.invalidateQueries({ queryKey: ['movimientos'] });
       queryClient.invalidateQueries({ queryKey: ['v-stock-tanques'] });
       setDuplicadoPendiente(null);
-      toast.success('Movimiento registrado correctamente');
+      toast.success(resultado?.enEspera
+        ? 'Guardado en el teléfono. Se enviará al recuperar la conexión.'
+        : 'Movimiento registrado correctamente');
       setAdjuntoFile(null);
       onSuccess?.();
     },
@@ -532,8 +563,27 @@ export default function NuevoMovimientoForm({ onSuccess }) {
     createMutation.mutate(data);
   };
 
+  const sinRed = !useConexion();
+  // La salida de existencias es la unica que el servidor puede rechazar al
+  // llegar: si otro consumio ese combustible mientras no habia red, el trigger
+  // que impide el stock negativo la tumba con el combustible ya entregado.
+  const salidaDeExistencias = tipo === 'DESPACHO';
+
   return (
     <div className="space-y-4">
+      {sinRed && (
+        <div className={`flex items-start gap-2.5 rounded-xl px-3 py-2.5 border ${salidaDeExistencias
+          ? 'bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-900'
+          : 'bg-slate-50 border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
+          <WifiOff className={`w-4 h-4 shrink-0 mt-px ${salidaDeExistencias ? 'text-amber-600' : 'text-slate-400'}`} />
+          <p className={`text-[11px] leading-relaxed ${salidaDeExistencias
+            ? 'text-amber-800 dark:text-amber-200' : 'text-slate-500 dark:text-slate-400'}`}>
+            Sin conexión: esto se guarda en el teléfono y se envía al recuperar la red.
+            {salidaDeExistencias && ' Ojo: el stock que ves puede estar desactualizado. Si al enviarse no alcanza, el registro queda en la bandeja para que lo resuelvas con una COMPRA o un AJUSTE.'}
+          </p>
+        </div>
+      )}
+
       {tiposPermitidos.length > 1 ? (
         <Tabs value={tipo} onValueChange={v => { setTipo(v); setErrors({}); }}>
           <TabsList className={`w-full grid h-11 ${{ 2: 'grid-cols-2', 3: 'grid-cols-3' }[tiposPermitidos.length] ?? 'grid-cols-3'}`}>

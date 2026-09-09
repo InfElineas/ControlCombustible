@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CloudUpload, RefreshCw, Trash2, AlertTriangle, Clock, CheckCircle2 } from 'lucide-react';
 import { leerCola, alCambiarCola, procesarCola, descartar, volverAIntentar } from '@/lib/colaEscritura';
 
-const ETIQUETA_TIPO = { bonificacion: 'Bonificación', novedad_ruta: 'Ruta' };
+const ETIQUETA_TIPO = { bonificacion: 'Bonificación', novedad_ruta: 'Ruta', movimiento: 'Movimiento' };
 
 const cuando = (iso) => {
   const d = new Date(iso);
@@ -41,6 +41,8 @@ export default function BandejaPendientes({ abierto, onCerrar }) {
     if (r.enviadas) {
       qc.invalidateQueries({ queryKey: ['ventas'] });
       qc.invalidateQueries({ queryKey: ['asignaciones_ruta'] });
+      qc.invalidateQueries({ queryKey: ['movimientos'] });
+      qc.invalidateQueries({ queryKey: ['v-stock-tanques'] });
       toast.success(r.enviadas === 1 ? 'Se envió 1 registro' : `Se enviaron ${r.enviadas} registros`);
     }
     if (r.rechazadas) toast.error('El servidor rechazó algún registro. Revísalo en la bandeja.');

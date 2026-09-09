@@ -81,12 +81,23 @@ Esto es distinto de la fase 2 y es donde más se falla. Compruébalo de verdad.
 
 ### Fase 4 — Escritura sin conexión
 
-**Pregúntame qué operaciones entran antes de escribir código.** El criterio: solo
-lo que no toque inventario ni dinero.
+**Pregúntame qué operaciones entran antes de escribir código.** Empieza por lo
+que no toca inventario ni dinero, y trata la salida de existencias como una
+decisión mía, no tuya.
 
-- Un registro que es un *compromiso* y no un movimiento real puede esperar. Un
-  despacho de existencias, una compra o un cobro, no: dos personas registrando lo
-  mismo sin verse acaban en negativo, y eso no lo arregla ninguna cola.
+- Un registro que es un *compromiso* y no un movimiento real puede esperar sin
+  riesgo. Un cobro no: es dinero y no admite ambigüedad.
+- **La salida de existencias es el caso difícil, y probablemente me la vas a tener
+  que dar**, porque registrar en el campo sin cobertura suele ser el motivo de
+  todo el encargo. Si la admites, no la admitas a ciegas:
+  - La *entrada* de existencias no puede fallar por falta de stock; la *salida*
+    sí, y el rechazo llega cuando la mercancía ya salió físicamente.
+  - **El stock que muestres tiene que descontar lo que está en la cola.** Sin eso
+    el operador sigue despachando sobre existencias que ya comprometió, que es la
+    forma segura de descuadrar el inventario.
+  - Avisa en el formulario al guardar sin conexión, y más fuerte en la salida.
+  - Si el servidor lo rechaza por stock, el mensaje de la bandeja debe decir **qué
+    hacer** (registrar una entrada, o un ajuste), no solo que falló.
 - **Genera el identificador en el cliente** y mándalo en la inserción. Si un envío
   llega pero su respuesta se pierde, el reintento choca contra la clave primaria y
   eso se lee como «ya estaba guardado». Sin esto, una respuesta perdida duplica el
