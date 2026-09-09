@@ -196,6 +196,7 @@ export default function Layout() {
     procesarCola().then(r => {
       if (r.enviadas) {
         qc.invalidateQueries({ queryKey: ['ventas'] });
+        qc.invalidateQueries({ queryKey: ['asignaciones_ruta'] });
         toast.success(r.enviadas === 1
           ? 'Se envió 1 registro que estaba en espera'
           : `Se enviaron ${r.enviadas} registros que estaban en espera`);

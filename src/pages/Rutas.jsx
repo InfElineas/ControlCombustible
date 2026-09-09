@@ -16,7 +16,7 @@ import {
   Plus, Navigation, BookOpen, BarChart3, Upload, Map, MapPin,
   Pencil, Trash2, Car, User2, ArrowRight, AlertTriangle,
   CheckCircle2, Clock, XCircle, ChevronLeft, ChevronRight,
-  ChevronUp, ChevronDown, Satellite, Loader2,
+  ChevronUp, ChevronDown, Satellite, Loader2, CloudUpload,
 } from 'lucide-react';
 import ImportarChatPanel from '@/components/rutas/ImportarChatPanel';
 import CombustibleBadge from '@/components/ui-helpers/CombustibleBadge';
@@ -25,6 +25,8 @@ import MarcadoresPanel from '@/components/rutas/MarcadoresPanel';
 import { gpsApi, metersToKm } from '@/api/gpsClient';
 import { getRouteGeometry } from '@/api/routingClient';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
+import { encolar, esFalloDeRed } from '@/lib/colaEscritura';
+import BandejaPendientes, { useColaPendiente } from '@/components/ui-helpers/BandejaPendientes';
 import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
@@ -1619,12 +1621,41 @@ export default function Rutas() {
 
   const closeNovedad = () => { setRutaParaNovedad(null); setEditingNovedad(null); };
 
+  const [viendoEnEspera, setViendoEnEspera] = useState(false);
+  const { total: enEspera } = useColaPendiente();
+
   // Mutations — novedades / asignaciones
+  //
+  // Solo la creación se guarda para más tarde. Editar o borrar sin conexión es
+  // otra cosa: al enviarlo habría que decidir qué hacer si alguien tocó el
+  // mismo registro mientras tanto, y eso no se resuelve con una cola.
   const createAsigMut = useMutation({
-    mutationFn: d => base44.entities.AsignacionRuta.create(d),
-    onSuccess: () => {
+    mutationFn: async (d) => {
+      // El identificador se pone aquí para que un reenvío choque contra la
+      // clave primaria en vez de duplicar la novedad.
+      const fila = { id: crypto.randomUUID(), ...d };
+      const resumen = [fila.consumidor_nombre || 'sin vehículo', fila.fecha]
+        .filter(Boolean).join(' · ');
+
+      if (!navigator.onLine) {
+        await encolar('novedad_ruta', fila, resumen);
+        return { enEspera: true };
+      }
+      try {
+        return await base44.entities.AsignacionRuta.create(fila);
+      } catch (e) {
+        if (esFalloDeRed(e)) {
+          await encolar('novedad_ruta', fila, resumen);
+          return { enEspera: true };
+        }
+        throw e;
+      }
+    },
+    onSuccess: (resultado) => {
       queryClient.invalidateQueries({ queryKey: ['asignaciones_ruta'] });
-      toast.success('Registrado');
+      toast.success(resultado?.enEspera
+        ? 'Guardada en el teléfono. Se enviará al recuperar la conexión.'
+        : 'Registrado');
       setShowDialogAsig(false);
       closeNovedad();
     },
@@ -1788,9 +1819,31 @@ export default function Rutas() {
         ))}
       </div>
 
+      <BandejaPendientes abierto={viendoEnEspera} onCerrar={() => setViendoEnEspera(false)} />
+
       {/* ── Tab: Programa diario ─────────────────────────────────────────────── */}
       {tab === 'viajes' && (
         <div className="space-y-5">
+          {enEspera > 0 && (
+            <button
+              type="button"
+              onClick={() => setViendoEnEspera(true)}
+              className="w-full flex items-center gap-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-900 rounded-xl px-4 py-3 text-left"
+            >
+              <CloudUpload className="w-4 h-4 text-amber-500 shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-amber-700 dark:text-amber-400">
+                  {enEspera === 1
+                    ? '1 registro guardado en el teléfono'
+                    : `${enEspera} registros guardados en el teléfono`}
+                </span>
+                <span className="block text-xs text-amber-600/80 dark:text-amber-500/80 mt-0.5">
+                  Todavía no están en el servidor, así que no aparecen en la lista. Toca para verlos.
+                </span>
+              </span>
+            </button>
+          )}
+
           {/* Navegación de fecha */}
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-1">

@@ -1,5 +1,6 @@
 import { get, set } from 'idb-keyval';
 import { supabase } from '@/api/supabaseClient';
+import { base44 } from '@/api/base44Client';
 
 // Cola de operaciones que se guardaron sin conexión y quedan a la espera de
 // llegar al servidor.
@@ -48,6 +49,21 @@ const MANEJADORES = {
       throw error;
     }
     throw new Error('No se pudo asignar un número de factura libre.');
+  },
+
+  // Una novedad de ruta es kilometraje y observaciones: no mueve combustible ni
+  // dinero, así que puede esperar.
+  //
+  // Se manda por la entidad y no por un insert directo para que quede el
+  // registro de auditoría: quién la creó y cuándo. Ese apunte no rompe el envío
+  // si falla, porque logAudit nunca lanza.
+  async novedad_ruta(datos) {
+    try {
+      await base44.entities.AsignacionRuta.create(datos);
+    } catch (e) {
+      if (e?.code === ERROR_CLAVE_DUPLICADA && (e.message || '').includes('pkey')) return;
+      throw e;
+    }
   },
 };
 

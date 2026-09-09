@@ -158,7 +158,7 @@ Para detectar desbordes hay un recorrido del DOM que compara el borde derecho de
 cada elemento con el de su contenedor, saltándose los que tienen desplazamiento
 propio. Con él se comprobaron las nueve páginas a 375 puntos.
 
-### Escritura sin conexión (fase 2) — bonificaciones hecho, rutas pendiente
+### Escritura sin conexión (fase 2) — hecho
 La cola vive en [colaEscritura.js](src/lib/colaEscritura.js) y la bandeja en
 [BandejaPendientes.jsx](src/components/ui-helpers/BandejaPendientes.jsx). Entra
 **solo** lo que no toca stock ni dinero: una bonificación en PENDIENTE es un
@@ -185,7 +185,14 @@ Lo guardado no aparece en la lista de bonificaciones, porque no está en el
 servidor. Para que no se pierda de vista hay un aviso en la propia página y un
 acceso en el menú de cuenta, ambos con el número de registros en espera.
 
-**Falta** el mismo tratamiento para las novedades de ruta.
+Las novedades de ruta usan la misma cola. Se mandan por
+`base44.entities.AsignacionRuta.create` y no por un insert directo, para no
+perder el apunte de auditoría de quién las creó; ese apunte no puede romper el
+envío porque `logAudit` nunca lanza.
+
+**Solo se encola la creación.** Editar o borrar sin conexión es otro problema:
+al enviarlo habría que decidir qué hacer si alguien tocó el mismo registro
+mientras tanto, y eso no se resuelve con una cola.
 
 ### Datos que dependen del usuario
 - Registrar los ajustes manuales de CPP en Finanzas para que se llene la columna
