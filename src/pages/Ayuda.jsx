@@ -1955,7 +1955,7 @@ export default function Ayuda() {
         />
       </div>
 
-      <div className="flex gap-4 items-start">
+      <div className="flex flex-col items-stretch gap-4 md:flex-row md:items-start">
         {/* Sidebar */}
         <nav className="hidden md:flex flex-col gap-0.5 w-44 shrink-0 sticky top-4">
           {(query ? filtered : sections).map(s => {
@@ -1980,7 +1980,7 @@ export default function Ayuda() {
         </nav>
 
         {/* Mobile: pills row */}
-        <div className="md:hidden flex gap-1.5 flex-wrap">
+        <div className="md:hidden flex w-full gap-1.5 flex-wrap">
           {sections.map(s => {
             const Icon = s.icon;
             return (
@@ -2003,7 +2003,7 @@ export default function Ayuda() {
         {activeSection && (
           <div
             ref={contentRef}
-            className="flex-1 min-w-0 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-5 shadow-sm"
+            className="w-full min-w-0 md:flex-1 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-4 sm:p-5 shadow-sm"
           >
             {/* Section header */}
             <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-100 dark:border-slate-700">
