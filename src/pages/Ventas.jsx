@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react'; // v2
+import React, { useState, useMemo, useEffect } from 'react'; // v2
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { supabase } from '@/api/supabaseClient';
@@ -1218,6 +1219,16 @@ export default function Ventas() {
   const [viendoEnEspera, setViendoEnEspera] = useState(false);
   const { total: enEspera } = useColaPendiente();
   const [filtroBen, setFiltroBen] = useState('');
+
+  // Llegada desde el buscador global: deja la lista ya filtrada por ese nombre y
+  // sin filtro de mes, porque el registro buscado puede ser de cualquier fecha.
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const q = searchParams.get('q');
+    if (!q) return;
+    setFiltroBen(q);
+    setFiltroMes('');
+  }, [searchParams]);
   const [filtroEstado, setFiltroEstado] = useState('PENDIENTE');
 
   const { data: ventasRaw = [], isLoading } = useQuery({
