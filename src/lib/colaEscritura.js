@@ -1,6 +1,7 @@
 import { get, set } from 'idb-keyval';
 import { supabase } from '@/api/supabaseClient';
 import { base44 } from '@/api/base44Client';
+import { aplicarTransicion } from '@/lib/transicionVenta';
 
 // Cola de operaciones que se guardaron sin conexión y quedan a la espera de
 // llegar al servidor.
@@ -21,7 +22,12 @@ import { base44 } from '@/api/base44Client';
 //   · Un rechazo por stock queda en la bandeja con su motivo, para resolverlo
 //     con una COMPRA o un AJUSTE en vez de perderse en silencio.
 //
-// Los cobros siguen fuera: son dinero y no admiten esta ambigüedad.
+// Los cobros y las entregas también entran, por la misma decisión, y traen su
+// propio riesgo: son modificaciones, no inserciones. Dos personas cobrando la
+// misma bonificación sin verse no dan un duplicado sino una sobrescritura, así
+// que el cambio va condicionado al estado que el usuario tenía delante y un
+// choque llega a la bandeja como conflicto, sin reintentos: reintentar pisaría
+// el trabajo del otro.
 const CLAVE = 'webcombustible-cola-escritura-v1';
 
 // Cada operación lleva su identificador definitivo desde que se crea, y ese es
@@ -76,6 +82,15 @@ const MANEJADORES = {
       if (e?.code === ERROR_CLAVE_DUPLICADA && (e.message || '').includes('pkey')) return;
       throw e;
     }
+  },
+
+  // Cobrar, entregar o cancelar una bonificación. A diferencia del resto, esto
+  // modifica una fila existente, así que la protección no puede ser la clave
+  // primaria: va condicionado al estado que el usuario tenía delante. Si otro lo
+  // cambió mientras no había red, no se aplica y el conflicto llega a la bandeja
+  // en lugar de pisar su trabajo.
+  async transicion_venta(plan) {
+    await aplicarTransicion(plan);
   },
 
   // Un movimiento se manda por la entidad para conservar su auditoría, igual
@@ -158,6 +173,9 @@ export async function volverAIntentar(id) {
 // cuanto hay conexión. Tratarlo como rechazo definitivo descartaba registros
 // buenos por un problema que se arregla en segundos.
 export function esFalloDeRed(e) {
+  // Un conflicto de estado no se arregla reintentando: alguien ya cambió el
+  // registro y hace falta que una persona lo mire.
+  if (e?.conflicto) return false;
   if (!navigator.onLine) return true;
   const texto = `${e?.message ?? ''} ${e?.name ?? ''}`.toLowerCase();
   if (/jwt|token|not authenticated|unauthorized|refresh/.test(texto)) return true;

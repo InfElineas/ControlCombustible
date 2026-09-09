@@ -200,7 +200,29 @@ combustible ya entregado. Tres defensas lo hacen manejable:
 
 El formulario avisa al guardar sin conexión, y en un DESPACHO lo dice más fuerte.
 
-**Los cobros siguen fuera**: son dinero y no admiten esta ambigüedad.
+### Cobros y cambios de estado — el caso de las modificaciones
+También entran, y traen un riesgo distinto: **son modificaciones, no
+inserciones**. Dos personas cobrando la misma bonificación sin verse no producen
+un duplicado, producen una **sobrescritura**: la segunda pisaría el cobro de la
+primera y el identificador de cliente no protege de eso.
+
+La defensa es que el cambio va **condicionado al estado que el usuario tenía
+delante** (`.eq('estado', venta.estado)` en
+[transicionVenta.js](src/lib/transicionVenta.js)). Si nadie lo tocó, cambia una
+fila; si ya lo cambiaron, ninguna, y eso se convierte en `ConflictoDeEstado`, que
+**no se reintenta**: reintentarlo pisaría el trabajo del otro. Llega a la bandeja
+para que una persona lo mire.
+
+La lógica se extrajo de la página a un módulo porque ahora la ejecutan dos
+caminos —el botón y la cola— y duplicarla garantizaba que se separaran.
+
+Las fechas y el consumidor de destino se **congelan al pulsar**, no al enviar: un
+cobro registrado el lunes sin cobertura que sale el jueves lleva fecha del lunes.
+
+> **Cambio de comportamiento con conexión, no solo sin ella.** Antes el cambio de
+> estado se aplicaba aunque la pantalla estuviera desactualizada; ahora, si otra
+> persona cambió ese registro mientras lo tenías abierto, se avisa en lugar de
+> sobrescribir. Es más correcto, pero es distinto de como funcionaba.
 
 Tres decisiones que no se leen en el código:
 

@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { CloudUpload, RefreshCw, Trash2, AlertTriangle, Clock, CheckCircle2 } from 'lucide-react';
 import { leerCola, alCambiarCola, procesarCola, descartar, volverAIntentar } from '@/lib/colaEscritura';
 
-const ETIQUETA_TIPO = { bonificacion: 'Bonificación', novedad_ruta: 'Ruta', movimiento: 'Movimiento' };
+const ETIQUETA_TIPO = { bonificacion: 'Bonificación', novedad_ruta: 'Ruta',
+  movimiento: 'Movimiento', transicion_venta: 'Estado' };
 
 const cuando = (iso) => {
   const d = new Date(iso);

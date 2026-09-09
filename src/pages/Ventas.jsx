@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { logAudit } from '@/api/auditLog';
 import { encolar, esFalloDeRed } from '@/lib/colaEscritura';
+import { prepararTransicion, aplicarTransicion, resumirTransicion } from '@/lib/transicionVenta';
 import BandejaPendientes, { useColaPendiente } from '@/components/ui-helpers/BandejaPendientes';
 
 
@@ -1307,83 +1308,30 @@ export default function Ventas() {
 
   const transicionMut = useMutation({
     mutationFn: async ({ venta, nuevoEstado, precio_venta_unitario }) => {
-      const updates = { estado: nuevoEstado };
-      // Crear DESPACHO al entregar, o al pagar directamente desde PENDIENTE (entrega+cobro simultáneo)
-      const needsDespacho = nuevoEstado === 'ENTREGADO' ||
-        (nuevoEstado === 'PAGADO_FINALIZADO' && venta.estado === 'PENDIENTE');
-      if (needsDespacho) {
-        updates.fecha_retiro = new Date().toISOString().slice(0, 10);
-        const logistConsumidor = consumidores.find(c =>
-          (c.nombre || '').toLowerCase().includes('logist') && c.combustible_id === venta.combustible_id
-        ) ?? consumidores.find(c =>
-          (c.nombre || '').toLowerCase().includes('logist') &&
-          (c.combustible_nombre || '').toLowerCase() === (venta.combustible_nombre || '').toLowerCase()
-        ) ?? consumidores.find(c => (c.nombre || '').toLowerCase().includes('logist'));
-        const { data: mov, error: movErr } = await supabase
-          .from('movimiento')
-          .insert({
-            tipo: 'DESPACHO',
-            fecha: updates.fecha_retiro,
-            consumidor_origen_id: venta.tanque_origen_id,
-            consumidor_origen_nombre: venta.tanque_origen_nombre,
-            vehiculo_origen_chapa: venta.tanque_origen_nombre,
-            vehiculo_origen_alias: venta.tanque_origen_nombre,
-            consumidor_id: null,
-            consumidor_nombre: logistConsumidor?.nombre ?? 'Uso Logístico',
-            vehiculo_chapa: logistConsumidor?.codigo_interno ?? null,
-            vehiculo_alias: logistConsumidor?.nombre ?? null,
-            combustible_id: venta.combustible_id,
-            combustible_nombre: venta.combustible_nombre,
-            litros: venta.litros,
-            precio: venta.precio_por_litro,
-            monto: venta.monto,
-            referencia: `Bonificación combustible: ${venta.beneficiario_nombre}${venta.beneficiario_ci ? ' CI:' + venta.beneficiario_ci : ''}`,
-          })
-          .select('id')
-          .single();
-        if (movErr) throw movErr;
-        updates.movimiento_id = mov.id;
-        await logAudit({ action: 'DESPACHO_BON_CREADO', entityType: 'Movimiento', entityId: mov.id, entityLabel: `Bonificación: ${venta.beneficiario_nombre} — ${venta.litros}L ${venta.combustible_nombre}`, metadata: { venta_id: venta.id, tanque_origen_id: venta.tanque_origen_id, litros: venta.litros } });
+      // Todo lo que la transición necesita se resuelve ahora, no al enviarla:
+      // si el cobro se registra sin cobertura, la fecha de pago debe ser la de
+      // hoy y no la del día en que la cola consiga salir.
+      const plan = prepararTransicion({
+        venta, nuevoEstado, precio_venta_unitario,
+        usuarioId: user?.id ?? null, consumidores,
+      });
+
+      if (!navigator.onLine) {
+        await encolar('transicion_venta', plan, resumirTransicion(plan));
+        return { enEspera: true };
       }
-      if (nuevoEstado === 'PAGADO_FINALIZADO') {
-        updates.fecha_pago = new Date().toISOString().slice(0, 10);
-        updates.cobrado_por = user?.id ?? null;
-        if (precio_venta_unitario) {
-          updates.precio_venta_unitario = precio_venta_unitario;
-          updates.monto = +(precio_venta_unitario * venta.litros).toFixed(4);
+      try {
+        await aplicarTransicion(plan);
+      } catch (e) {
+        // Un conflicto no se encola: reintentarlo pisaría el cambio de otro.
+        if (!e?.conflicto && esFalloDeRed(e)) {
+          await encolar('transicion_venta', plan, resumirTransicion(plan));
+          return { enEspera: true };
         }
+        throw e;
       }
-      // Al cancelar: limpiar la referencia al movimiento antes de borrarlo
-      const movToDelete = (nuevoEstado === 'CANCELADO' && venta.movimiento_id) ? venta.movimiento_id : null;
-      if (movToDelete) updates.movimiento_id = null;
-      const { error } = await supabase
-        .from('venta_trabajador')
-        .update(updates)
-        .eq('id', venta.id);
-      if (error) {
-        // El DESPACHO ya se insertó: revertirlo para no dejar stock descontado sin bonificación
-        if (updates.movimiento_id) {
-          await supabase.from('movimiento').delete().eq('id', updates.movimiento_id);
-          await logAudit({ action: 'DESPACHO_BON_REVERTIDO', entityType: 'Movimiento', entityId: updates.movimiento_id, entityLabel: `Rollback bonificación: ${venta.beneficiario_nombre}`, metadata: { venta_id: venta.id, motivo: error.message } });
-        }
-        throw error;
-      }
-      // Borrar el DESPACHO generado — el stock vuelve al tanque origen
-      if (movToDelete) {
-        const { error: delErr } = await supabase.from('movimiento').delete().eq('id', movToDelete);
-        if (delErr) throw delErr;
-        await logAudit({ action: 'DESPACHO_BON_ELIMINADO', entityType: 'Movimiento', entityId: movToDelete, entityLabel: `Cancelación bonificación: ${venta.beneficiario_nombre}`, metadata: { venta_id: venta.id, motivo: 'cancelacion_bonificacion' } });
-      }
-      const auditMeta = { estado_anterior: venta.estado, estado_nuevo: nuevoEstado };
-      if (nuevoEstado === 'PAGADO_FINALIZADO' && precio_venta_unitario) {
-        auditMeta.precio_venta_unitario_nuevo = precio_venta_unitario;
-        auditMeta.precio_venta_unitario_anterior = venta.precio_venta_unitario ?? null;
-        auditMeta.monto_nuevo = +(precio_venta_unitario * venta.litros).toFixed(4);
-        auditMeta.monto_anterior = venta.monto;
-      }
-      await logAudit({ action: 'ESTADO_VENTA', entityType: 'VentaTrabajador', entityId: venta.id, entityLabel: `${venta.beneficiario_nombre} — ${venta.litros}L ${venta.combustible_nombre}`, metadata: auditMeta });
     },
-    onSuccess: (_, { nuevoEstado }) => {
+    onSuccess: (resultado, { nuevoEstado }) => {
       qc.invalidateQueries({ queryKey: ['ventas'] });
       qc.invalidateQueries({ queryKey: ['movimientos'] });
       qc.invalidateQueries({ queryKey: ['ventas-pendientes'] });
@@ -1394,7 +1342,9 @@ export default function Ventas() {
         CANCELADO:         'Bonificación cancelada',
         PENDIENTE:         'Revertido a pendiente',
       };
-      toast.success(msgs[nuevoEstado] ?? 'Estado actualizado');
+      toast.success(resultado?.enEspera
+        ? 'Guardado en el teléfono. Se enviará al recuperar la conexión.'
+        : (msgs[nuevoEstado] ?? 'Estado actualizado'));
     },
     onError: (e) => {
       qc.invalidateQueries({ queryKey: ['ventas'] });

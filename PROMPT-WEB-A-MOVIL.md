@@ -86,7 +86,19 @@ que no toca inventario ni dinero, y trata la salida de existencias como una
 decisión mía, no tuya.
 
 - Un registro que es un *compromiso* y no un movimiento real puede esperar sin
-  riesgo. Un cobro no: es dinero y no admite ambigüedad.
+  riesgo.
+- **Distingue inserciones de modificaciones, porque el riesgo no es el mismo.**
+  Dos inserciones repetidas dan un duplicado, y de eso protege el identificador de
+  cliente. Dos modificaciones concurrentes dan una **sobrescritura silenciosa**, y
+  de eso no protege nada de lo anterior. Si encolas cambios de estado o cobros:
+  - **Condiciona el cambio al estado que el usuario tenía delante.** Si ya no es
+    ese, no lo apliques: alguien trabajó sobre ese registro mientras no había red.
+  - Un conflicto así es **definitivo, no reintentable**: reintentarlo pisa el
+    trabajo del otro. Que llegue a la bandeja para que lo mire una persona.
+  - **Congela fechas y datos derivados en el momento en que el usuario actúa**, no
+    al enviar. Un cobro del lunes que sale el jueves debe tener fecha del lunes.
+  - Avísame de que esto cambia el comportamiento **también con conexión**: pasa a
+    avisar en vez de sobrescribir cuando la pantalla está desactualizada.
 - **La salida de existencias es el caso difícil, y probablemente me la vas a tener
   que dar**, porque registrar en el campo sin cobertura suele ser el motivo de
   todo el encargo. Si la admites, no la admitas a ciegas:
