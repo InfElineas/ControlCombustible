@@ -1,5 +1,18 @@
 apply plugin: 'com.android.application'
 
+// Credenciales de firma. Viven en android/firma.properties, que esta fuera del
+// control de versiones: la clave privada y sus contrasenas no se versionan nunca.
+// Si el archivo no esta, la compilacion de release sale sin firmar y el propio
+// Gradle avisa, en lugar de entregar un archivo que no se puede instalar.
+def archivoFirma = rootProject.file('firma.properties')
+def propsFirma = new Properties()
+if (archivoFirma.exists()) {
+    archivoFirma.withInputStream { propsFirma.load(it) }
+} else {
+    logger.lifecycle('AVISO: no hay android/firma.properties — la version de release saldra SIN FIRMAR. Ver LEEME-firma.md')
+}
+def hayFirma = archivoFirma.exists() && propsFirma['storeFile']
+
 android {
     namespace "com.mercadoelineas.combustible"
     compileSdk rootProject.ext.compileSdkVersion
@@ -17,8 +30,21 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hayFirma) {
+                storeFile file(propsFirma['storeFile'])
+                storePassword propsFirma['storePassword']
+                keyAlias propsFirma['keyAlias']
+                keyPassword propsFirma['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            if (hayFirma) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

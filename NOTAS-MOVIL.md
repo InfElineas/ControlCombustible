@@ -271,6 +271,20 @@ envió por correo.
 - Comprobaciones de precio fuera de rango y de km/L anómalos: faltan los umbrales,
   que hay que sacar de la distribución de los datos reales.
 
+### Firma para publicar
+La configuración de firma ya está en
+[app/build.gradle](android/app/build.gradle): lee las credenciales de
+`android/firma.properties`, que **no se versiona**. Sin ese archivo, la
+compilación de release avisa y sale sin firmar en lugar de entregar algo que no
+se puede instalar.
+
+Los pasos —crear el almacén de claves, apuntar el proyecto y comprobar la firma—
+están en [android/LEEME-firma.md](android/LEEME-firma.md), con dos avisos que
+importan: **al pasar de la versión de prueba a la firmada hay que desinstalar**,
+porque Android no reemplaza una aplicación por otra con firma distinta, y eso
+borra los datos locales, así que la bandeja de pendientes tiene que estar vacía
+antes; y cada actualización necesita subir `versionCode`.
+
 ## Cómo generar el APK
 
 ```bash

@@ -1,0 +1,10 @@
+# Copia este archivo como android/firma.properties y rellenalo con tus datos.
+# android/firma.properties esta en .gitignore: no se versiona nunca.
+#
+# storeFile admite ruta absoluta. En Windows usa barras normales (/) o dobles
+# invertidas (\), no una sola barra invertida.
+
+storeFile=C:/Users/infor/claves/combustible-release.jks
+storePassword=LA_QUE_PUSISTE_AL_CREAR_EL_ALMACEN
+keyAlias=combustible
+keyPassword=LA_DE_LA_CLAVE

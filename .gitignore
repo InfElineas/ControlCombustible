@@ -30,6 +30,7 @@ android/app/src/main/assets/capacitor.config.json
 *.aab
 *.keystore
 *.jks
+android/firma.properties
 
 # Editor directories and files
 .vscode/*
