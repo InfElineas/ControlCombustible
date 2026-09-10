@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '@/api/supabaseClient';
 import { Fuel, Eye, EyeOff } from 'lucide-react';
 import { entrarConGoogle, escucharVueltaDeLogin, ENLACE_VUELTA, esApp } from '@/lib/authNativa';
@@ -11,6 +11,24 @@ export default function Login() {
   // entera dejaba a la vista, durante la recarga, la pantalla de «no
   // encontrado» que provocaba la ruta /Login ya autenticada.
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Adónde ir al entrar.
+  //
+  // Sin sesión, esta pantalla se dibuja sobre la dirección que se pidió, sin
+  // cambiarla: quien abre un enlace a una página concreta y tiene que
+  // identificarse sigue teniendo esa dirección delante. Así que se vuelve a
+  // ella, y solo van al panel los que vinieron directos a /Login.
+  //
+  // Si la página exige un rol que el usuario no tiene, Layout ya lo devuelve al
+  // panel, y si la dirección no existe verá el aviso de no encontrada, que es
+  // lo correcto: la ruta no existe.
+  const irAlDestino = () => {
+    const destino = location.pathname === '/Login'
+      ? '/'
+      : location.pathname + location.search;
+    navigate(destino, { replace: true });
+  };
   const [mode, setMode]               = useState('login'); // 'login' | 'register'
   const [email, setEmail]             = useState('');
   const [password, setPassword]       = useState('');
@@ -36,7 +54,7 @@ export default function Login() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) navigate('/', { replace: true });
+      if (session) irAlDestino();
     });
   }, []);
 
@@ -45,7 +63,7 @@ export default function Login() {
   useEffect(() => escucharVueltaDeLogin((resultado) => {
     if (resultado?.recuperacion) sessionStorage.setItem(MARCA_DEFINIR_CLAVE, '1');
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) { navigate('/', { replace: true }); return; }
+      if (session) { irAlDestino(); return; }
       setLoading(false);
       // Se muestra el motivo tal cual lo da Supabase o el proveedor: sin el, no
       // hay forma de distinguir un enlace mal autorizado de un permiso negado.
@@ -75,7 +93,7 @@ export default function Login() {
       setError(traducirError(err.message));
       setLoading(false);
     } else {
-      navigate('/', { replace: true });
+      irAlDestino();
     }
   };
 
@@ -100,7 +118,7 @@ export default function Login() {
       setError(traducirError(err.message));
     } else if (data.session) {
       // Confirmación de email desactivada → ya tiene sesión
-      navigate('/', { replace: true });
+      irAlDestino();
     } else {
       setSuccessMsg('Revisa tu correo y confirma tu cuenta para poder iniciar sesión.');
     }
