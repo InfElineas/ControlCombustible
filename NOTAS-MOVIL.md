@@ -1,7 +1,7 @@
 # Aplicación móvil (APK) — estado y notas para retomar
 
-Última actualización: 2 de septiembre de 2026
-Commits de este bloque: `26ad8a2` … `5588b53`
+Última actualización: 10 de septiembre de 2026
+Commits de este bloque: `26ad8a2` … `6409805`
 
 ## Qué se hizo
 
@@ -134,50 +134,7 @@ aplicación ni en un iPhone, donde el archivo no sirve.
 El archivo **no** está en el repositorio a propósito: son 6,5 MB por versión y
 engordaría el historial sin necesidad.
 
-## Pendiente
-
-### Vista móvil
-Las nueve páginas se recorrieron a 375 puntos y **ninguna desborda**: Inicio,
-Movimientos, Bonificaciones, Rutas, Transporte, Finanzas, Catálogos, Alertas,
-Reportes y Configuración dan 375 de contenido en 375 de ventana.
-
-El límite de esa comprobación es que se hizo con las listas casi vacías, y la
-mayoría de los desbordes vienen del contenido. Bonificaciones sí se probó con
-datos sembrados y nombres largos. Para el resto, si aparece algo, hace falta una
-captura de la pantalla concreta o sembrar sus consultas como se explica arriba.
-
-### Cómo probar el arranque sin conexión
-Sin tocar la configuración del proyecto: crear `.env.production.local` (está en
-`.gitignore`) con `VITE_SUPABASE_URL=http://127.0.0.1:9` y la clave anónima real,
-compilar, servir con `webcombustible-preview` y sembrar en `localStorage` una
-sesión caducada bajo `sb-127-auth-token` más la entrada
-`webcombustible-rol-conocido`. Reproduce el escenario exacto sin necesidad de un
-dispositivo ni de cortar la red. **Borrar los dos archivos y recompilar
-después**: el build se queda con la URL falsa.
-
-### Cómo ver cualquier página con datos, sin credenciales
-Para revisar la vista de una página hace falta contenido, y la caché arranca
-vacía. Se puede sembrar la caché persistida desde la consola del navegador:
-
-- La clave es `webcombustible-cache-v1` en IndexedDB, base `keyval-store`,
-  almacén `keyval`.
-- **El valor es una cadena JSON, no un objeto** — `createAsyncStoragePersister`
-  serializa. Guardar un objeto no rehidrata nada y cuesta un rato descubrirlo.
-- La forma es `{buster:'', timestamp, clientState:{mutations:[], queries:[…]}}`,
-  y cada consulta `{queryKey, queryHash: JSON.stringify(queryKey), state:{data,
-  status:'success', dataUpdatedAt, fetchStatus:'idle', …}}`.
-- Solo se rehidrata lo que está en la lista blanca de
-  [query-persist.js](src/lib/query-persist.js).
-
-Sembrar, recargar, y la página se dibuja con esos datos aunque las peticiones al
-servidor fallen. Sirve para probar nombres largos y cifras grandes, que es de
-donde salen la mayoría de los desbordes.
-
-Para detectar desbordes hay un recorrido del DOM que compara el borde derecho de
-cada elemento con el de su contenedor, saltándose los que tienen desplazamiento
-propio. Con él se comprobaron las nueve páginas a 375 puntos.
-
-### Escritura sin conexión (fase 2) — hecho
+### Escritura sin conexión
 La cola vive en [colaEscritura.js](src/lib/colaEscritura.js) y la bandeja en
 [BandejaPendientes.jsx](src/components/ui-helpers/BandejaPendientes.jsx). Cubre
 bonificaciones en PENDIENTE, novedades de ruta y **movimientos**.
@@ -251,6 +208,110 @@ envío porque `logAudit` nunca lanza.
 al enviarlo habría que decidir qué hacer si alguien tocó el mismo registro
 mientras tanto, y eso no se resuelve con una cola.
 
+### Firma para publicar
+La configuración de firma ya está en
+[app/build.gradle](android/app/build.gradle): lee las credenciales de
+`android/firma.properties`, que **no se versiona**. Sin ese archivo, la
+compilación de release avisa y sale sin firmar en lugar de entregar algo que no
+se puede instalar.
+
+Los pasos —crear el almacén de claves, apuntar el proyecto y comprobar la firma—
+están en [android/LEEME-firma.md](android/LEEME-firma.md), con dos avisos que
+importan: **al pasar de la versión de prueba a la firmada hay que desinstalar**,
+porque Android no reemplaza una aplicación por otra con firma distinta, y eso
+borra los datos locales, así que la bandeja de pendientes tiene que estar vacía
+antes; y cada actualización necesita subir `versionCode`.
+
+### Publicación de versiones desde el panel
+Antes, actualizar la aplicación obligaba a copiar el APK por FTP a una ruta fija
+del hosting, y nadie sabía qué traía cada versión.
+
+Ahora se publica desde **Administración → Aplicación móvil**
+([PublicarApk.jsx](src/components/admin/PublicarApk.jsx)): se sube el archivo, se
+escribe el número de versión y las notas, y la web empieza a ofrecerlo con esas
+notas a la vista en la tarjeta de la pantalla de acceso.
+
+Decisiones que no se leen en el código:
+
+- **La vigencia la impone la base de datos**, con un disparador que apaga las
+  demás al publicar una. En el cliente, dos pestañas publicando a la vez podían
+  dejar dos vigentes.
+- **Las versiones anteriores se conservan** y se puede volver a cualquiera con un
+  botón. Si una resulta defectuosa, se restaura la previa sin perder el rastro de
+  lo que se repartió.
+- **Si la fila no entra, el archivo subido se retira** del almacén: si no, cada
+  intento fallido dejaría un APK huérfano de 7 MB.
+- **Lectura abierta a propósito** en la tabla y en el almacén: la tarjeta de
+  descarga se muestra en la pantalla de acceso, donde todavía no hay sesión. Lo
+  que se expone es el número de versión y sus notas, como cualquier historial de
+  cambios público. Subir, reemplazar y borrar, solo superadmin.
+- **Si no hay ninguna versión publicada**, la web sigue ofreciendo el archivo
+  estático de `/app/control-combustible.apk`, que es como funcionaba antes.
+  Comprobado: sin la tabla creada, el enlace cae en ese respaldo.
+
+> Requiere ejecutar
+> [migrations/2026-09-10_apk_version.sql](migrations/2026-09-10_apk_version.sql),
+> que crea la tabla, el almacén `apk` y sus permisos.
+
+## Cómo generar el APK
+
+```bash
+npm run build && npx cap sync android
+```
+
+Después, con `JAVA_HOME` apuntando al JDK de Android Studio
+(`C:\Program Files\Android\Android Studio\jbr`):
+
+```bash
+cd android && ./gradlew assembleDebug
+```
+
+El resultado queda en `android/app/build/outputs/apk/debug/app-debug.apk`.
+
+
+## Pendiente
+
+### Lo primero, y depende de ti
+1. **Ejecutar** [migrations/2026-09-10_apk_version.sql](migrations/2026-09-10_apk_version.sql).
+   Sin eso, la pestaña de Aplicación móvil avisa de que falta el almacén y la web
+   sigue ofreciendo el archivo estático.
+2. **Subir el `dist/` nuevo al hosting.** Varias cosas de las últimas semanas solo
+   están en la web cuando se despliega: el aviso de contraseña, el buscador
+   ampliado, el arreglo del 404 al entrar y la publicación de versiones.
+3. **Autorizar en Supabase** → Authentication → URL Configuration → Redirect URLs
+   la dirección de la web terminada en `/Login`, para el correo que fija la
+   contraseña. La de la APK ya está.
+4. **Firmar la aplicación** siguiendo [android/LEEME-firma.md](android/LEEME-firma.md)
+   si vas a repartirla fuera de pruebas, y publicarla desde el panel.
+
+### Deuda del proyecto Android
+`targetSdk 35` no está instalado en esta máquina y no se puede descargar desde
+esta red, así que se compila contra la 36. Si algún día va a Play Store, habrá que
+resolverlo. Está explicado en [android/variables.gradle](android/variables.gradle).
+
+### Trabajo sin conexión: lo que queda fuera a propósito
+La cola cubre bonificaciones, novedades de ruta, movimientos, cobros, entregas y
+cancelaciones. **Solo la creación**, nunca editar ni borrar: al enviarlo habría
+que decidir qué hacer si alguien tocó el mismo registro mientras tanto, y eso no
+lo resuelve una cola. Si se necesita, hay que diseñar la resolución de conflictos
+aparte.
+
+Riesgo que no se puede eliminar: si dos personas despachan del mismo tanque sin
+cobertura y entre ambas superan lo que había, el segundo envío se rechaza con el
+combustible ya entregado. La cola lo hace visible y accionable; no lo hace
+imposible.
+
+### Vista móvil
+Las nueve páginas se recorrieron a 375 puntos y **ninguna desborda**: Inicio,
+Movimientos, Bonificaciones, Rutas, Transporte, Finanzas, Catálogos, Alertas,
+Reportes y Configuración dan 375 de contenido en 375 de ventana.
+
+El límite de esa comprobación es que se hizo con las listas casi vacías, y la
+mayoría de los desbordes vienen del contenido. Bonificaciones sí se probó con
+datos sembrados y nombres largos. Para el resto, si aparece algo, hace falta una
+captura de la pantalla concreta o sembrar sus consultas como se explica arriba.
+
+
 ### Datos que dependen del usuario
 - Registrar los ajustes manuales de CPP en Finanzas para que se llene la columna
   de ganancia. Hoy 0 de 6 depósitos tienen `precio_costo_unitario`, así que ningún
@@ -271,31 +332,35 @@ envió por correo.
 - Comprobaciones de precio fuera de rango y de km/L anómalos: faltan los umbrales,
   que hay que sacar de la distribución de los datos reales.
 
-### Firma para publicar
-La configuración de firma ya está en
-[app/build.gradle](android/app/build.gradle): lee las credenciales de
-`android/firma.properties`, que **no se versiona**. Sin ese archivo, la
-compilación de release avisa y sale sin firmar en lugar de entregar algo que no
-se puede instalar.
+## Cómo verificar sin credenciales
 
-Los pasos —crear el almacén de claves, apuntar el proyecto y comprobar la firma—
-están en [android/LEEME-firma.md](android/LEEME-firma.md), con dos avisos que
-importan: **al pasar de la versión de prueba a la firmada hay que desinstalar**,
-porque Android no reemplaza una aplicación por otra con firma distinta, y eso
-borra los datos locales, así que la bandeja de pendientes tiene que estar vacía
-antes; y cada actualización necesita subir `versionCode`.
+### Cómo probar el arranque sin conexión
+Sin tocar la configuración del proyecto: crear `.env.production.local` (está en
+`.gitignore`) con `VITE_SUPABASE_URL=http://127.0.0.1:9` y la clave anónima real,
+compilar, servir con `webcombustible-preview` y sembrar en `localStorage` una
+sesión caducada bajo `sb-127-auth-token` más la entrada
+`webcombustible-rol-conocido`. Reproduce el escenario exacto sin necesidad de un
+dispositivo ni de cortar la red. **Borrar los dos archivos y recompilar
+después**: el build se queda con la URL falsa.
 
-## Cómo generar el APK
+### Cómo ver cualquier página con datos, sin credenciales
+Para revisar la vista de una página hace falta contenido, y la caché arranca
+vacía. Se puede sembrar la caché persistida desde la consola del navegador:
 
-```bash
-npm run build && npx cap sync android
-```
+- La clave es `webcombustible-cache-v1` en IndexedDB, base `keyval-store`,
+  almacén `keyval`.
+- **El valor es una cadena JSON, no un objeto** — `createAsyncStoragePersister`
+  serializa. Guardar un objeto no rehidrata nada y cuesta un rato descubrirlo.
+- La forma es `{buster:'', timestamp, clientState:{mutations:[], queries:[…]}}`,
+  y cada consulta `{queryKey, queryHash: JSON.stringify(queryKey), state:{data,
+  status:'success', dataUpdatedAt, fetchStatus:'idle', …}}`.
+- Solo se rehidrata lo que está en la lista blanca de
+  [query-persist.js](src/lib/query-persist.js).
 
-Después, con `JAVA_HOME` apuntando al JDK de Android Studio
-(`C:\Program Files\Android\Android Studio\jbr`):
+Sembrar, recargar, y la página se dibuja con esos datos aunque las peticiones al
+servidor fallen. Sirve para probar nombres largos y cifras grandes, que es de
+donde salen la mayoría de los desbordes.
 
-```bash
-cd android && ./gradlew assembleDebug
-```
-
-El resultado queda en `android/app/build/outputs/apk/debug/app-debug.apk`.
+Para detectar desbordes hay un recorrido del DOM que compara el borde derecho de
+cada elemento con el de su contenedor, saltándose los que tienen desplazamiento
+propio. Con él se comprobaron las nueve páginas a 375 puntos.

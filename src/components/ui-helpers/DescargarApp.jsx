@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Smartphone, Download, X } from 'lucide-react';
 import { esApp } from '@/lib/authNativa';
+import { useVersionVigente } from '@/components/admin/PublicarApk';
 
 // Dirección del archivo de instalación. Se puede cambiar sin tocar el código con
 // VITE_URL_APK; por omisión se busca en el propio dominio, que es lo que hay que
@@ -27,6 +28,15 @@ export default function DescargarApp({ variante = 'tarjeta' }) {
     try { return localStorage.getItem(CLAVE_DESCARTE) === '1'; } catch { return false; }
   });
 
+  // La versión publicada desde el panel manda. Si todavía no hay ninguna, se usa
+  // el archivo estático del hosting, que es como funcionaba antes.
+  const { data: publicada } = useVersionVigente();
+  const enlace = publicada?.archivo_url || URL_APK;
+  const notasVersion = (publicada?.notas || '')
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
+
   const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
   if (esApp() || esIOS) return null;
 
@@ -52,7 +62,7 @@ export default function DescargarApp({ variante = 'tarjeta' }) {
             </p>
           </div>
           <a
-            href={URL_APK}
+            href={enlace}
             download
             className="shrink-0 inline-flex items-center gap-1.5 px-3 h-8 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium"
           >
@@ -80,17 +90,30 @@ export default function DescargarApp({ variante = 'tarjeta' }) {
         <div className="min-w-0">
           <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
             Aplicación para Android
+            {publicada?.version && (
+              <span className="ml-1.5 font-normal text-slate-400">v{publicada.version}</span>
+            )}
           </p>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
             {DESCRIPCION}
           </p>
           <a
-            href={URL_APK}
+            href={enlace}
             download
             className="mt-2 inline-flex items-center gap-1.5 px-3 h-8 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium"
           >
             <Download className="w-3.5 h-3.5" /> Descargar
           </a>
+          {notasVersion.length > 0 && (
+            <ul className="mt-2 space-y-0.5">
+              {notasVersion.slice(0, 4).map((linea, i) => (
+                <li key={i} className="text-[10px] text-slate-500 dark:text-slate-400 flex gap-1.5">
+                  <span className="text-slate-300 shrink-0">·</span>
+                  <span className="min-w-0">{linea.replace(/^[·\-*]\s*/, '')}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           {esAndroid() && (
             <p className="text-[10px] text-slate-400 mt-2">
               Al abrir el archivo, Android pedirá permiso para instalar desde el navegador.

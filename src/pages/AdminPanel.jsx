@@ -10,11 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
+import PublicarApk from '@/components/admin/PublicarApk';
 import { toast } from "sonner";
 import {
   Users, Shield, Activity, ShieldCheck, ShieldAlert,
   Pencil, Check, X, Search, ChevronLeft, ChevronRight, ChevronDown,
-  Clock, UserX, UserCheck,
+  Clock, UserX, UserCheck, Smartphone,
 } from 'lucide-react';
 
 // ── Constantes ───────────────────────────────────────────────────────────────
@@ -132,6 +133,7 @@ export default function AdminPanel() {
           { value: 'usuarios',  label: 'Usuarios',        icon: <Users       className="w-3.5 h-3.5" /> },
           { value: 'permisos',  label: 'Roles y Permisos', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
           { value: 'auditoria', label: 'Auditoría',        icon: <Activity    className="w-3.5 h-3.5" /> },
+          { value: 'apk',       label: 'Aplicación móvil', icon: <Smartphone  className="w-3.5 h-3.5" /> },
         ].map(({ value: v, label, icon }) => (
           <button
             key={v}
@@ -156,6 +158,7 @@ export default function AdminPanel() {
         <TabsContent value="usuarios"  className="mt-4"><UsuariosTab /></TabsContent>
         <TabsContent value="permisos"  className="mt-4"><PermisosTab /></TabsContent>
         <TabsContent value="auditoria" className="mt-4"><AuditoriaTab /></TabsContent>
+        <TabsContent value="apk"       className="mt-4"><PublicarApk /></TabsContent>
       </Tabs>
     </div>
   );
