@@ -3,7 +3,7 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { queryClientInstance } from '@/lib/query-client';
 import { persistOptions } from '@/lib/query-persist';
 import { pagesConfig } from './pages.config';
-import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import { BrowserRouter as Router, Route, Routes, Navigate } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import Login from '@/pages/Login';
@@ -39,6 +39,11 @@ const AuthenticatedApp = () => {
           <Route key={path} path={`/${path}`} element={<Page />} />
         ))}
       </Route>
+      {/* Con la sesión ya abierta, /Login no está entre las rutas y caía en el
+          comodín: al entrar —con contraseña, con Google o al registrarse— la
+          dirección seguía siendo /Login durante un instante y aparecía la página
+          de «no encontrado». Quien llegue aquí ya autenticado va al panel. */}
+      <Route path="/Login" element={<Navigate to="/" replace />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

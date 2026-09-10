@@ -185,6 +185,20 @@ decisión mía, no tuya.
   que ir a crearla. Mira la lista de proveedores de la cuenta y muestra un aviso
   descartable con un botón que abra el formulario.
 
+### Fase 7 bis — La ruta de acceso después de entrar
+
+Comprueba **las cuatro formas de entrar** —contraseña, proveedor externo, registro
+y vuelta del correo— y mira la dirección en la que quedas.
+
+- **Si tu router monta un conjunto de rutas distinto según haya sesión o no, la
+  ruta del inicio de sesión probablemente no existe en el conjunto autenticado.**
+  En cuanto la sesión pasa a válida, esa dirección cae en el comodín y aparece la
+  página de «no encontrado» justo al entrar, con cualquiera de las formas.
+- Redirige esa ruta al inicio cuando ya hay sesión, en el propio router. Es la
+  única defensa que cubre los cuatro caminos a la vez.
+- Y navega con el router, no con `window.location`: recargar la aplicación entera
+  deja ese «no encontrado» a la vista durante la recarga.
+
 ### Fase 8 — Buscador global
 
 Un único campo que busque en **todos** los tipos de dato y **no solo por nombre**:

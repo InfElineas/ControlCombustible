@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/api/supabaseClient';
 import { Fuel, Eye, EyeOff } from 'lucide-react';
 import { entrarConGoogle, escucharVueltaDeLogin, ENLACE_VUELTA, esApp } from '@/lib/authNativa';
@@ -6,6 +7,10 @@ import { MARCA_DEFINIR_CLAVE } from '@/components/ui-helpers/ClaveAcceso';
 import DescargarApp from '@/components/ui-helpers/DescargarApp';
 
 export default function Login() {
+  // Navegar con el router y no con window.location: recargar la aplicación
+  // entera dejaba a la vista, durante la recarga, la pantalla de «no
+  // encontrado» que provocaba la ruta /Login ya autenticada.
+  const navigate = useNavigate();
   const [mode, setMode]               = useState('login'); // 'login' | 'register'
   const [email, setEmail]             = useState('');
   const [password, setPassword]       = useState('');
@@ -31,7 +36,7 @@ export default function Login() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) window.location.href = '/';
+      if (session) navigate('/', { replace: true });
     });
   }, []);
 
@@ -40,7 +45,7 @@ export default function Login() {
   useEffect(() => escucharVueltaDeLogin((resultado) => {
     if (resultado?.recuperacion) sessionStorage.setItem(MARCA_DEFINIR_CLAVE, '1');
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) { window.location.href = '/'; return; }
+      if (session) { navigate('/', { replace: true }); return; }
       setLoading(false);
       // Se muestra el motivo tal cual lo da Supabase o el proveedor: sin el, no
       // hay forma de distinguir un enlace mal autorizado de un permiso negado.
@@ -70,7 +75,7 @@ export default function Login() {
       setError(traducirError(err.message));
       setLoading(false);
     } else {
-      window.location.href = '/';
+      navigate('/', { replace: true });
     }
   };
 
@@ -95,7 +100,7 @@ export default function Login() {
       setError(traducirError(err.message));
     } else if (data.session) {
       // Confirmación de email desactivada → ya tiene sesión
-      window.location.href = '/';
+      navigate('/', { replace: true });
     } else {
       setSuccessMsg('Revisa tu correo y confirma tu cuenta para poder iniciar sesión.');
     }
