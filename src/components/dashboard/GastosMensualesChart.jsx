@@ -63,15 +63,36 @@ function Tendencia({ pct }) {
   );
 }
 
-function CustomTooltip({ active, payload, label, series, colores }) {
-  if (!active || !payload?.length) return null;
-  const fila = payload[0]?.payload;
-  if (!fila) return null;
+/**
+ * Detalle del mes señalado.
+ *
+ * Va en su propia columna, fuera del gráfico, en lugar de flotar siguiendo al
+ * ratón: el recuadro flotante se ponía encima de las barras vecinas justo
+ * cuando hacían falta para comparar. Cuando no se señala nada, el hueco lo
+ * ocupa la leyenda, así que no se pierde espacio.
+ */
+function PanelDetalle({ fila, series, colores }) {
+  if (!fila) {
+    return (
+      <div className="space-y-1.5">
+        {series.map(s => (
+          <span key={s} className="flex items-center gap-1.5 min-w-0 text-[11px] text-slate-500">
+            <span className="w-3 h-3 rounded-sm inline-block shrink-0" style={{ background: colores[s] }} />
+            <span className="truncate">{s}</span>
+          </span>
+        ))}
+        <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
+          <span className="w-4 border-t-2 border-dashed border-orange-400 inline-block" />Litros (eje der.)
+        </span>
+        <p className="text-[10px] text-slate-400 pt-1.5">Toca o señala un mes para ver su reparto.</p>
+      </div>
+    );
+  }
 
   const litros = Number(fila.litros || 0);
   const total  = Number(fila.gasto  || 0);
-  // Solo las series con importe: enseñar seis filas a cero por cada mes vacío
-  // convierte el recuadro en una pared que tapa las barras de al lado.
+  // Solo las series con importe: listar las seis siempre, la mayoría a cero,
+  // convierte el panel en una lista de ruido.
   const partes = series
     .map(s => ({ nombre: s, valor: Number(fila[s] || 0) }))
     .filter(p => p.valor > 0)
@@ -79,16 +100,20 @@ function CustomTooltip({ active, payload, label, series, colores }) {
   const precioMed = litros > 0 && total > 0 ? total / litros : null;
 
   return (
-    <div className="glass rounded-xl px-3 py-2.5 text-xs space-y-1 max-w-[230px]">
-      <p className="font-semibold text-slate-700 border-b border-slate-100 pb-1 mb-1">{label}</p>
+    <div className="text-xs space-y-1">
+      <p className="font-semibold text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-700 pb-1 mb-1">
+        {fila.label}
+      </p>
+
+      {partes.length === 0 && <p className="text-slate-400">Sin compras este mes</p>}
 
       {partes.map(p => (
-        <div key={p.nombre} className="flex justify-between gap-3 items-center">
+        <div key={p.nombre} className="flex justify-between gap-2 items-center">
           <span className="flex items-center gap-1.5 min-w-0 text-slate-500">
             <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: colores[p.nombre] }} />
             <span className="truncate">{p.nombre}</span>
           </span>
-          <span className="font-semibold text-slate-700 shrink-0">
+          <span className="font-semibold text-slate-700 dark:text-slate-200 shrink-0">
             {formatMonto(p.valor)}
             <span className="text-slate-400 font-normal ml-1">
               {total > 0 ? `${Math.round((p.valor / total) * 100)}%` : ''}
@@ -97,18 +122,18 @@ function CustomTooltip({ active, payload, label, series, colores }) {
         </div>
       ))}
 
-      <div className="flex justify-between gap-3 border-t border-slate-100 pt-1 mt-1">
+      <div className="flex justify-between gap-2 border-t border-slate-100 dark:border-slate-700 pt-1 mt-1">
         <span className="text-slate-400">Total</span>
-        <span className="font-bold text-slate-800">{formatMonto(total)}</span>
+        <span className="font-bold text-slate-800 dark:text-slate-100">{formatMonto(total)}</span>
       </div>
-      <div className="flex justify-between gap-3">
+      <div className="flex justify-between gap-2">
         <span className="text-slate-400">Litros</span>
         <span className="font-semibold text-orange-600">{fmtL(litros)} L</span>
       </div>
       {precioMed !== null && (
-        <div className="flex justify-between gap-3">
+        <div className="flex justify-between gap-2">
           <span className="text-slate-400">Precio med.</span>
-          <span className="text-slate-600">{formatMonto(precioMed)}/L</span>
+          <span className="text-slate-600 dark:text-slate-300">{formatMonto(precioMed)}/L</span>
         </div>
       )}
     </div>
@@ -117,6 +142,7 @@ function CustomTooltip({ active, payload, label, series, colores }) {
 
 export default function GastosMensualesChart({ movimientos, consumidores = [], tiposConsumidor = [] }) {
   const [dimension, setDimension] = useState('combustible');
+  const [mesActivo, setMesActivo] = useState(null);
 
   const { data: conceptos = [] } = useQuery({
     queryKey: ['conceptos-precio'],
@@ -230,22 +256,25 @@ export default function GastosMensualesChart({ movimientos, consumidores = [], t
         {botonDim('concepto', 'Concepto de consumo')}
       </div>
 
-      {/* Leyenda: sale de los datos, no de una lista fija */}
-      <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap text-[11px] text-slate-500">
-        {series.map(s => (
-          <span key={s} className="flex items-center gap-1.5 min-w-0">
-            <span className="w-3 h-3 rounded-sm inline-block shrink-0" style={{ background: colores[s] }} />
-            <span className="truncate">{s}</span>
-          </span>
-        ))}
-        <span className="flex items-center gap-1.5">
-          <span className="w-4 border-t-2 border-dashed border-orange-400 inline-block" />Litros (eje der.)
-        </span>
-      </div>
-
-      {/* Gráfico */}
+      {/* Gráfico y detalle, uno al lado del otro: el detalle nunca se pone
+          encima de las barras. En pantalla estrecha se coloca debajo. */}
+      <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+      <div className="min-w-0 flex-1">
       <ResponsiveContainer width="100%" height={180}>
-        <ComposedChart data={data} margin={{ top: 4, right: 48, left: 0, bottom: 0 }}>
+        <ComposedChart
+          data={data}
+          margin={{ top: 4, right: 48, left: 0, bottom: 0 }}
+          onMouseMove={e => {
+            const i = e?.activeTooltipIndex;
+            setMesActivo(prev => (Number.isInteger(i) && i !== prev ? i : prev));
+          }}
+          onMouseLeave={() => setMesActivo(null)}
+          // En el teléfono no hay puntero que pasar por encima: se toca el mes.
+          onClick={e => {
+            const i = e?.activeTooltipIndex;
+            if (Number.isInteger(i)) setMesActivo(prev => (prev === i ? null : i));
+          }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
 
           <XAxis
@@ -289,9 +318,12 @@ export default function GastosMensualesChart({ movimientos, consumidores = [], t
             />
           )}
 
+          {/* Sigue haciendo falta para que Recharts pinte la columna resaltada
+              y calcule el mes señalado; el contenido va en el panel de al lado. */}
           <Tooltip
-            content={<CustomTooltip series={series} colores={colores} />}
+            content={() => null}
             cursor={{ fill: '#f0f9ff', radius: 4 }}
+            wrapperStyle={{ display: 'none' }}
           />
 
           {series.map((s, i) => (
@@ -320,6 +352,16 @@ export default function GastosMensualesChart({ movimientos, consumidores = [], t
           />
         </ComposedChart>
       </ResponsiveContainer>
+      </div>
+
+        <div className="w-full sm:w-[200px] shrink-0 sm:border-l sm:border-slate-100 sm:dark:border-slate-700 sm:pl-4">
+          <PanelDetalle
+            fila={mesActivo != null ? data[mesActivo] : null}
+            series={series}
+            colores={colores}
+          />
+        </div>
+      </div>
     </div>
   );
 }
