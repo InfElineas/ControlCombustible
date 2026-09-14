@@ -1,7 +1,7 @@
 # Aplicación móvil (APK) — estado y notas para retomar
 
-Última actualización: 10 de septiembre de 2026
-Commits de este bloque: `26ad8a2` … `6409805`
+Última actualización: 14 de septiembre de 2026
+Commits de este bloque: `26ad8a2` … `ee06489`
 
 ## Qué se hizo
 
@@ -272,7 +272,12 @@ El resultado queda en `android/app/build/outputs/apk/debug/app-debug.apk`.
 ## Pendiente
 
 ### Lo primero, y depende de ti
-1. **Ejecutar** [migrations/2026-09-10_apk_version.sql](migrations/2026-09-10_apk_version.sql).
+1. **Ejecutar dos migraciones**:
+   [2026-09-10_apk_version.sql](migrations/2026-09-10_apk_version.sql) y
+   [2026-09-14_realtime.sql](migrations/2026-09-14_realtime.sql). La segunda es
+   la que hace que los cambios lleguen solos a todas las pantallas: sin ella el
+   cliente se suscribe y no recibe nada, **sin error visible**.
+   De la primera:
    Sin eso, la pestaña de Aplicación móvil avisa de que falta el almacén y la web
    sigue ofreciendo el archivo estático.
 2. **Subir el `dist/` nuevo al hosting.** Varias cosas de las últimas semanas solo
@@ -283,6 +288,22 @@ El resultado queda en `android/app/build/outputs/apk/debug/app-debug.apk`.
    contraseña. La de la APK ya está.
 4. **Firmar la aplicación** siguiendo [android/LEEME-firma.md](android/LEEME-firma.md)
    si vas a repartirla fuera de pruebas, y publicarla desde el panel.
+
+### Cómo se mantiene todo al día
+[tiempoReal.js](src/lib/tiempoReal.js) escucha los cambios de las tablas y, en
+vez de que cada pantalla invalide a mano lo que cree afectado, el mapa va al
+revés: **de la tabla que cambia a todo lo que depende de ella**.
+
+Ese era el origen de que las alertas no se actualizaran: nadie fuera de la propia
+página de Alertas refrescaba las consultas `integridad-*`, así que registrar un
+movimiento no movía ni el contador del menú ni el panel. Con el mapa invertido no
+hay que acordarse en cada mutación nueva, que es de donde venían los olvidos.
+
+Los avisos se agrupan 400 ms: una importación dispara decenas de cambios seguidos
+y sin agrupar cada uno lanzaría su tanda de peticiones.
+
+Solo viaja el nombre de la tabla que cambió, nunca su contenido: lo que se relee
+después pasa por las políticas de siempre.
 
 ### Deuda del proyecto Android
 `targetSdk 35` no está instalado en esta máquina y no se puede descargar desde

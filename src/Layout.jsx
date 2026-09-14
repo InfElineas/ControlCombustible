@@ -25,6 +25,7 @@ import DescargarApp from '@/components/ui-helpers/DescargarApp';
 import ClaveAcceso, { MARCA_DEFINIR_CLAVE, useTieneClavePropia } from '@/components/ui-helpers/ClaveAcceso';
 import BandejaPendientes, { useColaPendiente } from '@/components/ui-helpers/BandejaPendientes';
 import { procesarCola } from '@/lib/colaEscritura';
+import { useTiempoReal } from '@/lib/tiempoReal';
 import { supabase } from '@/api/supabaseClient';
 
 // El campo movil ordena la barra inferior de la aplicación: las cuatro
@@ -202,6 +203,10 @@ export default function Layout() {
     try { localStorage.setItem(CLAVE_AVISO_SIN_CLAVE, '1'); } catch { /* volverá a salir */ }
   };
   const { total: sinEnviar, rechazadas } = useColaPendiente();
+
+  // Los cambios de cualquiera llegan a esta pantalla sin recargar. Solo con
+  // sesión validada y con red: sin ellas no hay a qué suscribirse.
+  useTiempoReal({ enabled: !!user && !sesionOffline && online });
 
   // Lo guardado sin conexión sale solo: al abrir la aplicación y en cuanto
   // vuelve la red. Sin esto habría que acordarse de entrar en la bandeja.
