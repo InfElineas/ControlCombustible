@@ -1289,6 +1289,20 @@ DECLARE
   v_disp   numeric;
   v_nombre text;
 BEGIN
+  -- Un cambio que no entra en el calculo del saldo —referencia, fecha, adjunto,
+  -- odometro— no se comprueba. Si no, un tanque ya descuadrado impedia editar
+  -- sus propios movimientos, que es justo lo que hace falta para arreglarlo.
+  IF TG_OP = 'UPDATE'
+     AND NEW.litros               IS NOT DISTINCT FROM OLD.litros
+     AND NEW.tipo                 IS NOT DISTINCT FROM OLD.tipo
+     AND NEW.consumidor_id        IS NOT DISTINCT FROM OLD.consumidor_id
+     AND NEW.consumidor_origen_id IS NOT DISTINCT FROM OLD.consumidor_origen_id
+     AND NEW.combustible_id       IS NOT DISTINCT FROM OLD.combustible_id
+     AND NEW.tarjeta_id           IS NOT DISTINCT FROM OLD.tarjeta_id
+  THEN
+    RETURN NEW;
+  END IF;
+
   IF NEW.tipo <> 'DESPACHO' OR NEW.consumidor_origen_id IS NULL THEN
     RETURN NEW;
   END IF;
@@ -1322,6 +1336,19 @@ DECLARE
   r      RECORD;
   v_disp numeric;
 BEGIN
+  -- Misma excepcion que en validate_despacho_stock: si el cambio no altera el
+  -- saldo, no se revisa el saldo.
+  IF TG_OP = 'UPDATE'
+     AND NEW.litros               IS NOT DISTINCT FROM OLD.litros
+     AND NEW.tipo                 IS NOT DISTINCT FROM OLD.tipo
+     AND NEW.consumidor_id        IS NOT DISTINCT FROM OLD.consumidor_id
+     AND NEW.consumidor_origen_id IS NOT DISTINCT FROM OLD.consumidor_origen_id
+     AND NEW.combustible_id       IS NOT DISTINCT FROM OLD.combustible_id
+     AND NEW.tarjeta_id           IS NOT DISTINCT FROM OLD.tarjeta_id
+  THEN
+    RETURN NULL;
+  END IF;
+
   IF TG_OP <> 'DELETE' THEN
     v_ids := v_ids || ARRAY[NEW.consumidor_id, NEW.consumidor_origen_id];
   END IF;

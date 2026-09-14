@@ -27,6 +27,21 @@ function motivoDeSubida(e) {
   return `No se pudo subir el adjunto: ${e?.message || 'error desconocido'}`;
 }
 
+// El guardado también falla por reglas de la base —los disparadores de stock
+// avisan con RAISE, que llega como un 400— y ese texto ya viene redactado en
+// español: se muestra tal cual. Solo se traduce lo que llega en inglés.
+function motivoDeGuardado(e) {
+  const m = e?.message || '';
+  const b = m.toLowerCase();
+  if (b.includes('row-level security') || e?.code === '42501')
+    return 'Tu usuario no tiene permiso para modificar este movimiento.';
+  if (b.includes('schema cache') || e?.code === 'PGRST204')
+    return `La base no reconoce un campo del formulario (${m}). Falta ejecutar una migración.`;
+  if (b.includes('jwt') || e?.status === 401)
+    return 'Tu sesión caducó. Vuelve a entrar y repite el guardado.';
+  return m || 'Error desconocido al guardar.';
+}
+
 export default function EditarMovimientoModal({ movimiento, onClose }) {
   const queryClient = useQueryClient();
   const { data: tarjetas = [] } = useQuery({ queryKey: ['tarjetas'], queryFn: () => base44.entities.Tarjeta.list() });
@@ -54,6 +69,7 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
   const [adjuntoFile, setAdjuntoFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [quitarAdjunto, setQuitarAdjunto] = useState(false);
+  const [errorGuardado, setErrorGuardado] = useState(null);
 
   useEffect(() => {
     if (movimiento) {
@@ -72,6 +88,7 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
         combustible_id: movimiento.combustible_id || '',
         precio_costo_unitario: movimiento.precio_costo_unitario ?? '',
       });
+      setErrorGuardado(null);
     }
     setAdjuntoFile(null);
     setQuitarAdjunto(false);
@@ -183,15 +200,20 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['movimientos'] });
       queryClient.invalidateQueries({ queryKey: ['v-stock-tanques'] });
+      setErrorGuardado(null);
       toast.success('Movimiento actualizado');
       onClose();
     },
     onError: (err) => {
-      toast.error(`Error al guardar: ${err?.message ?? 'Error desconocido'}`);
+      // El aviso también queda fijo en el modal: la base rechaza el guardado por
+      // reglas de stock y de permisos, y ese motivo se perdía con el toast.
+      setErrorGuardado(motivoDeGuardado(err));
+      toast.error('No se pudo guardar. El motivo aparece en el formulario.');
     },
   });
 
   const handleSubmit = async () => {
+    setErrorGuardado(null);
     const tarjeta = tarjetas.find(t => t.id === form.tarjeta_id);
     const consumidor = consumidores.find(c => c.id === form.consumidor_id);
     const consumidorOrigen = consumidores.find(c => c.id === form.consumidor_origen_id);
@@ -510,6 +532,13 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
               </label>
             )}
           </div>
+
+          {errorGuardado && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+              <p className="font-semibold">No se guardó el movimiento</p>
+              <p className="mt-1 whitespace-pre-wrap break-words">{errorGuardado}</p>
+            </div>
+          )}
 
           <Button
             onClick={handleSubmit}
