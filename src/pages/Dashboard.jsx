@@ -850,7 +850,11 @@ export default function Dashboard() {
           <SectionTitle icon={TrendingUp} title="Gastos por mes (últimos 6 meses)" iconColor="text-sky-500" />
           <Card className="border-0 shadow-sm">
             <CardContent className="p-5">
-              <GastosMensualesChart movimientos={movimientos} />
+              <GastosMensualesChart
+                movimientos={movimientos}
+                consumidores={consumidores}
+                tiposConsumidor={tiposConsumidor}
+              />
             </CardContent>
           </Card>
         </div>
