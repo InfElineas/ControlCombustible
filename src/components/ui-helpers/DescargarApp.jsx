@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Smartphone, Download, X } from 'lucide-react';
 import { esApp } from '@/lib/authNativa';
 import { useVersionVigente } from '@/components/admin/PublicarApk';
+import { recordarDescarga, CLAVE_DESCARGADA } from '@/components/ui-helpers/AvisoActualizacion';
 
 // Dirección del archivo de instalación. Se puede cambiar sin tocar el código con
 // VITE_URL_APK; por omisión se busca en el propio dominio, que es lo que hay que
@@ -27,6 +28,9 @@ export default function DescargarApp({ variante = 'tarjeta' }) {
   const [cerrado, setCerrado] = useState(() => {
     try { return localStorage.getItem(CLAVE_DESCARTE) === '1'; } catch { return false; }
   });
+  const [yaDescargada] = useState(() => {
+    try { return !!localStorage.getItem(CLAVE_DESCARGADA); } catch { return false; }
+  });
 
   // La versión publicada desde el panel manda. Si todavía no hay ninguna, se usa
   // el archivo estático del hosting, que es como funcionaba antes.
@@ -47,6 +51,9 @@ export default function DescargarApp({ variante = 'tarjeta' }) {
 
   if (variante === 'banner') {
     if (cerrado) return null;
+    // A quien ya se la descargó no se le vuelve a ofrecer: de las versiones
+    // nuevas le avisa AvisoActualizacion, y dos carteles a la vez sobran.
+    if (yaDescargada) return null;
     return (
       <div className="bg-sky-50 dark:bg-sky-950/40 border-b border-sky-100 dark:border-sky-900 px-4 py-2.5">
         <div className="max-w-6xl mx-auto flex items-center gap-3">
@@ -64,6 +71,7 @@ export default function DescargarApp({ variante = 'tarjeta' }) {
           <a
             href={enlace}
             download
+            onClick={() => recordarDescarga(publicada?.version)}
             className="shrink-0 inline-flex items-center gap-1.5 px-3 h-8 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium"
           >
             <Download className="w-3.5 h-3.5" /> Descargar
@@ -100,6 +108,7 @@ export default function DescargarApp({ variante = 'tarjeta' }) {
           <a
             href={enlace}
             download
+            onClick={() => recordarDescarga(publicada?.version)}
             className="mt-2 inline-flex items-center gap-1.5 px-3 h-8 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium"
           >
             <Download className="w-3.5 h-3.5" /> Descargar
@@ -109,7 +118,7 @@ export default function DescargarApp({ variante = 'tarjeta' }) {
               {notasVersion.slice(0, 4).map((linea, i) => (
                 <li key={i} className="text-[10px] text-slate-500 dark:text-slate-400 flex gap-1.5">
                   <span className="text-slate-300 shrink-0">·</span>
-                  <span className="min-w-0">{linea.replace(/^[·\-*]\s*/, '')}</span>
+                  <span className="min-w-0">{linea.replace(/^[·•\-*]\s*/, '')}</span>
                 </li>
               ))}
             </ul>

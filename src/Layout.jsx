@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import BuscadorGlobal from '@/components/ui-helpers/BuscadorGlobal';
 import DescargarApp from '@/components/ui-helpers/DescargarApp';
+import AvisoActualizacion from '@/components/ui-helpers/AvisoActualizacion';
 import ClaveAcceso, { MARCA_DEFINIR_CLAVE, useTieneClavePropia } from '@/components/ui-helpers/ClaveAcceso';
 import BandejaPendientes, { useColaPendiente } from '@/components/ui-helpers/BandejaPendientes';
 import { procesarCola } from '@/lib/colaEscritura';
@@ -593,6 +594,7 @@ export default function Layout() {
       <BuscadorGlobal abierto={buscando} onCerrar={() => setBuscando(false)} />
       <ClaveAcceso abierto={cambiandoClave} onCerrar={() => setCambiandoClave(false)} />
       <BandejaPendientes abierto={viendoBandeja} onCerrar={() => setViendoBandeja(false)} />
+      <AvisoActualizacion />
 
       {/* Botón flotante de ayuda, por encima de la barra de pestañas */}
       {currentPageName !== 'Ayuda' && (
