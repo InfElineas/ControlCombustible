@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertTriangle, Settings2, Mail, ChevronDown, ChevronUp, Send, Fuel, ShieldAlert, Trash2, RefreshCw, CheckCircle2, Wrench, Truck, Check, Undo2 } from 'lucide-react';
+import { AlertTriangle, Settings2, Mail, ChevronDown, ChevronUp, Send, Fuel, ShieldAlert, Trash2, RefreshCw, CheckCircle2, Wrench, Truck, Check, Undo2, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { logAudit } from '@/api/auditLog';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
@@ -379,12 +380,21 @@ function BloqueAnomalia({ titulo, nivel = 'warn', children }) {
   );
 }
 
-function FilaAnomalia({ nivel = 'warn', children, onDescartar, puedeDescartar }) {
+// Un aviso sin acceso al registro que lo provoca obliga a buscarlo a mano por
+// fecha y nombre. `enlaces` lleva a cada uno de los implicados: en un duplicado
+// son varios, y compararlos es justo lo que hay que hacer para decidir.
+function FilaAnomalia({ nivel = 'warn', children, onDescartar, puedeDescartar, enlaces = [] }) {
   return (
     <div className={`flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg px-3 py-2 border text-xs gap-2 ${
       nivel === 'crit' ? 'border-red-100 dark:border-red-900' : 'border-orange-100 dark:border-orange-900'
     }`}>
       {children}
+      {enlaces.map(({ etiqueta, url }, i) => (
+        <Link key={i} to={url} title="Ver el registro que provoca el aviso"
+          className="shrink-0 inline-flex items-center gap-1 px-1.5 h-6 rounded text-sky-600 hover:text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950 font-medium">
+          <ExternalLink className="w-3 h-3" />{etiqueta}
+        </Link>
+      ))}
       {onDescartar && puedeDescartar && (
         <Button variant="ghost" size="icon"
           className="h-6 w-6 shrink-0 text-slate-300 hover:text-emerald-600"
@@ -519,6 +529,7 @@ function IntegridadDatos() {
         <BloqueAnomalia nivel="crit" titulo={`Entrada mayor que la capacidad del depósito (${anomalias.sobrellenado.length})`}>
           {anomalias.sobrellenado.map(m => (
             <FilaAnomalia key={m.id} nivel="crit" puedeDescartar={puedeDescartar}
+              enlaces={[{ etiqueta: 'Ver', url: `${createPageUrl('Movimientos')}?movimientoId=${m.id}` }]}
               onDescartar={() => descartarMut.mutate({ tipo: 'sobrellenado', clave: `sobre|${m.id}` })}>
               <span className="font-mono text-slate-400 shrink-0">{m.fecha}</span>
               <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{m.consumidor_nombre}</span>
@@ -534,6 +545,7 @@ function IntegridadDatos() {
         <BloqueAnomalia nivel="crit" titulo={`Bonificaciones entregadas sin movimiento asociado (${entregadasVis.length})`}>
           {entregadasVis.map(v => (
             <FilaAnomalia key={v.id} nivel="crit" puedeDescartar={puedeDescartar}
+              enlaces={[{ etiqueta: 'Ver', url: `${createPageUrl('Ventas')}?q=${encodeURIComponent(v.beneficiario_nombre ?? '')}` }]}
               onDescartar={() => descartarMut.mutate({ tipo: 'entrega_sin_mov', clave: `entrega|${v.id}` })}>
               <span className="font-mono text-slate-400 shrink-0">{v.fecha_venta}</span>
               <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{v.beneficiario_nombre}</span>
@@ -548,6 +560,10 @@ function IntegridadDatos() {
         <BloqueAnomalia titulo={`Posibles registros duplicados (${anomalias.duplicados.length})`}>
           {anomalias.duplicados.map(({ items: g, clave }) => (
             <FilaAnomalia key={clave} puedeDescartar={puedeDescartar}
+              enlaces={g.map((m, i) => ({
+                etiqueta: g.length > 1 ? String(i + 1) : 'Ver',
+                url: `${createPageUrl('Movimientos')}?movimientoId=${m.id}`,
+              }))}
               onDescartar={() => descartarMut.mutate({ tipo: 'duplicado', clave })}>
               <span className="font-mono text-slate-400 shrink-0">{g[0].fecha}</span>
               <span className="flex-1 truncate text-slate-600 dark:text-slate-300">
@@ -565,6 +581,7 @@ function IntegridadDatos() {
         <BloqueAnomalia titulo={`Movimientos con fecha futura (${anomalias.fechaFutura.length})`}>
           {anomalias.fechaFutura.map(m => (
             <FilaAnomalia key={m.id} puedeDescartar={puedeDescartar}
+              enlaces={[{ etiqueta: 'Ver', url: `${createPageUrl('Movimientos')}?movimientoId=${m.id}` }]}
               onDescartar={() => descartarMut.mutate({ tipo: 'fecha_futura', clave: `futura|${m.id}` })}>
               <span className="font-mono text-orange-600 font-semibold shrink-0">{m.fecha}</span>
               <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{m.consumidor_nombre}</span>
@@ -578,6 +595,7 @@ function IntegridadDatos() {
         <BloqueAnomalia titulo={`Ajustes sin motivo escrito (${anomalias.ajusteSinMotivo.length})`}>
           {anomalias.ajusteSinMotivo.map(m => (
             <FilaAnomalia key={m.id} puedeDescartar={puedeDescartar}
+              enlaces={[{ etiqueta: 'Ver', url: `${createPageUrl('Movimientos')}?movimientoId=${m.id}` }]}
               onDescartar={() => descartarMut.mutate({ tipo: 'ajuste_sin_motivo', clave: `ajuste|${m.id}` })}>
               <span className="font-mono text-slate-400 shrink-0">{m.fecha}</span>
               <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{m.consumidor_nombre}</span>
@@ -596,6 +614,7 @@ function IntegridadDatos() {
           {descuadresVis.map(d => (
             <FilaAnomalia key={`${d.consumidor_id}-${d.combustible_nombre}`} nivel="crit"
               puedeDescartar={puedeDescartar}
+              enlaces={[{ etiqueta: 'Ver movimientos', url: `${createPageUrl('Movimientos')}?consumidor=${d.consumidor_id}` }]}
               onDescartar={() => descartarMut.mutate({
                 tipo: 'descuadre',
                 clave: `descuadre|${d.consumidor_id}|${d.litros_descuadre}`,
@@ -626,6 +645,10 @@ function IntegridadDatos() {
               <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{(m.referencia || '').replace('Bonificación combustible: ', '')}</span>
               <span className="text-orange-600 font-semibold shrink-0">{m.litros} L</span>
               <span className="text-slate-400 truncate max-w-[140px] shrink-0">{m.consumidor_origen_nombre}</span>
+              <Link to={`${createPageUrl('Movimientos')}?movimientoId=${m.id}`} title="Ver el movimiento"
+                className="shrink-0 inline-flex items-center gap-1 px-1.5 h-6 rounded text-sky-600 hover:text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950 font-medium">
+                <ExternalLink className="w-3 h-3" />Ver
+              </Link>
             </div>
           ))}
         </div>
@@ -639,6 +662,11 @@ function IntegridadDatos() {
               <span className="flex-1 font-medium text-slate-700 dark:text-slate-200 truncate">{v.beneficiario_nombre}</span>
               <span className="text-slate-500 shrink-0">{v.litros} L {v.combustible_nombre}</span>
               <span className="text-orange-600 font-semibold shrink-0">DESPACHO vivo</span>
+              <Link to={`${createPageUrl('Ventas')}?q=${encodeURIComponent(v.beneficiario_nombre ?? '')}`}
+                title="Ver la bonificación"
+                className="shrink-0 inline-flex items-center gap-1 px-1.5 h-6 rounded text-sky-600 hover:text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950 font-medium">
+                <ExternalLink className="w-3 h-3" />Ver
+              </Link>
             </div>
           ))}
         </div>

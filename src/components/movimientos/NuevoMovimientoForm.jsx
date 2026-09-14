@@ -17,6 +17,22 @@ import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import { gpsApi, metersToKm } from '@/api/gpsClient';
 import { useConexion } from '@/lib/useConexion';
 
+// Traduce el fallo del almacén a algo accionable. Antes decía solo "Error al
+// subir adjunto", que no distingue un permiso de un bucket inexistente y obliga
+// a abrir la consola para averiguarlo.
+function motivoDeSubida(e) {
+  const m = (e?.message || '').toLowerCase();
+  if (m.includes('bucket not found'))
+    return 'Falta el almacén de adjuntos. Ejecuta la migración 2026-09-14_adjuntos_movimiento.sql.';
+  if (m.includes('row-level security') || m.includes('unauthorized') || m.includes('403'))
+    return 'Tu usuario no tiene permiso para subir adjuntos.';
+  if (m.includes('exceeded') || m.includes('too large') || m.includes('413'))
+    return 'El archivo es demasiado grande (máximo 10 MB).';
+  if (m.includes('payload') || m.includes('mime'))
+    return 'Ese tipo de archivo no se admite.';
+  return `No se pudo subir el adjunto: ${e?.message || 'error desconocido'}`;
+}
+
 export default function NuevoMovimientoForm({ onSuccess }) {
   const queryClient = useQueryClient();
   const { canRecargar, canDepositar, canComprar, canDespachar, canVerPrecios } = useUserRole();
@@ -554,7 +570,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
         .from('movimiento-adjuntos')
         .upload(path, adjuntoFile);
       setIsUploading(false);
-      if (uploadError) { toast.error('Error al subir adjunto'); return; }
+      if (uploadError) { toast.error(motivoDeSubida(uploadError), { duration: 9000 }); return; }
       const { data: { publicUrl } } = supabase.storage.from('movimiento-adjuntos').getPublicUrl(path);
       data.adjunto_url = publicUrl;
       data.adjunto_nombre = adjuntoFile.name;
