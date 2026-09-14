@@ -26,6 +26,7 @@ import { logAudit } from '@/api/auditLog';
 import { encolar, esFalloDeRed } from '@/lib/colaEscritura';
 import { prepararTransicion, aplicarTransicion, resumirTransicion } from '@/lib/transicionVenta';
 import BandejaPendientes, { useColaPendiente } from '@/components/ui-helpers/BandejaPendientes';
+import ResumenBonificaciones from '@/components/ventas/ResumenBonificaciones';
 
 
 function WorkerAvatar({ nombre }) {
@@ -1220,6 +1221,9 @@ export default function Ventas() {
   const [viendoEnEspera, setViendoEnEspera] = useState(false);
   const { total: enEspera } = useColaPendiente();
   const [filtroBen, setFiltroBen] = useState('');
+  const [filtroCombustible, setFiltroCombustible] = useState('all');
+  const [filtroTanque, setFiltroTanque] = useState('all');
+  const [filtroArea, setFiltroArea] = useState('all');
 
   // Llegada desde el buscador global: deja la lista ya filtrada por ese nombre y
   // sin filtro de mes, porque el registro buscado puede ser de cualquier fecha.
@@ -1359,24 +1363,57 @@ export default function Ventas() {
     return ventasRaw.filter(v => {
       if (filtroMes && !v.fecha_venta.startsWith(filtroMes)) return false;
       if (filtroBen && !(v.beneficiario_nombre ?? '').toLowerCase().includes(filtroBen.toLowerCase())) return false;
+      if (filtroCombustible !== 'all' && v.combustible_id !== filtroCombustible) return false;
+      if (filtroTanque !== 'all' && v.tanque_origen_id !== filtroTanque) return false;
+      if (filtroArea !== 'all' && (v.beneficiario_area ?? '') !== filtroArea) return false;
       return true;
     });
-  }, [ventasRaw, filtroMes, filtroBen]);
+  }, [ventasRaw, filtroMes, filtroBen, filtroCombustible, filtroTanque, filtroArea]);
+
+  // Valores que existen de verdad en los datos, para no ofrecer filtros que no
+  // devuelven nada.
+  const combustiblesConVentas = useMemo(() => {
+    const m = new Map();
+    ventasRaw.forEach(v => { if (v.combustible_id) m.set(v.combustible_id, v.combustible_nombre); });
+    return [...m.entries()].sort((a, b) => (a[1] ?? '').localeCompare(b[1] ?? ''));
+  }, [ventasRaw]);
+
+  const tanquesConVentas = useMemo(() => {
+    const m = new Map();
+    ventasRaw.forEach(v => { if (v.tanque_origen_id) m.set(v.tanque_origen_id, v.tanque_origen_nombre); });
+    return [...m.entries()].sort((a, b) => (a[1] ?? '').localeCompare(b[1] ?? ''));
+  }, [ventasRaw]);
+
+  const areasConVentas = useMemo(() => {
+    const s = new Set();
+    ventasRaw.forEach(v => { if (v.beneficiario_area) s.add(v.beneficiario_area); });
+    return [...s].sort((a, b) => a.localeCompare(b));
+  }, [ventasRaw]);
+
+  const hayFiltros = filtroCombustible !== 'all' || filtroTanque !== 'all'
+    || filtroArea !== 'all' || !!filtroBen;
+
+  const limpiarFiltros = () => {
+    setFiltroCombustible('all'); setFiltroTanque('all');
+    setFiltroArea('all'); setFiltroBen('');
+  };
 
   const ventasHistorial = useMemo(() => {
     if (filtroEstado === 'all') return ventasHistorialBase;
     return ventasHistorialBase.filter(v => normalizeEstado(v.estado) === filtroEstado);
   }, [ventasHistorialBase, filtroEstado]);
 
-  const kpis = useMemo(() => {
-    const mes = ventasRaw.filter(v => v.fecha_venta.startsWith(filtroMes));
-    return {
-      total:      mes.length,
-      pendientes: mes.filter(v => v.estado === 'PENDIENTE').length,
-      litros:     mes.reduce((s, v) => s + (v.litros || 0), 0),
-      monto:      mes.filter(v => v.estado !== 'CANCELADO' && v.estado !== 'ANULADO').reduce((s, v) => s + (v.monto || 0), 0),
-    };
-  }, [ventasRaw, filtroMes]);
+  // Las cifras de arriba salen del mismo conjunto que la lista de abajo. Antes
+  // solo miraban el mes, así que al filtrar por combustible o por trabajador
+  // seguían contando todo y no cuadraban con lo que se veía.
+  const kpis = useMemo(() => ({
+    total:      ventasHistorialBase.length,
+    pendientes: ventasHistorialBase.filter(v => normalizeEstado(v.estado) === 'PENDIENTE').length,
+    litros:     ventasHistorialBase.reduce((s, v) => s + (v.litros || 0), 0),
+    monto:      ventasHistorialBase
+      .filter(v => !['CANCELADO', 'ANULADO'].includes(normalizeEstado(v.estado)))
+      .reduce((s, v) => s + (v.monto || 0), 0),
+  }), [ventasHistorialBase]);
 
   const ventasBloqueadas = useMemo(() =>
     ventasHistorialBase.filter(v => {
@@ -1445,6 +1482,55 @@ export default function Ventas() {
           >
             {filtroMes ? 'Ver todo el histórico' : 'Filtrar por mes'}
           </Button>
+
+          {/* Los tres filtros que responden la mayoría de las consultas sin
+              tener que entrar y salir de las pestañas. Solo se ofrecen valores
+              que existen en los datos. */}
+          <Select value={filtroCombustible} onValueChange={setFiltroCombustible}>
+            <SelectTrigger className="h-8 text-xs w-auto min-w-[9rem]">
+              <SelectValue placeholder="Combustible" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los combustibles</SelectItem>
+              {combustiblesConVentas.map(([id, nombre]) => (
+                <SelectItem key={id} value={id}>{nombre}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={filtroTanque} onValueChange={setFiltroTanque}>
+            <SelectTrigger className="h-8 text-xs w-auto min-w-[9rem]">
+              <SelectValue placeholder="Origen" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos los orígenes</SelectItem>
+              {tanquesConVentas.map(([id, nombre]) => (
+                <SelectItem key={id} value={id}>{nombre}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {areasConVentas.length > 0 && (
+            <Select value={filtroArea} onValueChange={setFiltroArea}>
+              <SelectTrigger className="h-8 text-xs w-auto min-w-[9rem]">
+                <SelectValue placeholder="Área" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas las áreas</SelectItem>
+                {areasConVentas.map(a => (
+                  <SelectItem key={a} value={a}>{a}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {hayFiltros && (
+            <Button size="sm" variant="ghost"
+              className="h-8 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              onClick={limpiarFiltros}>
+              <X className="w-3.5 h-3.5 mr-1" /> Quitar filtros
+            </Button>
+          )}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
@@ -1523,6 +1609,12 @@ export default function Ventas() {
           </span>
         </button>
       )}
+
+      <ResumenBonificaciones
+        ventas={ventasHistorialBase}
+        normalizeEstado={normalizeEstado}
+        canVerPrecios={canVerPrecios}
+      />
 
       {ventasBloqueadas.length > 0 && (
         <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
