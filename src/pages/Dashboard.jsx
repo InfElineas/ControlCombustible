@@ -29,6 +29,11 @@ export default function Dashboard() {
   const role = rawRole === 'admin' ? 'superadmin' : rawRole;
   const isOperador = role === 'operador';
   const isEconomico = role === 'economico';
+  const isSuperAdmin = role === 'superadmin';
+  // El superadmin ve lo de todos los roles: estas dos secciones se calculaban y
+  // se dibujaban solo para económico, así que al administrador le faltaba
+  // contenido que su contable sí tenía.
+  const veFinanzasOperativas = isEconomico || isSuperAdmin;
 
   const [mesFiltro, setMesFiltro] = useState('ALL');
   const [statModal, setStatModal] = useState({ open: false, tipo: null });
@@ -458,7 +463,7 @@ export default function Dashboard() {
   }, [consumidores, consumidoresReservaIds, stockPorConsumidor]);
 
   const economicoStats = useMemo(() => {
-    if (!isEconomico) return null;
+    if (!veFinanzasOperativas) return null;
 
     // Inventario por tanque (stock actual por consumidor de tipo reserva/tanque)
     const tanques = consumidores
@@ -544,7 +549,7 @@ export default function Dashboard() {
       precioPromPer, ingresosCobradosPer, ingresosPorCobrarPer,
       costoVentasPer, gananciaBrutaPer, costoServiciosPer, resultadoNetoPer,
     };
-  }, [isEconomico, consumidores, consumidoresReservaIds, movimientos, movimientosFiltrados, ventasAllTime, consumidoresSurtidorIds, mesFiltro]);
+  }, [veFinanzasOperativas, consumidores, consumidoresReservaIds, movimientos, movimientosFiltrados, ventasAllTime, consumidoresSurtidorIds, mesFiltro]);
 
   // Resumen del mes
   const comprasMes = movimientosFiltrados.filter(m => m.tipo === 'COMPRA');
@@ -854,7 +859,7 @@ export default function Dashboard() {
       {/* ═══════════════════════════════════════════════════════════════
            SECCIONES EXCLUSIVAS PARA ECONOMICO
       ═══════════════════════════════════════════════════════════════ */}
-      {isEconomico && economicoStats && (
+      {veFinanzasOperativas && economicoStats && (
         <>
           {/* Inventario actual por tanque */}
           {economicoStats.tanques.length > 0 && (

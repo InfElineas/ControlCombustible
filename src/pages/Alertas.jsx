@@ -772,7 +772,13 @@ export default function Alertas() {
       </div>
 
       {/* Integridad de datos — solo superadmin */}
-      {isSuperAdmin && <IntegridadDatos />}
+      {/* Lo ve todo el que puede abrir esta página —superadmin, operador y
+          auditor—, que son los mismos a los que el menú les cuenta las alertas.
+          Restringirlo a superadmin dejaba al auditor viendo el número en el menú
+          y una página sin el contenido que lo produce, que es justo su trabajo.
+          Las acciones de dentro siguen limitadas por puedeDescartar y
+          puedeSanear. */}
+      <IntegridadDatos />
 
       {/* Alertas de transporte */}
       {(() => {
