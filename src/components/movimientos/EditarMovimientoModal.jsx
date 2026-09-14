@@ -48,6 +48,7 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
     consumidor_id: movimiento?.consumidor_id || '',
     consumidor_origen_id: movimiento?.consumidor_origen_id || '',
     combustible_id: movimiento?.combustible_id || '',
+    precio_costo_unitario: movimiento?.precio_costo_unitario ?? '',
   }));
   const [filtroTipoConsumidor, setFiltroTipoConsumidor] = useState('all');
   const [adjuntoFile, setAdjuntoFile] = useState(null);
@@ -69,6 +70,7 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
         consumidor_id: movimiento.consumidor_id || '',
         consumidor_origen_id: movimiento.consumidor_origen_id || '',
         combustible_id: movimiento.combustible_id || '',
+        precio_costo_unitario: movimiento.precio_costo_unitario ?? '',
       });
     }
     setAdjuntoFile(null);
@@ -245,6 +247,14 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
     // Horas de uso para equipos/generadores
     if (esEquipoConsumidor && form.horas_uso !== '') {
       data.horas_uso = parseFloat(form.horas_uso);
+    }
+
+    // movimiento.tipo y no la constante `tipo`, que se declara más abajo.
+    if (movimiento.tipo === 'DEPOSITO') {
+      // Vacío guarda null —«no se sabe»— y no cero, que significaría gratis.
+      data.precio_costo_unitario = form.precio_costo_unitario === ''
+        ? null
+        : parseFloat(form.precio_costo_unitario);
     }
 
     if (adjuntoFile) {
@@ -430,6 +440,32 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
             <div>
               <Label className="text-xs text-slate-500">Nivel en tanque antes de cargar (L)</Label>
               <Input type="number" step="0.1" min="0" value={form.nivel_tanque} onChange={e => set('nivel_tanque', e.target.value)} className="mt-1" placeholder="Litros que quedaban" />
+            </div>
+          )}
+
+          {/* Precio de costo — solo DEPOSITO.
+              Faltaba en la edición: un depósito registrado sin costo, o con uno
+              equivocado, no se podía corregir por ningún sitio, y de ese dato
+              depende toda la ganancia de las bonificaciones del tanque. */}
+          {tipo === 'DEPOSITO' && (
+            <div>
+              <Label className="text-xs text-slate-500">Precio de costo por litro</Label>
+              <Input
+                type="number" step="0.0001" min="0"
+                value={form.precio_costo_unitario}
+                onChange={e => set('precio_costo_unitario', e.target.value)}
+                className="mt-1" placeholder="Ej: 25.5000"
+              />
+              {form.precio_costo_unitario === '' ? (
+                <p className="text-[10px] text-amber-600 mt-1">
+                  Sin este dato, el combustible que salga de este tanque queda fuera del cálculo de ganancia.
+                </p>
+              ) : (
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Cambiarlo recalcula el costo promedio del tanque y la ganancia de
+                  todas las bonificaciones que salieron de él, también las de meses anteriores.
+                </p>
+              )}
             </div>
           )}
 

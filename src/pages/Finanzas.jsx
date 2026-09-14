@@ -173,12 +173,43 @@ export default function Finanzas() {
 
   const totalGastoFlota = gastoFlotaPorCombustible.reduce((s, g) => s + g.gasto, 0);
 
-  // Bonificaciones cobradas
+  // Bonificaciones cobradas.
+  //
+  // Un tanque sin costo conocido NO cuenta como costo cero: eso daba una
+  // ganancia inflada sin avisar de que faltaba el dato. Se separa lo costeado de
+  // lo que no, igual que ya hacía el gasto de flota, y la ganancia se calcula
+  // solo sobre la parte de la que se sabe el costo.
   const ventasCobradas = ventasPeriodo.filter(v => v.estado === 'PAGADO_FINALIZADO');
   const ingresoVentas  = ventasCobradas.reduce((s, v) => s + (v.monto || 0), 0);
-  const costoVentas    = ventasCobradas
-    .reduce((s, v) => s + ((cppMap[v.tanque_origen_id] ?? 0) * (v.litros || 0)), 0);
-  const gananciaBruta  = ingresoVentas - costoVentas;
+
+  const ventasCosteo = useMemo(() => {
+    let costo = 0, ingresoConCosto = 0, litrosSinCpp = 0, ingresoSinCosto = 0;
+    const tanquesSinCpp = new Set();
+    ventasCobradas.forEach(v => {
+      const cpp = cppMap[v.tanque_origen_id];
+      if (cpp == null) {
+        litrosSinCpp += v.litros || 0;
+        ingresoSinCosto += v.monto || 0;
+        if (v.tanque_origen_nombre) tanquesSinCpp.add(v.tanque_origen_nombre);
+        return;
+      }
+      costo += cpp * (v.litros || 0);
+      ingresoConCosto += v.monto || 0;
+    });
+    return { costo, ingresoConCosto, litrosSinCpp, ingresoSinCosto, tanquesSinCpp: [...tanquesSinCpp] };
+  }, [ventasCobradas, cppMap]);
+
+  const costoVentas   = ventasCosteo.costo;
+  // Ingreso y costo de la MISMA parte: restar todo el ingreso a un costo parcial
+  // daría una ganancia que no significa nada.
+  const gananciaBruta = ventasCosteo.ingresoConCosto - costoVentas;
+
+  // Tanques cuyo CPP viene de un ajuste manual: mientras exista, los precios de
+  // costo de sus depósitos no se aplican, y eso desconcierta si no se dice.
+  const tanquesConCppManual = useMemo(
+    () => cppTanques.filter(r => r.cpp_es_manual).map(r => r.consumidor_id),
+    [cppTanques],
+  );
 
   // Resumen período
   const totalGastos  = totalGastoFlota + costoVentas;
@@ -387,20 +418,55 @@ export default function Finanzas() {
             <div>
               <p className="text-[10px] text-slate-400">Costo bonificaciones</p>
               <p className="text-base font-bold text-rose-500 tabular-nums">−{formatMonto(costoVentas)}</p>
+              {ventasCosteo.litrosSinCpp > 0 && (
+                <p className="text-[10px] text-amber-600">
+                  {fmtL(ventasCosteo.litrosSinCpp)} L sin costo
+                </p>
+              )}
             </div>
             <div>
               <p className="text-[10px] text-slate-400">Ingreso bonificaciones</p>
               <p className="text-base font-bold text-emerald-600 tabular-nums">+{formatMonto(ingresoVentas)}</p>
+              {ventasCosteo.ingresoSinCosto > 0 && (
+                <p className="text-[10px] text-amber-600">
+                  {formatMonto(ventasCosteo.ingresoSinCosto)} fuera de la ganancia
+                </p>
+              )}
             </div>
             <div className="border-l border-slate-200 pl-4">
               <p className="text-[10px] text-slate-400">Ganancia bruta</p>
               <p className={`text-lg font-bold tabular-nums ${gananciaBruta >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
                 {gananciaBruta >= 0 ? '+' : '−'}{formatMonto(Math.abs(gananciaBruta))}
               </p>
+              {ventasCosteo.litrosSinCpp > 0 && (
+                <p className="text-[10px] text-amber-600">solo sobre lo costeado</p>
+              )}
             </div>
           </div>
-          {(totalGastoFlota === 0 || costoVentas === 0) && (
-            <p className="text-[10px] text-slate-300 mt-2">Los valores con CPP 0 requieren definir precio de costo en los depósitos del ISO tank.</p>
+          {(ventasCosteo.litrosSinCpp > 0 || gastoFlotaPorCombustible.some(g => g.sinCpp > 0)) && (
+            <div className="mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 px-3 py-2">
+              <p className="text-[11px] font-semibold text-amber-800 dark:text-amber-200">
+                Hay combustible sin precio de costo, y por eso queda fuera de estas cifras
+              </p>
+              <p className="text-[10px] text-amber-700/80 dark:text-amber-300/80 mt-0.5">
+                {ventasCosteo.litrosSinCpp > 0 && (
+                  <>
+                    {fmtL(ventasCosteo.litrosSinCpp)} L de bonificaciones cobradas
+                    {ventasCosteo.tanquesSinCpp.length > 0 && ` (${ventasCosteo.tanquesSinCpp.join(', ')})`}
+                    , con {formatMonto(ventasCosteo.ingresoSinCosto)} de ingreso que no entra en la ganancia.{' '}
+                  </>
+                )}
+                Se arregla poniendo el precio de costo en los DEPÓSITOS de esos tanques —
+                se puede editar un depósito ya registrado— o con un ajuste manual de CPP.
+              </p>
+            </div>
+          )}
+          {tanquesConCppManual.length > 0 && (
+            <p className="text-[10px] text-slate-400 mt-2">
+              {tanquesConCppManual.length === 1 ? 'Un tanque usa' : `${tanquesConCppManual.length} tanques usan`} un
+              ajuste manual de CPP: mientras exista, el precio de costo de sus depósitos no se aplica.
+              Se quita desde el panel de ajustes, más abajo.
+            </p>
           )}
         </CardContent>
       </Card>
@@ -424,6 +490,8 @@ export default function Finanzas() {
             loading={loadingVentas}
             gananciaBruta={gananciaBruta}
             ingresoVentas={ingresoVentas}
+            ingresoConCosto={ventasCosteo.ingresoConCosto}
+            ingresoSinCosto={ventasCosteo.ingresoSinCosto}
             costoVentas={costoVentas}
             cppMap={cppMap}
           />
@@ -653,7 +721,14 @@ function TarjetasTab({ movPeriodo, tarjetas, periodo, loading }) {
 // ── Bonificaciones tab ────────────────────────────────────────────────────────
 
 
-function BonificacionesTab({ ventas, loading, gananciaBruta = 0, ingresoVentas = 0, costoVentas = 0, cppMap = {} }) {
+function BonificacionesTab({
+  ventas, loading, gananciaBruta = 0, ingresoVentas = 0, costoVentas = 0,
+  // El ingreso de la parte costeada, que es el que cuadra con la ganancia. Sin
+  // separarlos, aquí se leía ingreso total menos costo parcial y la resta no
+  // daba la ganancia mostrada.
+  ingresoConCosto = 0, ingresoSinCosto = 0,
+  cppMap = {},
+}) {
   const activas = ventas.filter(v => v.estado !== 'CANCELADO' && v.estado !== 'ANULADO');
   const totalMonto = activas.reduce((s, v) => s + (v.monto || 0), 0);
   const totalLitros = activas.reduce((s, v) => s + (v.litros || 0), 0);
@@ -700,7 +775,12 @@ function BonificacionesTab({ ventas, loading, gananciaBruta = 0, ingresoVentas =
             <div className="grid grid-cols-3 gap-4 text-sm">
               <div>
                 <p className="text-[10px] text-slate-400 uppercase tracking-wide">Ingreso ventas</p>
-                <p className="font-bold text-slate-800">{formatMonto(ingresoVentas)}</p>
+                <p className="font-bold text-slate-800">{formatMonto(ingresoConCosto)}</p>
+                {ingresoSinCosto > 0 && (
+                  <p className="text-[10px] text-amber-600">
+                    + {formatMonto(ingresoSinCosto)} sin costo conocido
+                  </p>
+                )}
               </div>
               <div>
                 <p className="text-[10px] text-slate-400 uppercase tracking-wide">Costo (CPP)</p>
