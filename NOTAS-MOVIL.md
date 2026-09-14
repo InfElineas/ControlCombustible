@@ -283,6 +283,27 @@ Para comprobarlo, abrir la consola del navegador en la web: el mensaje es
 of application/x-javascript». Si en vez de eso sale un 404 de
 `/assets/index-….js`, lo que falló fue la copia de los archivos.
 
+### La web está detrás de Cloudflare
+
+Se nota porque el HTML servido trae al final un `beacon.min.js` de
+`cloudflareinsights.com`, que inyecta él. Eso añade dos formas de quedarse en
+blanco **sin ningún error en consola**:
+
+- **Una respuesta mala guardada en la caché.** Si en algún momento el servidor
+  devolvió el HTML del index bajo la dirección de un `.js` —pasa cuando falta
+  el `.htaccess`—, Cloudflare la guarda y la sigue sirviendo aunque se vuelva a
+  subir el sitio. Se arregla con *Caching → Configuration → Purge Everything*.
+- **Rocket Loader** (*Speed → Optimization*). Reescribe las etiquetas `<script>`
+  y rompe los `type="module"` de React: la página carga, no monta nada y no
+  informa de nada. Tiene que estar desactivado.
+
+Contra lo primero, desde
+[vite.config.js](vite.config.js) cada compilación estrena nombres de archivo
+aunque el código no haya cambiado, así que un despliegue nuevo nunca puede
+heredar una entrada envenenada. **Como contrapartida, los archivos viejos se
+acumulan**: al subir, borrar antes la carpeta `assets` del servidor en lugar de
+copiar encima.
+
 
 ## Pendiente
 
