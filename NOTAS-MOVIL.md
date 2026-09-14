@@ -269,6 +269,21 @@ cd android && ./gradlew assembleDebug
 El resultado queda en `android/app/build/outputs/apk/debug/app-debug.apk`.
 
 
+## Cómo subir la web
+
+Se copia el contenido de `dist/` a la raíz del hosting. **Incluido `.htaccess`**,
+que es la trampa: empieza por punto, y los clientes de FTP lo esconden salvo que
+se active «mostrar archivos ocultos» (en FileZilla, *Servidor → Forzar mostrar
+archivos ocultos*). Sin él la web se queda **en blanco, sin ningún error**: el
+servidor devuelve los `.js` como `application/x-javascript` y Chrome rechaza ese
+tipo en un `<script type="module">`, así que la aplicación no llega a montarse.
+
+Para comprobarlo, abrir la consola del navegador en la web: el mensaje es
+«Expected a JavaScript module script but the server responded with a MIME type
+of application/x-javascript». Si en vez de eso sale un 404 de
+`/assets/index-….js`, lo que falló fue la copia de los archivos.
+
+
 ## Pendiente
 
 ### Lo primero, y depende de ti
