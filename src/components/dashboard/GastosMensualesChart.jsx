@@ -11,38 +11,9 @@ import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
 
-const SIN_COMBUSTIBLE = 'Sin combustible';
-const SIN_CONCEPTO    = 'Sin concepto';
-
-// Los mismos colores que CombustibleBadge, para que un combustible se reconozca
-// por su color en todo el sistema y no signifique una cosa aquí y otra allí.
-const COLOR_COMBUSTIBLE = {
-  diesel:   '#f59e0b',
-  especial: '#3b82f6',
-  regular:  '#22c55e',
-};
-const claveCombustible = (nombre) => {
-  const n = (nombre || '').toLowerCase();
-  if (n.includes('diesel'))   return 'diesel';
-  if (n.includes('especial')) return 'especial';
-  if (n.includes('regular'))  return 'regular';
-  return null;
-};
-
-// Para los conceptos no hay convención previa, así que se reparte una paleta
-// estable: el mismo concepto sale siempre del mismo color porque el orden de la
-// lista es alfabético, no el de llegada de los datos.
-const PALETA = ['#0ea5e9', '#8b5cf6', '#f43f5e', '#14b8a6', '#f59e0b', '#64748b', '#84cc16', '#ec4899'];
-const GRIS_SIN_DATO = '#cbd5e1';
-
-function colorDeSerie(serie, dimension, indice) {
-  if (serie === SIN_COMBUSTIBLE || serie === SIN_CONCEPTO) return GRIS_SIN_DATO;
-  if (dimension === 'combustible') {
-    const clave = claveCombustible(serie);
-    if (clave) return COLOR_COMBUSTIBLE[clave];
-  }
-  return PALETA[indice % PALETA.length];
-}
+import {
+  SIN_COMBUSTIBLE, SIN_CONCEPTO, colorDeSerie, ordenarSeries, mapaConceptoPorConsumidor,
+} from './coloresDesglose';
 
 function Tendencia({ pct }) {
   if (pct === null) return <span className="text-sm font-bold text-slate-400">—</span>;
@@ -150,17 +121,10 @@ export default function GastosMensualesChart({ movimientos, consumidores = [], t
     staleTime: 10 * 60_000,
   });
 
-  // Consumidor → concepto, en dos saltos: el consumidor dice su tipo y el tipo
-  // dice bajo qué concepto se cuenta lo que gasta.
-  const conceptoPorConsumidor = useMemo(() => {
-    const nombreConcepto = new Map(conceptos.map(c => [c.id, c.nombre]));
-    const conceptoDeTipo  = new Map(tiposConsumidor.map(t => [t.id, nombreConcepto.get(t.concepto_id)]));
-    const mapa = new Map();
-    consumidores.forEach(c => {
-      mapa.set(c.id, conceptoDeTipo.get(c.tipo_consumidor_id) || null);
-    });
-    return mapa;
-  }, [consumidores, tiposConsumidor, conceptos]);
+  const conceptoPorConsumidor = useMemo(
+    () => mapaConceptoPorConsumidor(consumidores, tiposConsumidor, conceptos),
+    [consumidores, tiposConsumidor, conceptos],
+  );
 
   const { data, series } = useMemo(() => {
     const hoy = new Date();
@@ -193,15 +157,7 @@ export default function GastosMensualesChart({ movimientos, consumidores = [], t
         mes[serie] = (mes[serie] || 0) + monto;
       });
 
-    // Alfabético, con «sin dato» al final: así el color de cada serie no baila
-    // según qué mes tenga datos.
-    const ordenadas = [...encontradas]
-      .filter(s => s !== SIN_COMBUSTIBLE && s !== SIN_CONCEPTO)
-      .sort((a, b) => a.localeCompare(b, 'es'));
-    if (encontradas.has(SIN_COMBUSTIBLE)) ordenadas.push(SIN_COMBUSTIBLE);
-    if (encontradas.has(SIN_CONCEPTO))    ordenadas.push(SIN_CONCEPTO);
-
-    return { data: meses, series: ordenadas };
+    return { data: meses, series: ordenarSeries(encontradas) };
   }, [movimientos, dimension, conceptoPorConsumidor]);
 
   const colores = useMemo(() => {

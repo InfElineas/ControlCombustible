@@ -10,6 +10,7 @@ import { supabase } from '@/api/supabaseClient';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import GastosMensualesChart from '@/components/dashboard/GastosMensualesChart';
+import ConsumoPorConcepto from '@/components/dashboard/ConsumoPorConcepto';
 import ConsumidoresPorTipo from '@/components/dashboard/ConsumidoresPorTipo';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { filterMovimientosByMonth, getMonthOptionsFromMovimientos, computeChoferDelMes } from '@/lib/fuel-analytics';
@@ -815,6 +816,16 @@ export default function Dashboard() {
               </CardContent>
             </Card>
           )}
+        </div>
+
+        {/* El desglose de los litros que resume la tarjeta de arriba */}
+        <div className="mt-3">
+          <ConsumoPorConcepto
+            movimientos={movimientosFiltrados}
+            consumidores={consumidores}
+            tiposConsumidor={tiposConsumidor}
+            consumidoresSurtidorIds={consumidoresSurtidorIds}
+          />
         </div>
       </div>
 
