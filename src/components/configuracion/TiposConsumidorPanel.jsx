@@ -148,7 +148,16 @@ function IconPicker({ value, onChange }) {
 
 // ── Panel principal ───────────────────────────────────────────────────────────
 
-const empty = { nombre: '', icono: 'truck', requiere_odometro: false, unidad_consumo: 'km/L', activo: true };
+// Radix no admite un SelectItem con valor vacío, así que «ninguno» necesita un
+// valor propio que se traduce a null al guardar.
+const SIN_CONCEPTO = 'ninguno';
+
+const empty = { nombre: '', icono: 'truck', requiere_odometro: false, unidad_consumo: 'km/L', activo: true, concepto_id: SIN_CONCEPTO };
+
+// La misma tabla se consulta con tres nombres distintos repartidos por la
+// aplicación. Hasta unificarlos, al guardar hay que refrescar los tres o el
+// panel se queda con el concepto viejo.
+const CLAVES_TIPOS = [['tipos_consumidor'], ['tiposConsumidor'], ['tipos-consumidor']];
 
 export default function TiposConsumidorPanel() {
   const queryClient = useQueryClient();
@@ -160,23 +169,30 @@ export default function TiposConsumidorPanel() {
     queryKey: ['consumidores'],
     queryFn: () => base44.entities.Consumidor.list(),
   });
+  const { data: conceptos = [] } = useQuery({
+    queryKey: ['conceptos-precio'],
+    queryFn: () => base44.entities.ConceptoPrecio.list(),
+  });
+  const nombreConcepto = id => conceptos.find(c => c.id === id)?.nombre;
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(empty);
   const [confirmDel, setConfirmDel] = useState(null);
 
+  const refrescar = () => CLAVES_TIPOS.forEach(queryKey => queryClient.invalidateQueries({ queryKey }));
+
   const createMut = useMutation({
     mutationFn: d => base44.entities.TipoConsumidor.create(d),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['tipos_consumidor'] }); toast.success('Tipo creado'); close(); },
+    onSuccess: () => { refrescar(); toast.success('Tipo creado'); close(); },
   });
   const updateMut = useMutation({
     mutationFn: ({ id, d }) => base44.entities.TipoConsumidor.update(id, d),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['tipos_consumidor'] }); toast.success('Tipo actualizado'); close(); },
+    onSuccess: () => { refrescar(); toast.success('Tipo actualizado'); close(); },
   });
   const deleteMut = useMutation({
     mutationFn: id => base44.entities.TipoConsumidor.delete(id),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['tipos_consumidor'] }); toast.success('Tipo eliminado'); setConfirmDel(null); },
+    onSuccess: () => { refrescar(); toast.success('Tipo eliminado'); setConfirmDel(null); },
   });
 
   const close = () => { setOpen(false); setEditing(null); setForm(empty); };
@@ -188,13 +204,15 @@ export default function TiposConsumidorPanel() {
       requiere_odometro: t.requiere_odometro || false,
       unidad_consumo: t.unidad_consumo || 'km/L',
       activo: t.activo !== false,
+      concepto_id: t.concepto_id || SIN_CONCEPTO,
     });
     setOpen(true);
   };
 
   const handleSave = () => {
     if (!form.nombre.trim()) { toast.error('Nombre requerido'); return; }
-    editing ? updateMut.mutate({ id: editing.id, d: form }) : createMut.mutate(form);
+    const d = { ...form, concepto_id: form.concepto_id === SIN_CONCEPTO ? null : form.concepto_id };
+    editing ? updateMut.mutate({ id: editing.id, d }) : createMut.mutate(d);
   };
 
   const handleDelete = t => {
@@ -230,6 +248,11 @@ export default function TiposConsumidorPanel() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{t.nombre}</p>
                 <div className="flex gap-1.5 mt-0.5 flex-wrap">
+                  {nombreConcepto(t.concepto_id) && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-200 text-violet-700 dark:border-violet-900 dark:text-violet-300">
+                      {nombreConcepto(t.concepto_id)}
+                    </Badge>
+                  )}
                   {t.requiere_odometro && (
                     <Badge variant="outline" className="text-[10px] px-1.5 py-0">Odómetro</Badge>
                   )}
@@ -283,6 +306,30 @@ export default function TiposConsumidorPanel() {
                   onChange={v => setForm(f => ({ ...f, icono: v }))}
                 />
               </div>
+            </div>
+
+            <div>
+              <Label className="text-xs text-slate-500">Concepto de consumo</Label>
+              <Select
+                value={form.concepto_id}
+                onValueChange={v => setForm(f => ({ ...f, concepto_id: v }))}
+              >
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SIN_CONCEPTO}>Sin concepto</SelectItem>
+                  {conceptos
+                    // Los inactivos no se ofrecen, pero el ya asignado se deja
+                    // para no borrarlo sin querer al guardar otra cosa.
+                    .filter(c => c.activo !== false || c.id === form.concepto_id)
+                    .map(c => (
+                      <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Agrupa el gasto de estos consumidores en el panel de inicio.
+                {conceptos.length === 0 && ' Todavía no hay ninguno: se crean en Finanzas → Conceptos.'}
+              </p>
             </div>
 
             <div>

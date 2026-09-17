@@ -39,7 +39,10 @@ const MAPA = {
   beneficiario:        [['beneficiarios']],
   tarjeta:             [['tarjetas'], ['finanzas-tarjetas']],
   tipo_combustible:    [['combustibles']],
-  tipo_consumidor:     [['tipos-consumidor'], ['tiposConsumidor']],
+  // Tres nombres para la misma tabla, repartidos por la aplicación. Faltaba
+  // tipos_consumidor, que es justo el que usa el panel donde se editan.
+  tipo_consumidor:     [['tipos-consumidor'], ['tiposConsumidor'], ['tipos_consumidor']],
+  concepto_precio:     [['conceptos-precio']],
   precio_combustible:  [['precios'], ['precios-despacho']],
   precio_despacho_tipo:[['precios-despacho']],
   asignacion_ruta:     [['asignaciones_ruta'], ['asig-comparativo']],

@@ -14,7 +14,7 @@ DECLARE
   tablas TEXT[] := ARRAY[
     'movimiento', 'venta_trabajador', 'anomalia_descartada',
     'consumidor', 'conductor', 'beneficiario', 'tarjeta',
-    'tipo_combustible', 'tipo_consumidor',
+    'tipo_combustible', 'tipo_consumidor', 'concepto_precio',
     'precio_combustible', 'precio_despacho_tipo',
     'asignacion_ruta', 'ruta', 'marcador', 'ruta_marcador',
     'user_roles', 'apk_version'
