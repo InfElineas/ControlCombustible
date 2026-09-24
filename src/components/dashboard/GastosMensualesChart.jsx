@@ -7,13 +7,13 @@ import { useQuery } from '@tanstack/react-query';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
+import {
+  SIN_COMBUSTIBLE, SIN_CONCEPTO, colorDeSerie, ordenarSeries, mapaConceptoPorConsumidor,
+} from './coloresDesglose';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
 
-import {
-  SIN_COMBUSTIBLE, SIN_CONCEPTO, colorDeSerie, ordenarSeries, mapaConceptoPorConsumidor,
-} from './coloresDesglose';
 
 function Tendencia({ pct }) {
   if (pct === null) return <span className="text-sm font-bold text-slate-400">—</span>;
@@ -111,7 +111,65 @@ function PanelDetalle({ fila, series, colores }) {
   );
 }
 
-export default function GastosMensualesChart({ movimientos, consumidores = [], tiposConsumidor = [] }) {
+// Cuántos meses caben antes de que las barras dejen de leerse. Con «Todo» y
+// varios años de historial, cien barras de dos píxeles no informan de nada.
+const MAXIMO_MESES = 24;
+const MESES_POR_DEFECTO = 6;
+
+/**
+ * Meses que entran en el gráfico, en orden.
+ *
+ * Con un mes elegido arriba se enseñan los seis que terminan en él: una sola
+ * barra suelta no deja comparar, que es para lo que sirve el gráfico. Con
+ * «Todo», desde la primera compra hasta hoy.
+ */
+function mesesDelRango(mesFiltro, movimientos) {
+  const aClave = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  let fin, cuantos;
+
+  if (mesFiltro && mesFiltro !== 'ALL') {
+    const [a, m] = mesFiltro.split('-').map(Number);
+    fin = new Date(a, m - 1, 1);
+    cuantos = MESES_POR_DEFECTO;
+  } else {
+    fin = new Date();
+    fin = new Date(fin.getFullYear(), fin.getMonth(), 1);
+    const primera = movimientos
+      .filter(x => x.tipo === 'COMPRA' && x.fecha)
+      .reduce((min, x) => (min === null || x.fecha < min ? x.fecha : min), null);
+    if (primera) {
+      const [a, m] = primera.slice(0, 7).split('-').map(Number);
+      const meses = (fin.getFullYear() - a) * 12 + (fin.getMonth() - (m - 1)) + 1;
+      cuantos = Math.min(Math.max(meses, 1), MAXIMO_MESES);
+    } else {
+      cuantos = MESES_POR_DEFECTO;
+    }
+  }
+
+  const meses = [];
+  for (let i = cuantos - 1; i >= 0; i--) {
+    const d = new Date(fin.getFullYear(), fin.getMonth() - i, 1);
+    meses.push({
+      key: aClave(d),
+      // Con más de un año a la vista, «Ene» sin año no distingue dos eneros.
+      label: cuantos > 12 ? `${MESES[d.getMonth()]} ${String(d.getFullYear()).slice(2)}` : MESES[d.getMonth()],
+      gasto: 0,
+      litros: 0,
+    });
+  }
+  return meses;
+}
+
+/** Cómo llamar al período en el título, para que diga lo que se está viendo. */
+export function etiquetaPeriodoGastos(mesFiltro, movimientos = []) {
+  const meses = mesesDelRango(mesFiltro, movimientos);
+  if (mesFiltro && mesFiltro !== 'ALL') {
+    return `${meses.length} meses hasta ${meses[meses.length - 1].label}`;
+  }
+  return meses.length >= MAXIMO_MESES ? `últimos ${MAXIMO_MESES} meses` : `${meses.length} meses`;
+}
+
+export default function GastosMensualesChart({ movimientos, mesFiltro = 'ALL', consumidores = [], tiposConsumidor = [] }) {
   const [dimension, setDimension] = useState('combustible');
   const [mesActivo, setMesActivo] = useState(null);
 
@@ -127,17 +185,7 @@ export default function GastosMensualesChart({ movimientos, consumidores = [], t
   );
 
   const { data, series } = useMemo(() => {
-    const hoy = new Date();
-    const meses = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-      meses.push({
-        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
-        label: MESES[d.getMonth()],
-        gasto: 0,
-        litros: 0,
-      });
-    }
+    const meses = mesesDelRango(mesFiltro, movimientos);
     const porKey = new Map(meses.map(m => [m.key, m]));
     const encontradas = new Set();
 
@@ -158,7 +206,7 @@ export default function GastosMensualesChart({ movimientos, consumidores = [], t
       });
 
     return { data: meses, series: ordenarSeries(encontradas) };
-  }, [movimientos, dimension, conceptoPorConsumidor]);
+  }, [movimientos, mesFiltro, dimension, conceptoPorConsumidor]);
 
   const colores = useMemo(() => {
     const m = {};
@@ -167,8 +215,8 @@ export default function GastosMensualesChart({ movimientos, consumidores = [], t
   }, [series, dimension]);
 
   const mesesConDatos  = data.filter(d => d.gasto > 0);
-  const total6m        = data.reduce((s, d) => s + d.gasto, 0);
-  const promedio       = mesesConDatos.length > 0 ? total6m / mesesConDatos.length : 0;
+  const totalPeriodo   = data.reduce((s, d) => s + d.gasto, 0);
+  const promedio       = mesesConDatos.length > 0 ? totalPeriodo / mesesConDatos.length : 0;
   const actual         = data[data.length - 1]?.gasto  ?? 0;
   const anterior       = data[data.length - 2]?.gasto  ?? 0;
   const tendenciaPct   = anterior > 0 ? ((actual - anterior) / anterior) * 100 : null;
@@ -192,8 +240,8 @@ export default function GastosMensualesChart({ movimientos, consumidores = [], t
       {/* Mini-KPIs */}
       <div className="grid grid-cols-3 gap-4 border-b border-slate-100 pb-4">
         <div>
-          <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Total 6 meses</p>
-          <p className="text-sm font-bold text-slate-800">{formatMonto(total6m)}</p>
+          <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Total {data.length} meses</p>
+          <p className="text-sm font-bold text-slate-800">{formatMonto(totalPeriodo)}</p>
         </div>
         <div>
           <p className="text-[10px] text-slate-400 uppercase tracking-wide mb-0.5">Promedio mensual</p>

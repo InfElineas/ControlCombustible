@@ -9,7 +9,7 @@ import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import { supabase } from '@/api/supabaseClient';
 import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import GastosMensualesChart from '@/components/dashboard/GastosMensualesChart';
+import GastosMensualesChart, { etiquetaPeriodoGastos } from '@/components/dashboard/GastosMensualesChart';
 import ConsumoPorConcepto from '@/components/dashboard/ConsumoPorConcepto';
 import ConsumidoresPorTipo from '@/components/dashboard/ConsumidoresPorTipo';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -840,11 +840,17 @@ export default function Dashboard() {
       {/* Gráfico gasto mensual — solo financiero */}
       {!isOperador && (
         <div>
-          <SectionTitle icon={TrendingUp} title="Gastos por mes (últimos 6 meses)" iconColor="text-sky-500" />
+          <SectionTitle icon={TrendingUp}
+            title={`Gastos por mes (${etiquetaPeriodoGastos(mesFiltro, movimientos)})`}
+            iconColor="text-sky-500" />
           <Card className="border-0 shadow-sm">
             <CardContent className="p-5">
+              {/* El gráfico recibe todos los movimientos, no los filtrados: la
+                  ventana la decide él a partir del mes elegido, porque necesita
+                  los meses anteriores para que haya con qué comparar. */}
               <GastosMensualesChart
                 movimientos={movimientos}
+                mesFiltro={mesFiltro}
                 consumidores={consumidores}
                 tiposConsumidor={tiposConsumidor}
               />
