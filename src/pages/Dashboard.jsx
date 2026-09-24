@@ -153,10 +153,20 @@ export default function Dashboard() {
   // Todo lo que guarda combustible en lugar de gastarlo. Un despacho a uno de
   // estos es un traslado, no consumo: el combustible sigue siendo de la empresa
   // y se contaría dos veces, al entrar aquí y al salir hacia quien lo usa.
-  const idsAlmacenamiento = useMemo(
-    () => new Set([...consumidoresReservaIds, ...consumidoresSurtidorIds]),
-    [consumidoresReservaIds, consumidoresSurtidorIds],
-  );
+  //
+  // Las dos listas de arriba dependen de que el catálogo esté bien rellenado
+  // —categoría puesta, o el tipo con un nombre reconocible—, y un consumidor
+  // sin tipo se escapaba de las dos. Por eso se añade lo que dicen los propios
+  // movimientos: quien alguna vez ha despachado combustible a otro lo estaba
+  // guardando, sea cual sea su ficha. Se mira sobre todo el historial y no
+  // sobre el período, porque un tanque no deja de serlo un mes flojo.
+  const idsAlmacenamiento = useMemo(() => {
+    const ids = new Set([...consumidoresReservaIds, ...consumidoresSurtidorIds]);
+    movimientos.forEach(m => {
+      if (m.tipo === 'DESPACHO' && m.consumidor_origen_id) ids.add(m.consumidor_origen_id);
+    });
+    return ids;
+  }, [consumidoresReservaIds, consumidoresSurtidorIds, movimientos]);
 
   const obtenerCapacidadConsumidor = (consumidor) => {
     const capacidadTanque = Number(consumidor?.datos_tanque?.capacidad_litros);

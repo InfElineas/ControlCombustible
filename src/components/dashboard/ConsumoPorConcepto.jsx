@@ -33,6 +33,21 @@ export default function ConsumoPorConcepto({
   const { grupos, totalLitros, totalMonto } = useMemo(() => {
     const conceptoDe = mapaConceptoPorConsumidor(consumidores, tiposConsumidor, conceptos);
     const nombreDe   = new Map(consumidores.map(c => [c.id, c.nombre]));
+    const porId      = new Map(consumidores.map(c => [c.id, c]));
+    const tipoPorId  = new Map(tiposConsumidor.map(t => [t.id, t]));
+
+    // Por qué este consumidor no tiene concepto. Sin esto, «Sin concepto» es un
+    // pendiente que no dice dónde está el fallo ni dónde se arregla.
+    const motivoSinConcepto = (id) => {
+      if (!id) return 'el movimiento no tiene consumidor de destino';
+      const c = porId.get(id);
+      if (!c) return 'no está en el catálogo de consumidores';
+      if (!c.tipo_consumidor_id) return 'no tiene tipo de consumidor asignado';
+      const t = tipoPorId.get(c.tipo_consumidor_id);
+      if (!t) return `su tipo (${c.tipo_consumidor_nombre || 'desconocido'}) ya no existe`;
+      if (!t.concepto_id) return `el tipo «${t.nombre}» no tiene concepto asignado`;
+      return 'el concepto asignado a su tipo ya no existe';
+    };
 
     const acumulado = new Map();   // concepto → { litros, monto, porConsumidor }
     let totalLitros = 0, totalMonto = 0;
@@ -56,7 +71,10 @@ export default function ConsumoPorConcepto({
       // se agrupan bajo una entrada propia en lugar de descartarse.
       const clave  = m.consumidor_id || '__sin__';
       const rotulo = nombreDe.get(m.consumidor_id) || m.consumidor_nombre || 'Sin consumidor';
-      if (!g.porConsumidor.has(clave)) g.porConsumidor.set(clave, { nombre: rotulo, litros: 0, monto: 0, despachos: 0 });
+      if (!g.porConsumidor.has(clave)) g.porConsumidor.set(clave, {
+        nombre: rotulo, litros: 0, monto: 0, despachos: 0,
+        motivo: concepto === SIN_CONCEPTO ? motivoSinConcepto(m.consumidor_id) : null,
+      });
       const c = g.porConsumidor.get(clave);
       c.litros += litros; c.monto += monto; c.despachos += 1;
     });
@@ -117,14 +135,19 @@ export default function ConsumoPorConcepto({
                   {desplegado && (
                     <div className="mt-1.5 mb-2 ml-[1.35rem] pl-2.5 border-l border-slate-100 dark:border-slate-700 space-y-1">
                       {g.consumidores.map(c => (
-                        <div key={c.nombre} className="flex items-baseline gap-2 text-[11px]">
-                          <span className="text-slate-500 dark:text-slate-400 truncate flex-1 min-w-0">{c.nombre}</span>
-                          <span className="text-slate-300 tabular-nums shrink-0">
-                            {c.despachos} {c.despachos === 1 ? 'despacho' : 'despachos'}
-                          </span>
-                          <span className="font-semibold text-slate-600 dark:text-slate-300 tabular-nums shrink-0">
-                            {fmtL(c.litros)} L
-                          </span>
+                        <div key={c.nombre}>
+                          <div className="flex items-baseline gap-2 text-[11px]">
+                            <span className="text-slate-500 dark:text-slate-400 truncate flex-1 min-w-0">{c.nombre}</span>
+                            <span className="text-slate-300 tabular-nums shrink-0">
+                              {c.despachos} {c.despachos === 1 ? 'despacho' : 'despachos'}
+                            </span>
+                            <span className="font-semibold text-slate-600 dark:text-slate-300 tabular-nums shrink-0">
+                              {fmtL(c.litros)} L
+                            </span>
+                          </div>
+                          {c.motivo && (
+                            <p className="text-[10px] text-amber-600 dark:text-amber-400">{c.motivo}</p>
+                          )}
                         </div>
                       ))}
                     </div>
