@@ -10,6 +10,23 @@ import {
 
 const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
 
+// Una bonificación se reconoce por lo que es, no por a dónde fue.
+//
+// Su despacho lleva en el destino lo que hubiera a mano el día que se escribió:
+// unas veces la bolsa de logística, otras el nombre del propio trabajador. Nada
+// de eso es una ficha de consumidor con un tipo del que colgar un concepto, y
+// perseguirlo por ahí no lleva a ningún sitio. La referencia, en cambio, lo
+// dice sin ambigüedad y está en todas desde el principio.
+const MARCA_BONIFICACION = 'bonificación combustible:';
+const esBonificacion = m => (m.referencia || '').toLowerCase().startsWith(MARCA_BONIFICACION);
+
+// «Bonificación combustible: Juan Pérez CI:123» → «Juan Pérez»
+function beneficiarioDe(referencia) {
+  const resto = (referencia || '').slice(MARCA_BONIFICACION.length).trim();
+  const nombre = resto.split(/\s+CI:/i)[0].trim();
+  return nombre || 'Sin beneficiario';
+}
+
 /**
  * Litros consumidos del período, repartidos por concepto y, dentro de cada uno,
  * por consumidor.
@@ -29,6 +46,14 @@ export default function ConsumoPorConcepto({
     queryFn: () => base44.entities.ConceptoPrecio.list(),
     staleTime: 10 * 60_000,
   });
+
+  // Si ya tienen un concepto para esto en su catálogo, se usa el suyo y las
+  // bonificaciones caen en la misma fila en lugar de abrir una parecida al lado.
+  const conceptoBonificacion = useMemo(
+    () => conceptos.find(c => (c.nombre || '').toLowerCase().startsWith('bonific'))?.nombre
+      ?? 'Bonificación a trabajadores',
+    [conceptos],
+  );
 
   const { grupos, totalLitros, totalMonto } = useMemo(() => {
     const conceptoDe = mapaConceptoPorConsumidor(consumidores, tiposConsumidor, conceptos);
@@ -61,7 +86,9 @@ export default function ConsumoPorConcepto({
       const litros = m.litros || 0;
       if (litros <= 0) return;
 
-      const concepto = conceptoDe.get(m.consumidor_id) || SIN_CONCEPTO;
+      const concepto = esBonificacion(m)
+        ? conceptoBonificacion
+        : (conceptoDe.get(m.consumidor_id) || SIN_CONCEPTO);
       const monto    = m.monto || 0;
       totalLitros += litros;
       totalMonto  += monto;
@@ -74,8 +101,13 @@ export default function ConsumoPorConcepto({
       // Con una sola clave para todos, destinos distintos —bonificaciones, uso
       // logístico, lo que sea— se sumaban en una fila con el nombre del primero
       // que llegara.
-      const rotulo = nombreDe.get(m.consumidor_id) || m.consumidor_nombre || 'Sin consumidor';
-      const clave  = m.consumidor_id || `nombre:${rotulo}`;
+      // En una bonificación el destino del movimiento no dice nada útil —la
+      // bolsa de logística, o el propio nombre repetido—; lo que interesa es
+      // quién la recibió, y eso está en la referencia.
+      const rotulo = esBonificacion(m)
+        ? beneficiarioDe(m.referencia)
+        : (nombreDe.get(m.consumidor_id) || m.consumidor_nombre || 'Sin consumidor');
+      const clave  = esBonificacion(m) ? `benef:${rotulo}` : (m.consumidor_id || `nombre:${rotulo}`);
       if (!g.porConsumidor.has(clave)) g.porConsumidor.set(clave, {
         nombre: rotulo, litros: 0, monto: 0, despachos: 0,
         motivo: concepto === SIN_CONCEPTO ? motivoSinConcepto(m.consumidor_id) : null,
@@ -171,7 +203,8 @@ export default function ConsumoPorConcepto({
 
         <p className="text-[10px] text-slate-400 mt-2">
           Despachos del período, sin contar traslados a otros tanques, depósitos o
-          surtidores. El concepto sale del tipo de cada consumidor; se asigna en
+          surtidores. Las bonificaciones se agrupan por su beneficiario; el resto,
+          por el concepto del tipo de cada consumidor, que se asigna en
           Catálogos → Tipos de consumidor.
         </p>
       </CardContent>

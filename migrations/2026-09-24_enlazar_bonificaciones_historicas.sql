@@ -1,5 +1,13 @@
 -- Enlaza los despachos de bonificacion con la ficha de su destino.
 --
+-- NOTA (ejecutada el 2026-09-24): en la base de produccion no enlazo ninguna
+-- fila, porque ninguno de los nombres guardados corresponde a una ficha. En
+-- unos casos el destino era la bolsa de logistica con un nombre que ya no
+-- existe en el catalogo, y en otros el nombre del propio trabajador, que nunca
+-- fue un consumidor. Se deja por si en otra instalacion si coinciden, pero la
+-- clasificacion de las bonificaciones ya no depende de esto: el panel las
+-- reconoce por su referencia. Ver ConsumoPorConcepto.jsx.
+--
 -- Hasta ahora se guardaban con consumidor_id en blanco y solo el nombre del
 -- destino copiado como texto. Sin ficha no hay tipo, y sin tipo no hay concepto
 -- de consumo: esos litros salian como «Sin concepto» en el panel de inicio y no
