@@ -52,7 +52,9 @@ export function prepararTransicion({ venta, nuevoEstado, precio_venta_unitario, 
     // Identificador de cliente: si el envío llega y su respuesta se pierde, el
     // reintento choca contra la clave primaria en vez de crear otro despacho.
     movimientoNuevoId: creaDespacho ? crypto.randomUUID() : null,
-    logistico: logistico ? { nombre: logistico.nombre, codigo_interno: logistico.codigo_interno ?? null } : null,
+    logistico: logistico
+      ? { id: logistico.id, nombre: logistico.nombre, codigo_interno: logistico.codigo_interno ?? null }
+      : null,
     fechaRetiro: creaDespacho ? hoy : null,
     fechaPago: nuevoEstado === 'PAGADO_FINALIZADO' ? hoy : null,
   };
@@ -84,7 +86,14 @@ export async function aplicarTransicion(p) {
       consumidor_origen_nombre: venta.tanque_origen_nombre,
       vehiculo_origen_chapa: venta.tanque_origen_nombre,
       vehiculo_origen_alias: venta.tanque_origen_nombre,
-      consumidor_id: null,
+      // Enlazado, no solo copiado por nombre: de la ficha cuelga el tipo, y del
+      // tipo el concepto de consumo con el que se clasifica el gasto. Con el
+      // enlace en blanco, estos litros no se podían atribuir a nada.
+      // El stock no se mueve: fn_stock_disponible deja fuera de las entradas
+      // los despachos cuya referencia empieza por «Bonificación combustible:».
+      // Los planes en cola de antes de este cambio no traen id: siguen
+      // guardándose sin enlace, como hasta ahora.
+      consumidor_id: p.logistico?.id ?? null,
       consumidor_nombre: p.logistico?.nombre ?? 'Uso Logístico',
       vehiculo_chapa: p.logistico?.codigo_interno ?? null,
       vehiculo_alias: p.logistico?.nombre ?? null,
