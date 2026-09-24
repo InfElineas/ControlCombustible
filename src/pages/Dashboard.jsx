@@ -150,6 +150,14 @@ export default function Dashboard() {
     );
   }, [consumidores, tiposConsumidor]);
 
+  // Todo lo que guarda combustible en lugar de gastarlo. Un despacho a uno de
+  // estos es un traslado, no consumo: el combustible sigue siendo de la empresa
+  // y se contaría dos veces, al entrar aquí y al salir hacia quien lo usa.
+  const idsAlmacenamiento = useMemo(
+    () => new Set([...consumidoresReservaIds, ...consumidoresSurtidorIds]),
+    [consumidoresReservaIds, consumidoresSurtidorIds],
+  );
+
   const obtenerCapacidadConsumidor = (consumidor) => {
     const capacidadTanque = Number(consumidor?.datos_tanque?.capacidad_litros);
     if (Number.isFinite(capacidadTanque) && capacidadTanque > 0) return capacidadTanque;
@@ -824,10 +832,26 @@ export default function Dashboard() {
             movimientos={movimientosFiltrados}
             consumidores={consumidores}
             tiposConsumidor={tiposConsumidor}
-            consumidoresSurtidorIds={consumidoresSurtidorIds}
+            idsAlmacenamiento={idsAlmacenamiento}
           />
         </div>
       </div>
+
+      {/* Gráfico gasto mensual — solo financiero */}
+      {!isOperador && (
+        <div>
+          <SectionTitle icon={TrendingUp} title="Gastos por mes (últimos 6 meses)" iconColor="text-sky-500" />
+          <Card className="border-0 shadow-sm">
+            <CardContent className="p-5">
+              <GastosMensualesChart
+                movimientos={movimientos}
+                consumidores={consumidores}
+                tiposConsumidor={tiposConsumidor}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Personal del mes — solo operacional */}
       {!isEconomico && choferDelMes && (
@@ -850,22 +874,6 @@ export default function Dashboard() {
               <Badge variant="outline" className="ml-auto shrink-0 bg-amber-100 text-amber-700 border-amber-200 text-[11px]">
                 ⭐ Chofer del mes
               </Badge>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Gráfico gasto mensual — solo financiero */}
-      {!isOperador && (
-        <div>
-          <SectionTitle icon={TrendingUp} title="Gastos por mes (últimos 6 meses)" iconColor="text-sky-500" />
-          <Card className="border-0 shadow-sm">
-            <CardContent className="p-5">
-              <GastosMensualesChart
-                movimientos={movimientos}
-                consumidores={consumidores}
-                tiposConsumidor={tiposConsumidor}
-              />
             </CardContent>
           </Card>
         </div>

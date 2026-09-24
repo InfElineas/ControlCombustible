@@ -15,11 +15,12 @@ const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
  * por consumidor.
  *
  * Cuenta los DESPACHO, que es lo que sale de verdad hacia quien lo usa. Se
- * dejan fuera los traslados a surtidores porque el combustible sigue siendo de
- * la empresa: contarlos ahí y otra vez al despacharlos duplicaría los litros.
+ * dejan fuera los que van a parar a otro sitio de almacenamiento —surtidores,
+ * tanques y depósitos—: ese combustible sigue siendo de la empresa, y contarlo
+ * al entrar y otra vez al salir duplicaría los litros.
  */
 export default function ConsumoPorConcepto({
-  movimientos = [], consumidores = [], tiposConsumidor = [], consumidoresSurtidorIds,
+  movimientos = [], consumidores = [], tiposConsumidor = [], idsAlmacenamiento,
 }) {
   const [abierto, setAbierto] = useState(null);
 
@@ -38,7 +39,7 @@ export default function ConsumoPorConcepto({
 
     movimientos.forEach(m => {
       if (m.tipo !== 'DESPACHO') return;
-      if (consumidoresSurtidorIds?.has(m.consumidor_id)) return;
+      if (idsAlmacenamiento?.has(m.consumidor_id)) return;
       const litros = m.litros || 0;
       if (litros <= 0) return;
 
@@ -69,7 +70,7 @@ export default function ConsumoPorConcepto({
     }));
 
     return { grupos, totalLitros, totalMonto };
-  }, [movimientos, consumidores, tiposConsumidor, conceptos, consumidoresSurtidorIds]);
+  }, [movimientos, consumidores, tiposConsumidor, conceptos, idsAlmacenamiento]);
 
   return (
     <Card className="border-0 shadow-sm">
@@ -141,8 +142,9 @@ export default function ConsumoPorConcepto({
         )}
 
         <p className="text-[10px] text-slate-400 mt-2">
-          Despachos del período, sin contar traslados a surtidores. El concepto sale
-          del tipo de cada consumidor; se asigna en Catálogos → Tipos de consumidor.
+          Despachos del período, sin contar traslados a otros tanques, depósitos o
+          surtidores. El concepto sale del tipo de cada consumidor; se asigna en
+          Catálogos → Tipos de consumidor.
         </p>
       </CardContent>
     </Card>
