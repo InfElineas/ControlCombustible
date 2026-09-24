@@ -39,7 +39,10 @@ export default function ConsumoPorConcepto({
     // Por qué este consumidor no tiene concepto. Sin esto, «Sin concepto» es un
     // pendiente que no dice dónde está el fallo ni dónde se arregla.
     const motivoSinConcepto = (id) => {
-      if (!id) return 'el movimiento no tiene consumidor de destino';
+      // Los despachos de bonificación se guardan así a propósito: copian el
+      // nombre del destino pero dejan consumidor_id en blanco. Sin ficha no hay
+      // tipo, y sin tipo no hay concepto del que tirar.
+      if (!id) return 'el despacho guarda solo el nombre del destino, sin ficha de consumidor';
       const c = porId.get(id);
       if (!c) return 'no está en el catálogo de consumidores';
       if (!c.tipo_consumidor_id) return 'no tiene tipo de consumidor asignado';
@@ -67,10 +70,12 @@ export default function ConsumoPorConcepto({
       const g = acumulado.get(concepto);
       g.litros += litros; g.monto += monto; g.despachos += 1;
 
-      // Sin consumidor no hay nombre que enseñar, pero los litros no se pierden:
-      // se agrupan bajo una entrada propia en lugar de descartarse.
-      const clave  = m.consumidor_id || '__sin__';
+      // Sin ficha de consumidor se agrupa por el nombre que trae el movimiento.
+      // Con una sola clave para todos, destinos distintos —bonificaciones, uso
+      // logístico, lo que sea— se sumaban en una fila con el nombre del primero
+      // que llegara.
       const rotulo = nombreDe.get(m.consumidor_id) || m.consumidor_nombre || 'Sin consumidor';
+      const clave  = m.consumidor_id || `nombre:${rotulo}`;
       if (!g.porConsumidor.has(clave)) g.porConsumidor.set(clave, {
         nombre: rotulo, litros: 0, monto: 0, despachos: 0,
         motivo: concepto === SIN_CONCEPTO ? motivoSinConcepto(m.consumidor_id) : null,
