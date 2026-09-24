@@ -15,6 +15,7 @@ import { createPageUrl } from '@/utils';
 import { logAudit } from '@/api/auditLog';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import { useIntegridadAlertas, QUERY_KEYS_INTEGRIDAD } from '@/components/ui-helpers/useIntegridadAlertas';
+import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
 import { toast } from 'sonner';
 
 // Stock real de un tanque de bonificación (excluye DESPACHOs de bonificación como entradas)
@@ -417,6 +418,7 @@ function IntegridadDatos() {
   // reservado a quien puede eliminarlos de verdad.
   const puedeSanear = canDelete;
   const [verDescartados, setVerDescartados] = useState(false);
+  const [confirmarSaneo, setConfirmarSaneo] = useState(false);
 
   const {
     descartadas, huerfanos, canceladasConMov,
@@ -512,7 +514,7 @@ function IntegridadDatos() {
           </Button>
           {saneables > 0 && puedeSanear && (
             <Button size="sm" className="h-7 text-xs bg-orange-600 hover:bg-orange-700 text-white gap-1.5"
-              onClick={() => limpiarMut.mutate()} disabled={limpiarMut.isPending}>
+              onClick={() => setConfirmarSaneo(true)} disabled={limpiarMut.isPending}>
               {limpiarMut.isPending ? <><RefreshCw className="w-3 h-3 animate-spin" />Saneando…</> : <><Trash2 className="w-3 h-3" />Sanear todo</>}
             </Button>
           )}
@@ -640,16 +642,14 @@ function IntegridadDatos() {
         <div className="space-y-1.5">
           <p className="text-[10px] font-semibold text-orange-600 uppercase tracking-wide">DESPACHOs de bonificación sin venta asociada ({huerfanos.length})</p>
           {huerfanos.map(m => (
-            <div key={m.id} className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg px-3 py-2 border border-orange-100 dark:border-orange-900 text-xs gap-2">
+            <FilaAnomalia key={m.id} puedeDescartar={puedeDescartar}
+              enlaces={[{ etiqueta: 'Ver', url: `${createPageUrl('Movimientos')}?movimientoId=${m.id}` }]}
+              onDescartar={() => descartarMut.mutate({ tipo: 'huerfano', clave: `huerfano|${m.id}` })}>
               <span className="font-mono text-slate-400 shrink-0">{m.fecha}</span>
               <span className="flex-1 truncate text-slate-600 dark:text-slate-300">{(m.referencia || '').replace('Bonificación combustible: ', '')}</span>
               <span className="text-orange-600 font-semibold shrink-0">{m.litros} L</span>
               <span className="text-slate-400 truncate max-w-[140px] shrink-0">{m.consumidor_origen_nombre}</span>
-              <Link to={`${createPageUrl('Movimientos')}?movimientoId=${m.id}`} title="Ver el movimiento"
-                className="shrink-0 inline-flex items-center gap-1 px-1.5 h-6 rounded text-sky-600 hover:text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950 font-medium">
-                <ExternalLink className="w-3 h-3" />Ver
-              </Link>
-            </div>
+            </FilaAnomalia>
           ))}
         </div>
       )}
@@ -658,16 +658,13 @@ function IntegridadDatos() {
         <div className="space-y-1.5">
           <p className="text-[10px] font-semibold text-orange-600 uppercase tracking-wide">Ventas canceladas con DESPACHO pendiente ({canceladasConMov.length})</p>
           {canceladasConMov.map(v => (
-            <div key={v.id} className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg px-3 py-2 border border-orange-100 dark:border-orange-900 text-xs gap-2">
+            <FilaAnomalia key={v.id} puedeDescartar={puedeDescartar}
+              enlaces={[{ etiqueta: 'Ver', url: `${createPageUrl('Ventas')}?q=${encodeURIComponent(v.beneficiario_nombre ?? '')}` }]}
+              onDescartar={() => descartarMut.mutate({ tipo: 'cancelada_mov', clave: `cancelada_mov|${v.id}` })}>
               <span className="flex-1 font-medium text-slate-700 dark:text-slate-200 truncate">{v.beneficiario_nombre}</span>
               <span className="text-slate-500 shrink-0">{v.litros} L {v.combustible_nombre}</span>
               <span className="text-orange-600 font-semibold shrink-0">DESPACHO vivo</span>
-              <Link to={`${createPageUrl('Ventas')}?q=${encodeURIComponent(v.beneficiario_nombre ?? '')}`}
-                title="Ver la bonificación"
-                className="shrink-0 inline-flex items-center gap-1 px-1.5 h-6 rounded text-sky-600 hover:text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-950 font-medium">
-                <ExternalLink className="w-3 h-3" />Ver
-              </Link>
-            </div>
+            </FilaAnomalia>
           ))}
         </div>
       )}
@@ -696,6 +693,24 @@ function IntegridadDatos() {
           ))}
         </div>
       )}
+
+      {/* Sanear borra movimientos y no se puede deshacer: antes salia a la
+          primera pulsacion, sin decir siquiera cuantos se llevaba por delante. */}
+      <ConfirmDialog
+        open={confirmarSaneo}
+        onOpenChange={setConfirmarSaneo}
+        title={`¿Sanear ${saneables} registro${saneables === 1 ? '' : 's'}?`}
+        description={
+          `Se eliminarán ${huerfanos.length} despacho${huerfanos.length === 1 ? '' : 's'} de bonificación sin venta asociada` +
+          (canceladasConMov.length > 0
+            ? `, y en ${canceladasConMov.length} bonificación${canceladasConMov.length === 1 ? '' : 'es'} cancelada${canceladasConMov.length === 1 ? '' : 's'} se borrará su despacho y se desvinculará`
+            : '') +
+          '. El stock de los tanques cambiará en consecuencia. No se puede deshacer. ' +
+          'Si algún caso es correcto tal como está, márcalo antes como revisado con el visto: el saneo ya no lo tocará.'
+        }
+        destructive
+        onConfirm={() => limpiarMut.mutate()}
+      />
     </div>
   );
 }

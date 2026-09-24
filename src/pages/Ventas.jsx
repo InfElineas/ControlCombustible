@@ -724,19 +724,24 @@ function PanelBeneficiarios({ onClose }) {
 
 // ── Fila de bonificación ──────────────────────────────────────────────────────
 
-function VentaRow({ v, canOperar, canEntregar, canDelete, canEditar, onCambiarEstado, onDelete, onEdit, loading, stockInsuficiente, canVerPrecios }) {
+function VentaRow({ v, canOperar, canEntregar, puedeCancelar, puedeCobrar, canDelete, canEditar, onCambiarEstado, onDelete, onEdit, loading, stockInsuficiente, canVerPrecios }) {
   const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
   const [editEstado, setEditEstado] = useState(false);
   const isCancelado = v.estado === 'CANCELADO' || v.estado === 'ANULADO';
   const estadoNormalizado = normalizeEstado(v.estado);
   const isTerminal = estadoNormalizado === 'PAGADO_FINALIZADO' || estadoNormalizado === 'CANCELADO';
+  const permitido = e =>
+    (e.value !== 'CANCELADO'         || puedeCancelar) &&
+    (e.value !== 'PAGADO_FINALIZADO' || puedeCobrar);
   const estadosSiguientes = isTerminal ? [] :
-    estadoNormalizado === 'PENDIENTE'
+    (estadoNormalizado === 'PENDIENTE'
       // Sin canEntregar (ej: económico) no puede marcar ENTREGADO ni cobrar directo desde PENDIENTE
       // porque ambas acciones requieren INSERT DESPACHO que RLS bloquea para ese rol
       ? ESTADOS.filter(e => e.value !== 'PENDIENTE' && (canEntregar || (e.value !== 'ENTREGADO' && e.value !== 'PAGADO_FINALIZADO')))
-      : ESTADOS.filter(e => e.value === 'PAGADO_FINALIZADO' || e.value === 'CANCELADO');
-  const puedeEditar = canOperar && !isTerminal;
+      : ESTADOS.filter(e => e.value === 'PAGADO_FINALIZADO' || e.value === 'CANCELADO')
+    ).filter(permitido);
+  // Sin ningún estado al que pueda llevarla, el desplegable saldría vacío.
+  const puedeEditar = canOperar && !isTerminal && estadosSiguientes.length > 0;
 
   return (
     <div className={`flex items-start gap-3 px-4 py-3.5 hover:bg-slate-50/70 transition-colors ${isCancelado ? 'opacity-50' : ''}`}>
@@ -1208,8 +1213,13 @@ const FILTRO_ESTADOS = [
 
 export default function Ventas() {
   const qc = useQueryClient();
-  const { user, canVerVentas, canRegistrarVentas, canCobrarVentas, canGestionarBeneficiarios, canManageFinanzas, isSuperAdmin, isCajero, canVerPrecios } = useUserRole();
+  const { user, canVerVentas, canRegistrarVentas, canCobrarVentas, canGestionarBeneficiarios, canManageFinanzas, isSuperAdmin, isCajero, isEconomico, canVerPrecios } = useUserRole();
   const canEditar = isSuperAdmin || isCajero;
+  // Separación de funciones: quien lleva las cuentas no anula una factura, y
+  // quien cobra en caja no da por cerrado el cobro. Ambas quedan para el
+  // superadmin, que es quien puede responder por una cosa y por la otra.
+  const puedeCancelar = !isEconomico;
+  const puedeCobrar   = !isCajero;
 
   const [showFormVenta, setShowFormVenta] = useState(false);
   const [showBeneficiarios, setShowBeneficiarios] = useState(false);
@@ -1312,6 +1322,16 @@ export default function Ventas() {
 
   const transicionMut = useMutation({
     mutationFn: async ({ venta, nuevoEstado, precio_venta_unitario }) => {
+      // El desplegable ya no ofrece estos estados a quien no le toca, pero la
+      // comprobación se repite aquí para que no dependa de lo que se esté
+      // pintando en pantalla. La barrera de verdad es RLS, en la base.
+      if (nuevoEstado === 'CANCELADO' && !puedeCancelar) {
+        throw new Error('Tu rol no puede cancelar bonificaciones.');
+      }
+      if (nuevoEstado === 'PAGADO_FINALIZADO' && !puedeCobrar) {
+        throw new Error('Tu rol no puede dar por pagada una bonificación.');
+      }
+
       // Todo lo que la transición necesita se resuelve ahora, no al enviarla:
       // si el cobro se registra sin cobertura, la fecha de pago debe ser la de
       // hoy y no la del día en que la cola consiga salir.
@@ -1681,6 +1701,8 @@ export default function Ventas() {
                 <VentaRow key={v.id} v={v}
                   canOperar={canManageFinanzas || isCajero}
                   canEntregar={isSuperAdmin || isCajero}
+                  puedeCancelar={puedeCancelar}
+                  puedeCobrar={puedeCobrar}
                   canDelete={isSuperAdmin}
                   canEditar={canEditar}
                   canVerPrecios={canVerPrecios}

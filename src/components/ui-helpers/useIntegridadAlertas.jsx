@@ -163,17 +163,22 @@ export function useIntegridadAlertas({ enabled = true } = {}) {
 
   const descuadresVis = descuadres.filter(d => visible(`descuadre|${d.consumidor_id}|${d.litros_descuadre}`));
   const entregadasVis = entregadasSinMov.filter(v => visible(`entrega|${v.id}`));
+  // Estos dos tambien se pueden dar por revisados. Antes no se filtraban, asi
+  // que seguian contando como problema para siempre y, peor, «Sanear todo» los
+  // borraba aunque alguien ya hubiera decidido que estaban bien.
+  const huerfanosVis  = huerfanos.filter(m => visible(`huerfano|${m.id}`));
+  const canceladasVis = canceladasConMov.filter(v => visible(`cancelada_mov|${v.id}`));
 
   // Saneables = los que el botón puede resolver solo. Los demás exigen decisión
   // humana pero cuentan igual como problema pendiente.
-  const saneables = huerfanos.length + canceladasConMov.length;
+  const saneables = huerfanosVis.length + canceladasVis.length;
   const total = saneables + descuadresVis.length + entregadasVis.length +
     anomalias.fechaFutura.length + anomalias.duplicados.length +
     anomalias.ajusteSinMotivo.length + anomalias.sobrellenado.length;
 
   return {
     descartadas, clavesDescartadas,
-    huerfanos, canceladasConMov,
+    huerfanos: huerfanosVis, canceladasConMov: canceladasVis,
     descuadresVis, entregadasVis, anomalias,
     saneables, total,
     isFetching: fetchingH || fetchingC || fetchingD || fetchingM || fetchingE,

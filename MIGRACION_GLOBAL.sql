@@ -1182,6 +1182,8 @@ CREATE INDEX IF NOT EXISTS idx_precio_combustible_nombre
 -- venta_trabajador: inmutabilidad de campos + transiciones de estado válidas
 CREATE OR REPLACE FUNCTION validate_venta_update()
 RETURNS TRIGGER AS $$
+DECLARE
+  v_rol TEXT;
 BEGIN
   IF NEW.registrado_por IS DISTINCT FROM OLD.registrado_por THEN
     RAISE EXCEPTION 'Campo registrado_por es inmutable';
@@ -1216,6 +1218,18 @@ BEGIN
     END IF;
     IF OLD.estado IN ('ENTREGADO','RETIRADO') AND NEW.estado NOT IN ('PAGADO_FINALIZADO','PAGADO','CANCELADO','ANULADO') THEN
       RAISE EXCEPTION 'Transición inválida: % → %', OLD.estado, NEW.estado;
+    END IF;
+
+    -- Separacion de funciones: el economico lleva las cuentas pero no anula una
+    -- factura, y el cajero cobra pero no da por cerrado el cobro. Esconder la
+    -- opcion en pantalla no es un permiso.
+    -- Ver migrations/2026-09-24_roles_estados_bonificacion.sql
+    v_rol := get_my_role();
+    IF NEW.estado IN ('CANCELADO','ANULADO') AND v_rol = 'economico' THEN
+      RAISE EXCEPTION 'El rol económico no puede cancelar una bonificación';
+    END IF;
+    IF NEW.estado IN ('PAGADO_FINALIZADO','PAGADO') AND v_rol = 'cajero' THEN
+      RAISE EXCEPTION 'El rol cajero no puede dar por pagada una bonificación';
     END IF;
   END IF;
   RETURN NEW;
