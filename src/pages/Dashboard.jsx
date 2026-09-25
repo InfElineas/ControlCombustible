@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import GastosMensualesChart, { etiquetaPeriodoGastos } from '@/components/dashboard/GastosMensualesChart';
 import ConsumoPorConcepto from '@/components/dashboard/ConsumoPorConcepto';
+import { esBonificacion } from '@/lib/bonificacion';
 import ConsumidoresPorTipo from '@/components/dashboard/ConsumidoresPorTipo';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { filterMovimientosByMonth, getMonthOptionsFromMovimientos, computeChoferDelMes } from '@/lib/fuel-analytics';
@@ -226,12 +227,16 @@ export default function Dashboard() {
 
       const litrosCompras = comprasPeriodo.reduce((s, m) => s + (m.litros || 0), 0);
       const montoCompras = comprasPeriodo.reduce((s, m) => s + (m.monto || 0), 0);
-      // Excluir surtidores (transferencias internas) y Uso Logístico/VD del consumo de flota
-      const despachosPeriodoConsumo = despachosPeriodo.filter(m => !consumidoresSurtidorIds.has(m.consumidor_id) && m.consumidor_nombre !== 'Uso Logístico');
+      // Fuera los surtidores (traslados internos) y las bonificaciones, que no
+      // son gasto de flota. Antes se apartaba solo lo llamado exactamente «Uso
+      // Logístico», asi que una bonificacion registrada con cualquier otro
+      // destino —«Operaciones Logisticas VD (Diesel)», por ejemplo— se contaba
+      // aqui como consumo de la flota.
+      const despachosPeriodoConsumo = despachosPeriodo.filter(m => !consumidoresSurtidorIds.has(m.consumidor_id) && !esBonificacion(m));
       const litrosConsumo = despachosPeriodoConsumo.reduce((s, m) => s + (m.litros || 0), 0);
       const montoConsumo = despachosPeriodoConsumo.reduce((s, m) => s + (m.monto || 0), 0);
-      // Salidas VD (Uso Logístico) — reducen el stock pero no son consumo de flota
-      const litrosOtrosSalidas = despachosPeriodo.filter(m => m.consumidor_nombre === 'Uso Logístico').reduce((s, m) => s + (m.litros || 0), 0);
+      // Bonificaciones — reducen el stock pero no son consumo de flota
+      const litrosOtrosSalidas = despachosPeriodo.filter(esBonificacion).reduce((s, m) => s + (m.litros || 0), 0);
       const comprasOpsMes = comprasPeriodo.length;
       const despachosOpsCombMes = despachosPeriodoConsumo.length;
       const recargasOpsMes = comprasReservaPeriodo.length;
@@ -308,8 +313,8 @@ export default function Dashboard() {
       despachosPeriodo.forEach(m => {
         // Los surtidores externos no son consumidores finales — se muestran en su propia sección
         if (consumidoresSurtidorIds.has(m.consumidor_id)) return;
-        // Salidas VD (Uso Logístico) no son consumo de flota
-        if (m.consumidor_nombre === 'Uso Logístico') return;
+        // Las bonificaciones no son consumo de flota: van en su propio bloque
+        if (esBonificacion(m)) return;
         const key = m.consumidor_id || m.consumidor_nombre || 'Sin identificar';
         if (!detalleConsumoMap[key]) detalleConsumoMap[key] = {
           id: key,
@@ -510,6 +515,14 @@ export default function Dashboard() {
       .sort((a, b) => b.stockActual - a.stockActual);
 
     // Logística VD — acumulado histórico total
+    //
+    // Este sigue comparando contra el nombre exacto, a diferencia del resto.
+    // «Total destinado» se contrasta abajo con lo entregado y lo pendiente para
+    // sacar un disponible, asi que aqui se espera un movimiento que aparte
+    // combustible para la bolsa, no la entrega en si. Contar las bonificaciones
+    // haria que destinado y entregado fueran lo mismo y el disponible saliera
+    // siempre cero. Queda sin tocar a proposito: decidir que cuenta como
+    // «destinado» es una definicion del negocio, no un detalle tecnico.
     const litrosDestinadosVD = movimientos
       .filter(m => m.tipo === 'DESPACHO' && m.consumidor_nombre === 'Uso Logístico')
       .reduce((s, m) => s + (m.litros || 0), 0);
@@ -535,10 +548,10 @@ export default function Dashboard() {
 
     const despachosPer = movimientosFiltrados.filter(m => m.tipo === 'DESPACHO');
     const litrosAlmacenPer = despachosPer
-      .filter(m => m.consumidor_nombre === 'Uso Logístico')
+      .filter(esBonificacion)
       .reduce((s, m) => s + (m.litros || 0), 0);
     const litrosServiciosPer = despachosPer
-      .filter(m => m.consumidor_nombre !== 'Uso Logístico' && !consumidoresSurtidorIds.has(m.consumidor_id))
+      .filter(m => !esBonificacion(m) && !consumidoresSurtidorIds.has(m.consumidor_id))
       .reduce((s, m) => s + (m.litros || 0), 0);
     const litrosTotalSalidaPer = litrosAlmacenPer + litrosServiciosPer;
 
@@ -770,7 +783,11 @@ export default function Dashboard() {
                 </div>
               )}
               <p className="text-xs text-slate-400 mt-1.5">
-                {movimientosFiltrados.filter(m => m.tipo === 'DESPACHO').length} despachos
+                {/* Los mismos que suman los litros de arriba: contar todos los
+                    despachos dejaba «800 L · 3 despachos», que no cuadra. */}
+                {movimientosFiltrados.filter(m =>
+                  m.tipo === 'DESPACHO' && !esBonificacion(m) && !consumidoresSurtidorIds.has(m.consumidor_id)
+                ).length} despachos
               </p>
             </CardContent>
           </Card>

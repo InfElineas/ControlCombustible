@@ -7,25 +7,10 @@ import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import {
   SIN_CONCEPTO, colorDeSerie, ordenarSeries, mapaConceptoPorConsumidor,
 } from './coloresDesglose';
+import { esBonificacion, beneficiarioDe } from '@/lib/bonificacion';
 
 const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
 
-// Una bonificación se reconoce por lo que es, no por a dónde fue.
-//
-// Su despacho lleva en el destino lo que hubiera a mano el día que se escribió:
-// unas veces la bolsa de logística, otras el nombre del propio trabajador. Nada
-// de eso es una ficha de consumidor con un tipo del que colgar un concepto, y
-// perseguirlo por ahí no lleva a ningún sitio. La referencia, en cambio, lo
-// dice sin ambigüedad y está en todas desde el principio.
-const MARCA_BONIFICACION = 'bonificación combustible:';
-const esBonificacion = m => (m.referencia || '').toLowerCase().startsWith(MARCA_BONIFICACION);
-
-// «Bonificación combustible: Juan Pérez CI:123» → «Juan Pérez»
-function beneficiarioDe(referencia) {
-  const resto = (referencia || '').slice(MARCA_BONIFICACION.length).trim();
-  const nombre = resto.split(/\s+CI:/i)[0].trim();
-  return nombre || 'Sin beneficiario';
-}
 
 /**
  * Litros consumidos del período, repartidos por concepto y, dentro de cada uno,
@@ -97,13 +82,11 @@ export default function ConsumoPorConcepto({
       const g = acumulado.get(concepto);
       g.litros += litros; g.monto += monto; g.despachos += 1;
 
-      // Sin ficha de consumidor se agrupa por el nombre que trae el movimiento.
-      // Con una sola clave para todos, destinos distintos —bonificaciones, uso
-      // logístico, lo que sea— se sumaban en una fila con el nombre del primero
-      // que llegara.
-      // En una bonificación el destino del movimiento no dice nada útil —la
-      // bolsa de logística, o el propio nombre repetido—; lo que interesa es
-      // quién la recibió, y eso está en la referencia.
+      // En una bonificación el destino no dice nada útil —la bolsa de logística,
+      // o el propio nombre repetido—; lo que interesa es quién la recibió, y eso
+      // está en la referencia. En el resto se agrupa por la ficha, y si no hay,
+      // por el nombre que traiga el movimiento: con una clave común para todos,
+      // destinos distintos se sumaban en una fila con el nombre del primero.
       const rotulo = esBonificacion(m)
         ? beneficiarioDe(m.referencia)
         : (nombreDe.get(m.consumidor_id) || m.consumidor_nombre || 'Sin consumidor');
