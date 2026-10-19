@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ConfirmDialog from '@/components/ui-helpers/ConfirmDialog';
+import TarifasTransporte from '@/components/finanzas/TarifasTransporte';
 
 const fmtL = n => (n == null || isNaN(n) ? '0' : n % 1 === 0 ? String(Math.round(n)) : Number(n).toFixed(1));
 
@@ -478,6 +479,7 @@ export default function Finanzas() {
           <TabsTrigger value="bonificaciones" className="text-xs px-3 h-7">Bonificaciones</TabsTrigger>
           <TabsTrigger value="precios" className="text-xs px-3 h-7">Precios</TabsTrigger>
           <TabsTrigger value="conceptos" className="text-xs px-3 h-7">Conceptos</TabsTrigger>
+          <TabsTrigger value="transporte" className="text-xs px-3 h-7">Transportación</TabsTrigger>
         </TabsList>
 
         <TabsContent value="tarjetas" className="mt-4 space-y-4">
@@ -505,6 +507,10 @@ export default function Finanzas() {
 
         <TabsContent value="conceptos" className="mt-4">
           <ConceptosPanel />
+        </TabsContent>
+
+        <TabsContent value="transporte" className="mt-4">
+          <TarifasTransporte />
         </TabsContent>
       </Tabs>
     </div>
