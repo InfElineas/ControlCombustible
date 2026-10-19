@@ -55,16 +55,25 @@ La tabla del día a día, tal como se lleva hoy:
 | Rastra | 2.00 |
 
 ```sql
+clase_vehiculo (id, nombre, orden, activo)   -- Triciclo, Carro, Camión, Rastra
+
 tarifa_transporte (
-  id, tipo_consumidor_id → tipo_consumidor,
+  id, clase_vehiculo_id → clase_vehiculo,
   precio_km numeric, moneda text,
   fecha_desde date, fecha_hasta date,     -- historial, no sobrescribir
-  notas text, activo bool
+  notas text
 )
 ```
 
-El tipo de vehículo sale de `tipo_consumidor`, que ya existe y ya agrupa camiones,
-equipos y demás. No hace falta un catálogo nuevo.
+**La clase de vehículo es un catálogo nuevo, y hace falta.** En el primer intento
+colgué la tarifa de `tipo_consumidor`, dando por hecho que agrupaba camiones y
+triciclos. No es así: `tipo_consumidor` responde a *qué clase de cosa consume
+combustible* —Vehículo, ISO TANQUE, Reserva, Surtidor, Uso de almacén— y el
+desplegable ofrecía justo lo que no era.
+
+Son dos clasificaciones distintas del mismo parque, y las dos hacen falta: un
+camión es «Vehículo» para el control de combustible y «Camión» para la tarifa
+por kilómetro.
 
 **Con fechas, no con un valor único:** una ficha de marzo tiene que seguir
 mostrando la tarifa de marzo cuando se consulte en diciembre. Es el mismo patrón

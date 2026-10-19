@@ -1838,49 +1838,66 @@ CREATE POLICY adjuntos_borra ON storage.objects
 -- ─────────────────────────────────────────────────────────────
 --  Tarifas de referencia de transportacion ($/km por tipo de vehiculo)
 --  Ver migrations/2026-10-19_tarifa_transporte.sql y DISENO-FICHAS-COSTO.md
+
+
+-- ─────────────────────────────────────────────────────────────
+--  Tarifas de referencia de transportacion ($/km por clase de vehiculo)
+--  Ver migrations/2026-10-19_tarifa_transporte.sql, 2026-10-19b_clase_vehiculo.sql
+--  y DISENO-FICHAS-COSTO.md
+--
+--  clase_vehiculo es una clasificacion distinta de tipo_consumidor: esta dice
+--  que clase de cosa consume combustible (ISO TANQUE, Reserva, Surtidor) y
+--  aquella de que porte es el vehiculo para cobrar el kilometro. Un camion es
+--  «Vehiculo» en una y «Camion» en la otra.
 -- ─────────────────────────────────────────────────────────────
 
--- Tarifas de referencia de transportacion: $/km por tipo de vehiculo.
---
--- Etapa 1 de DISENO-FICHAS-COSTO.md. Es la tabla que hoy se lleva a mano
--- (triciclo 0.5, carro 1, camion 1.5, rastra 2) y con la que se da una oferta
--- rapida antes de calcular la ficha completa.
---
--- Con vigencia por fechas y no con un valor unico que se sobrescribe: una ficha
--- de marzo tiene que seguir enseñando la tarifa de marzo cuando se consulte en
--- diciembre. Mismo patron que precio_despacho_tipo, que ya funciona asi.
---
--- El tipo de vehiculo sale de tipo_consumidor, que ya agrupa camiones, equipos
--- y demas. No hace falta un catalogo nuevo.
+CREATE TABLE IF NOT EXISTS clase_vehiculo (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nombre       TEXT NOT NULL UNIQUE,
+  orden        SMALLINT NOT NULL DEFAULT 0,
+  activo       BOOLEAN NOT NULL DEFAULT TRUE,
+  created_date TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO clase_vehiculo (nombre, orden) VALUES
+  ('Triciclo', 1), ('Carro', 2), ('Camión', 3), ('Rastra', 4)
+ON CONFLICT (nombre) DO NOTHING;
+
+ALTER TABLE clase_vehiculo ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "clase_vehiculo_select_all" ON clase_vehiculo;
+DROP POLICY IF EXISTS "clase_vehiculo_write_eco"  ON clase_vehiculo;
+CREATE POLICY "clase_vehiculo_select_all" ON clase_vehiculo
+  FOR SELECT TO authenticated USING (true);
+CREATE POLICY "clase_vehiculo_write_eco" ON clase_vehiculo
+  FOR ALL TO authenticated
+  USING (get_my_role() IN ('superadmin', 'economico'))
+  WITH CHECK (get_my_role() IN ('superadmin', 'economico'));
 
 CREATE TABLE IF NOT EXISTS tarifa_transporte (
-  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tipo_consumidor_id UUID NOT NULL REFERENCES tipo_consumidor(id) ON DELETE CASCADE,
-  precio_km          NUMERIC(12,4) NOT NULL CHECK (precio_km >= 0),
-  moneda             TEXT NOT NULL DEFAULT 'CUP',
-  fecha_desde        DATE NOT NULL DEFAULT CURRENT_DATE,
-  fecha_hasta        DATE,
-  notas              TEXT,
-  created_date       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  creada_por         UUID,
-  creada_por_email   TEXT,
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  clase_vehiculo_id UUID NOT NULL REFERENCES clase_vehiculo(id) ON DELETE CASCADE,
+  precio_km         NUMERIC(12,4) NOT NULL CHECK (precio_km >= 0),
+  moneda            TEXT NOT NULL DEFAULT 'CUP',
+  fecha_desde       DATE NOT NULL DEFAULT CURRENT_DATE,
+  fecha_hasta       DATE,
+  notas             TEXT,
+  created_date      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  creada_por        UUID,
+  creada_por_email  TEXT,
   CONSTRAINT tarifa_transporte_rango CHECK (fecha_hasta IS NULL OR fecha_hasta >= fecha_desde)
 );
 
-CREATE INDEX IF NOT EXISTS idx_tarifa_transporte_tipo
-  ON tarifa_transporte (tipo_consumidor_id, fecha_desde DESC);
+CREATE INDEX IF NOT EXISTS idx_tarifa_transporte_clase
+  ON tarifa_transporte (clase_vehiculo_id, fecha_desde DESC);
 
--- Un tipo de vehiculo no puede tener dos tarifas abiertas a la vez: al poner
--- una nueva hay que cerrar la anterior. Si no, «la tarifa vigente» depende de
--- cual se lea primero.
+-- Una clase no puede tener dos tarifas abiertas a la vez.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tarifa_transporte_vigente_unica
-  ON tarifa_transporte (tipo_consumidor_id)
+  ON tarifa_transporte (clase_vehiculo_id)
   WHERE fecha_hasta IS NULL;
 
 ALTER TABLE tarifa_transporte ENABLE ROW LEVEL SECURITY;
 
--- La consulta la necesita cualquiera que prepare una oferta; mantenerla es del
--- rol que elabora las fichas, que es el mismo que lleva los precios.
 DROP POLICY IF EXISTS "tarifa_transporte_select_all" ON tarifa_transporte;
 DROP POLICY IF EXISTS "tarifa_transporte_insert_eco" ON tarifa_transporte;
 DROP POLICY IF EXISTS "tarifa_transporte_update_eco" ON tarifa_transporte;
@@ -1899,13 +1916,15 @@ CREATE POLICY "tarifa_transporte_delete_eco" ON tarifa_transporte
   FOR DELETE TO authenticated
   USING (get_my_role() IN ('superadmin', 'economico'));
 
--- Propagacion en tiempo real, como el resto de catalogos.
 DO $$
+DECLARE t TEXT;
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables
-    WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'tarifa_transporte'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.tarifa_transporte;
-  END IF;
+  FOREACH t IN ARRAY ARRAY['clase_vehiculo','tarifa_transporte'] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_publication_tables
+      WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = t
+    ) THEN
+      EXECUTE format('ALTER PUBLICATION supabase_realtime ADD TABLE public.%I', t);
+    END IF;
+  END LOOP;
 END $$;

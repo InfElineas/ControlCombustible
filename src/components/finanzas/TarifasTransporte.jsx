@@ -24,7 +24,7 @@ const cuando = (iso) => (iso ? new Date(iso + 'T12:00:00').toLocaleDateString('e
   day: '2-digit', month: 'short', year: 'numeric',
 }) : '—');
 
-const vacio = { tipo_consumidor_id: '', precio_km: '', moneda: 'CUP', fecha_desde: hoyISO(), notas: '' };
+const vacio = { clase_vehiculo_id: '', precio_km: '', moneda: 'CUP', fecha_desde: hoyISO(), notas: '' };
 
 /**
  * Tarifas de referencia de transportación: cuánto se cobra por kilómetro según
@@ -43,24 +43,30 @@ export default function TarifasTransporte() {
   const [abierto, setAbierto] = useState(false);
   const [aBorrar, setABorrar] = useState(null);
   const [verHistorial, setVerHistorial] = useState(false);
+  const [claseNueva, setClaseNueva] = useState('');
 
   const { data: tarifas = [], isLoading } = useQuery({
     queryKey: ['tarifas-transporte'],
     queryFn: () => base44.entities.TarifaTransporte.list('-fecha_desde', 500),
   });
-  const { data: tipos = [] } = useQuery({
-    queryKey: ['tiposConsumidor'],
-    queryFn: () => base44.entities.TipoConsumidor.list(),
+  // Clase de vehículo, que no es lo mismo que el tipo de consumidor. Aquella
+  // dice qué clase de cosa consume combustible —ISO TANQUE, Reserva, Surtidor—
+  // y esta de qué porte es el vehículo para cobrarle el kilómetro.
+  const { data: clases = [] } = useQuery({
+    queryKey: ['clases-vehiculo'],
+    queryFn: () => base44.entities.ClaseVehiculo.list('orden'),
   });
 
-  const nombreTipo = id => tipos.find(t => t.id === id)?.nombre ?? '—';
+  const nombreClase = id => clases.find(c => c.id === id)?.nombre ?? '—';
   const refrescar = () => qc.invalidateQueries({ queryKey: ['tarifas-transporte'] });
 
-  const vigentes = useMemo(
-    () => tarifas.filter(t => !t.fecha_hasta)
-      .sort((a, b) => nombreTipo(a.tipo_consumidor_id).localeCompare(nombreTipo(b.tipo_consumidor_id), 'es')),
-    [tarifas, tipos],
-  );
+  // Por el orden del catálogo —de menor a mayor porte— y no alfabético, que es
+  // como se lee la tabla en papel.
+  const vigentes = useMemo(() => {
+    const pos = new Map(clases.map((c, i) => [c.id, i]));
+    return tarifas.filter(t => !t.fecha_hasta)
+      .sort((a, b) => (pos.get(a.clase_vehiculo_id) ?? 99) - (pos.get(b.clase_vehiculo_id) ?? 99));
+  }, [tarifas, clases]);
   const historicas = useMemo(
     () => tarifas.filter(t => t.fecha_hasta).sort((a, b) => (b.fecha_desde || '').localeCompare(a.fecha_desde || '')),
     [tarifas],
@@ -68,15 +74,15 @@ export default function TarifasTransporte() {
 
   // Un tipo que ya tiene tarifa abierta no se vuelve a ofrecer: para cambiarle
   // el precio se usa «Nueva tarifa» sobre su fila, que cierra la anterior.
-  const tiposDisponibles = useMemo(() => {
-    const conVigente = new Set(vigentes.map(t => t.tipo_consumidor_id));
-    return tipos.filter(t => t.activo !== false && (!conVigente.has(t.id) || form.tipo_consumidor_id === t.id));
-  }, [tipos, vigentes, form.tipo_consumidor_id]);
+  const clasesDisponibles = useMemo(() => {
+    const conVigente = new Set(vigentes.map(t => t.clase_vehiculo_id));
+    return clases.filter(c => c.activo !== false && (!conVigente.has(c.id) || form.clase_vehiculo_id === c.id));
+  }, [clases, vigentes, form.clase_vehiculo_id]);
 
   const guardarMut = useMutation({
     mutationFn: async (d) => {
       const precio = parseFloat(d.precio_km);
-      const anterior = vigentes.find(t => t.tipo_consumidor_id === d.tipo_consumidor_id);
+      const anterior = vigentes.find(t => t.clase_vehiculo_id === d.clase_vehiculo_id);
 
       // La tarifa anterior se cierra el día antes de que empiece la nueva, no el
       // mismo día: dos tarifas vigentes a la vez dejan sin respuesta cuál se
@@ -96,7 +102,7 @@ export default function TarifasTransporte() {
       }
 
       const fila = {
-        tipo_consumidor_id: d.tipo_consumidor_id,
+        clase_vehiculo_id: d.clase_vehiculo_id,
         precio_km: precio,
         moneda: d.moneda,
         fecha_desde: d.fecha_desde,
@@ -119,7 +125,7 @@ export default function TarifasTransporte() {
 
       await logAudit({
         action: 'TARIFA_TRANSPORTE_NUEVA', entityType: 'TarifaTransporte', entityId: creada.id,
-        entityLabel: `${nombreTipo(d.tipo_consumidor_id)} · ${precio} ${d.moneda}/km`,
+        entityLabel: `${nombreClase(d.clase_vehiculo_id)} · ${precio} ${d.moneda}/km`,
         metadata: { precio_km: precio, desde: d.fecha_desde, cerro_anterior: anterior?.id ?? null },
       });
       return creada;
@@ -145,30 +151,53 @@ export default function TarifasTransporte() {
     onError: (e) => toast.error(e?.message ?? 'No se pudo corregir'),
   });
 
+  // Se crea desde el mismo diálogo: mandar a otra pantalla a dar de alta una
+  // clase, y volver, para escribir un precio, es un viaje de ida y vuelta por
+  // una palabra.
+  const claseMut = useMutation({
+    mutationFn: async (nombre) => {
+      const limpio = nombre.trim();
+      const { data, error } = await supabase.from('clase_vehiculo')
+        .insert({ nombre: limpio, orden: (clases.at(-1)?.orden ?? 0) + 1 })
+        .select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (c) => {
+      qc.invalidateQueries({ queryKey: ['clases-vehiculo'] });
+      setForm(f => ({ ...f, clase_vehiculo_id: c.id }));
+      setClaseNueva('');
+      toast.success(`Clase «${c.nombre}» creada`);
+    },
+    onError: (e) => toast.error(
+      e?.code === '23505' ? 'Ya existe una clase con ese nombre' : (e?.message ?? 'No se pudo crear'),
+    ),
+  });
+
   const borrarMut = useMutation({
     mutationFn: async (t) => {
       const { error } = await supabase.from('tarifa_transporte').delete().eq('id', t.id);
       if (error) throw error;
       await logAudit({
         action: 'TARIFA_TRANSPORTE_ELIMINADA', entityType: 'TarifaTransporte', entityId: t.id,
-        entityLabel: `${nombreTipo(t.tipo_consumidor_id)} · ${t.precio_km}/km`,
+        entityLabel: `${nombreClase(t.clase_vehiculo_id)} · ${t.precio_km}/km`,
       });
     },
     onSuccess: () => { refrescar(); setABorrar(null); toast.success('Tarifa eliminada'); },
     onError: (e) => toast.error(e?.message ?? 'No se pudo eliminar'),
   });
 
-  const cerrar = () => { setAbierto(false); setEditando(null); setForm(vacio); };
+  const cerrar = () => { setAbierto(false); setEditando(null); setForm(vacio); setClaseNueva(''); };
 
-  const abrirNueva = (tipoId = '') => {
+  const abrirNueva = (claseId = '') => {
     setEditando(null);
-    setForm({ ...vacio, tipo_consumidor_id: tipoId });
+    setForm({ ...vacio, clase_vehiculo_id: claseId });
     setAbierto(true);
   };
   const abrirCorreccion = (t) => {
     setEditando(t);
     setForm({
-      tipo_consumidor_id: t.tipo_consumidor_id,
+      clase_vehiculo_id: t.clase_vehiculo_id,
       precio_km: String(t.precio_km),
       moneda: t.moneda || 'CUP',
       fecha_desde: t.fecha_desde,
@@ -178,7 +207,7 @@ export default function TarifasTransporte() {
   };
 
   const guardar = () => {
-    if (!form.tipo_consumidor_id) { toast.error('Elige el tipo de vehículo'); return; }
+    if (!form.clase_vehiculo_id) { toast.error('Elige la clase de vehículo'); return; }
     const precio = parseFloat(form.precio_km);
     if (!Number.isFinite(precio) || precio < 0) { toast.error('El precio por kilómetro no es válido'); return; }
     if (editando) corregirMut.mutate({ id: editando.id, precio_km: form.precio_km, notas: form.notas });
@@ -200,7 +229,7 @@ export default function TarifasTransporte() {
                 </h3>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Lo que se cobra por kilómetro según el tipo de vehículo. Sirve para dar una
+                Lo que se cobra por kilómetro según la clase de vehículo. Sirve para dar una
                 oferta rápida sin calcular la ficha completa.
               </p>
             </div>
@@ -226,7 +255,7 @@ export default function TarifasTransporte() {
           ) : (
             <div className="rounded-xl border border-slate-100 dark:border-slate-700 overflow-hidden">
               <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-800/60 text-[10px] uppercase tracking-wide text-slate-400">
-                <span>Tipo de vehículo</span>
+                <span>Clase de vehículo</span>
                 <span className="text-right">Por kilómetro</span>
                 <span className="text-right">Desde</span>
               </div>
@@ -234,7 +263,7 @@ export default function TarifasTransporte() {
                 {vigentes.map(t => (
                   <div key={t.id} className="grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2.5 items-center text-sm group">
                     <span className="text-slate-700 dark:text-slate-200 truncate min-w-0">
-                      {nombreTipo(t.tipo_consumidor_id)}
+                      {nombreClase(t.clase_vehiculo_id)}
                       {t.notas && (
                         <span className="block text-[11px] text-slate-400 truncate">{t.notas}</span>
                       )}
@@ -247,7 +276,7 @@ export default function TarifasTransporte() {
                       {canManageFinanzas && (
                         <span className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button variant="ghost" size="icon" className="h-6 w-6" title="Nueva tarifa para este tipo"
-                            onClick={() => abrirNueva(t.tipo_consumidor_id)}>
+                            onClick={() => abrirNueva(t.clase_vehiculo_id)}>
                             <Plus className="w-3 h-3" />
                           </Button>
                           <Button variant="ghost" size="icon" className="h-6 w-6" title="Corregir esta misma tarifa"
@@ -280,7 +309,7 @@ export default function TarifasTransporte() {
                 <div className="mt-2 space-y-1">
                   {historicas.map(t => (
                     <div key={t.id} className="flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60">
-                      <span className="text-slate-500 truncate flex-1 min-w-0">{nombreTipo(t.tipo_consumidor_id)}</span>
+                      <span className="text-slate-500 truncate flex-1 min-w-0">{nombreClase(t.clase_vehiculo_id)}</span>
                       <span className="text-slate-600 dark:text-slate-300 tabular-nums whitespace-nowrap">
                         {fmtPrecio(t.precio_km, t.moneda)}
                       </span>
@@ -311,21 +340,32 @@ export default function TarifasTransporte() {
 
           <div className="space-y-3 py-1">
             <div>
-              <Label className="text-xs text-slate-500">Tipo de vehículo *</Label>
-              <Select value={form.tipo_consumidor_id}
-                onValueChange={v => setForm(f => ({ ...f, tipo_consumidor_id: v }))}
+              <Label className="text-xs text-slate-500">Clase de vehículo *</Label>
+              <Select value={form.clase_vehiculo_id}
+                onValueChange={v => setForm(f => ({ ...f, clase_vehiculo_id: v }))}
                 disabled={!!editando}>
                 <SelectTrigger className="mt-1"><SelectValue placeholder="Elegir…" /></SelectTrigger>
                 <SelectContent>
-                  {tiposDisponibles.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.nombre}</SelectItem>
+                  {clasesDisponibles.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {!editando && tiposDisponibles.length === 0 && (
+              {!editando && clasesDisponibles.length === 0 && (
                 <p className="text-[10px] text-amber-600 mt-1">
-                  Todos los tipos tienen ya una tarifa. Para cambiar una, usa el «+» de su fila.
+                  Todas las clases tienen ya una tarifa. Para cambiar una, usa el «+» de su fila.
                 </p>
+              )}
+              {!editando && (
+                <div className="flex gap-1.5 mt-1.5">
+                  <Input className="h-7 text-xs" placeholder="¿Falta una clase? Escríbela aquí"
+                    value={claseNueva} onChange={e => setClaseNueva(e.target.value)} />
+                  <Button type="button" variant="outline" size="sm" className="h-7 px-2 shrink-0"
+                    disabled={!claseNueva.trim() || claseMut.isPending}
+                    onClick={() => claseMut.mutate(claseNueva)}>
+                    Añadir
+                  </Button>
+                </div>
               )}
             </div>
 
@@ -386,7 +426,7 @@ export default function TarifasTransporte() {
         title="¿Eliminar la tarifa?"
         description={
           aBorrar
-            ? `Se borra la tarifa de ${nombreTipo(aBorrar.tipo_consumidor_id)} (${fmtPrecio(aBorrar.precio_km, aBorrar.moneda)}). ` +
+            ? `Se borra la tarifa de ${nombreClase(aBorrar.clase_vehiculo_id)} (${fmtPrecio(aBorrar.precio_km, aBorrar.moneda)}). ` +
               'Si solo cambió el precio, es mejor crear una nueva: así queda el historial y las fichas antiguas siguen cuadrando.'
             : ''
         }

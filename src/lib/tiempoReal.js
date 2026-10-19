@@ -45,6 +45,7 @@ const MAPA = {
   concepto_precio:     [['conceptos-precio']],
   precio_combustible:  [['precios'], ['precios-despacho']],
   precio_despacho_tipo:[['precios-despacho']],
+  clase_vehiculo:      [['clases-vehiculo']],
   tarifa_transporte:   [['tarifas-transporte']],
   asignacion_ruta:     [['asignaciones_ruta'], ['asig-comparativo']],
   ruta:                [['rutas']],
