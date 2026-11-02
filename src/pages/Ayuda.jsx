@@ -139,7 +139,7 @@ const sections = [
         <TableDoc
           headers={['Rol', 'Qué puede hacer']}
           rows={[
-            [<Tag color="sky">Super Admin</Tag>, 'Acceso completo: crear, editar, eliminar en todos los módulos. Gestiona usuarios y roles. Puede eliminar bonificaciones de prueba.'],
+            [<Tag color="sky">Super Admin</Tag>, 'Acceso completo: crear, editar, eliminar en todos los módulos. Administra los usuarios y roles desde elineas-auth. Puede eliminar bonificaciones de prueba.'],
             [<Tag color="emerald">Operador</Tag>, 'Registra movimientos, consumidores, alertas y configuración. Puede registrar y gestionar bonificaciones. No accede a Finanzas ni Administración.'],
             [<Tag color="violet">Auditor</Tag>, 'Solo lectura. Ve Dashboard, Movimientos, Rutas, Reportes y Bonificaciones. No puede crear ni eliminar.'],
             [<Tag color="amber">Económico</Tag>, 'Accede a Dashboard, Movimientos, Finanzas, Reportes y Bonificaciones. Puede marcar bonificaciones como cobradas. Gestiona precios de despacho por tipo de consumidor. Perfil contable/financiero.'],
@@ -1778,14 +1778,19 @@ Si Km restantes ≥ 1 500   → Al día`}
       <>
         <P>
           El panel de administración es exclusivo para usuarios con rol <Tag color="sky">Super Admin</Tag>.
-          Permite gestionar usuarios, roles y ver el registro de auditoría del sistema.
+          Permite ver el registro de auditoría, publicar la aplicación móvil y llegar al panel de usuarios. Las cuentas y sus roles se administran en el servidor de identidad de la empresa (elineas-auth), no aquí.
         </P>
 
-        <SubTitle>Gestión de usuarios y roles</SubTitle>
+        <SubTitle>Roles</SubTitle>
+        <P>
+          Para dar de alta a una persona, cambiarle el rol, deshabilitarla o reenviarle la invitación,
+          se usa el panel de elineas-auth (sistema <strong>combustible</strong>). Quien no tiene ningún rol
+          en este sistema no puede entrar. No hay registro público: las cuentas las crea un administrador.
+        </P>
         <TableDoc
           headers={['Rol', 'Descripción']}
           rows={[
-            ['superadmin', 'Acceso total. Puede gestionar usuarios, eliminar registros y ver auditoría.'],
+            ['superadmin', 'Acceso total. Puede eliminar registros, ver auditoría y publicar la app móvil. (Es el rol «admin» de elineas-auth.)'],
             ['operador', 'Registra y edita movimientos, consumidores, conductores y alertas.'],
             ['auditor', 'Solo lectura. Ve movimientos, rutas y reportes sin poder modificar nada.'],
             ['economico', 'Accede a Finanzas y Reportes. Perfil orientado al análisis financiero.'],

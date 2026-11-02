@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { supabase } from '@/api/supabaseClient';
+import { authClient } from '@/api/authClient';
 import { Fuel, Eye, EyeOff } from 'lucide-react';
-import { entrarConGoogle, escucharVueltaDeLogin, ENLACE_VUELTA, esApp } from '@/lib/authNativa';
-import { MARCA_DEFINIR_CLAVE } from '@/components/ui-helpers/ClaveAcceso';
+import { entrarConGoogle, escucharVueltaDeLogin, terminarGoogleEnLaWeb } from '@/lib/authNativa';
 import DescargarApp from '@/components/ui-helpers/DescargarApp';
 
 export default function Login() {
@@ -29,121 +28,46 @@ export default function Login() {
       : location.pathname + location.search;
     navigate(destino, { replace: true });
   };
-  const [mode, setMode]               = useState('login'); // 'login' | 'register'
-  const [email, setEmail]             = useState('');
-  const [password, setPassword]       = useState('');
-  const [fullName, setFullName]       = useState('');
-  const [showPass, setShowPass]       = useState(false);
-  const [loading, setLoading]                       = useState(false);
-  const [error, setError]     = useState(/** @type {string|null} */(null));
-  const [successMsg, setSuccessMsg] = useState(/** @type {string|null} */(null));
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState(/** @type {string|null} */(null));
 
-  // Antes que nada: si la dirección viene del correo de recuperación, se deja la
-  // marca para que la aplicación abra el formulario de contraseña al entrar. Va
-  // primero porque el efecto siguiente redirige en cuanto encuentra sesión.
+  // Si ya hay sesión (guardada o recién abierta), no hay nada que hacer aquí.
   useEffect(() => {
-    const partes = window.location.hash.slice(1) + '&' + window.location.search.slice(1);
-    if (new URLSearchParams(partes).get('type') === 'recovery') {
-      sessionStorage.setItem(MARCA_DEFINIR_CLAVE, '1');
-    }
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((evento) => {
-      if (evento === 'PASSWORD_RECOVERY') sessionStorage.setItem(MARCA_DEFINIR_CLAVE, '1');
-    });
-    return () => subscription.unsubscribe();
+    if (authClient.haySesionGuardada()) irAlDestino();
+    return authClient.suscribir((evento) => { if (evento === 'SIGNED_IN') irAlDestino(); });
   }, []);
 
+  // Web: vuelta del inicio de sesión con Google (?code=…&state=… o ?error=…).
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) irAlDestino();
+    terminarGoogleEnLaWeb().then((resultado) => {
+      if (!resultado) return;
+      if (resultado.ok) irAlDestino();
+      else setError(resultado.motivo);
     });
   }, []);
 
-  // Dentro de la aplicacion, el inicio con Google sale al navegador y vuelve por
-  // un enlace propio; aqui se recoge esa vuelta para terminar la sesion dentro.
+  // Dentro de la aplicación, el inicio con Google sale al navegador y vuelve por
+  // un enlace propio; aquí se recoge esa vuelta para terminar la sesión dentro.
   useEffect(() => escucharVueltaDeLogin((resultado) => {
-    if (resultado?.recuperacion) sessionStorage.setItem(MARCA_DEFINIR_CLAVE, '1');
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) { irAlDestino(); return; }
-      setLoading(false);
-      // Se muestra el motivo tal cual lo da Supabase o el proveedor: sin el, no
-      // hay forma de distinguir un enlace mal autorizado de un permiso negado.
-      setError(resultado?.motivo || 'No se pudo completar el inicio de sesión. Inténtalo de nuevo.');
-    });
+    setLoading(false);
+    if (resultado?.ok) irAlDestino();
+    else setError(resultado?.motivo || 'No se pudo completar el inicio de sesión. Inténtalo de nuevo.');
   }), []);
-
-  const resetForm = () => {
-    setError(null);
-    setSuccessMsg(null);
-    setEmail('');
-    setPassword('');
-    setFullName('');
-  };
-
-  const switchMode = (m) => {
-    setMode(m);
-    resetForm();
-  };
 
   const handleEmailLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password });
-    if (err) {
-      setError(traducirError(err.message));
+    try {
+      await authClient.iniciarSesion(email.trim(), password);
+      irAlDestino();
+    } catch (err) {
+      setError(traducirError(err));
       setLoading(false);
-    } else {
-      irAlDestino();
     }
-  };
-
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    if (password.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    const { data, error: err } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { full_name: fullName || email },
-        emailRedirectTo: window.location.origin + '/',
-      },
-    });
-    setLoading(false);
-    if (err) {
-      setError(traducirError(err.message));
-    } else if (data.session) {
-      // Confirmación de email desactivada → ya tiene sesión
-      irAlDestino();
-    } else {
-      setSuccessMsg('Revisa tu correo y confirma tu cuenta para poder iniciar sesión.');
-    }
-  };
-
-  // Envía el enlace por correo para poner una contraseña.
-  //
-  // Sirve tanto a quien la olvidó como a quien entró siempre con Google y nunca
-  // ha tenido una: en los dos casos la cuenta ya existe y lo que falta es fijar
-  // la clave. Supabase responde igual exista o no el correo, así que esto no
-  // permite averiguar quién está registrado.
-  const handleRecuperar = async () => {
-    if (!email) {
-      setError('Escribe tu correo y vuelve a pulsar.');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setSuccessMsg(null);
-    const { error: err } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: esApp() ? ENLACE_VUELTA : window.location.origin + '/Login',
-    });
-    setLoading(false);
-    if (err) { setError(traducirError(err.message)); return; }
-    setSuccessMsg('Te enviamos un enlace a ese correo. Ábrelo desde este dispositivo y podrás definir tu contraseña.');
   };
 
   const handleGoogleLogin = async () => {
@@ -179,55 +103,14 @@ export default function Login() {
 
         {/* Card */}
         <div className="glass rounded-2xl shadow-sm p-8">
-          {/* Tabs */}
-          <div className="flex rounded-xl bg-slate-100 dark:bg-slate-800 p-1 mb-6">
-            {['login', 'register'].map(m => (
-              <button
-                key={m}
-                onClick={() => switchMode(m)}
-                className={`flex-1 text-xs font-medium py-1.5 rounded-lg transition-all ${
-                  mode === m
-                    ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-                }`}
-              >
-                {m === 'login' ? 'Iniciar sesión' : 'Registrarse'}
-              </button>
-            ))}
-          </div>
-
           {error && (
             <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-100 dark:border-red-800/50 text-xs text-red-600 dark:text-red-400">
               {error}
             </div>
           )}
 
-          {successMsg ? (
-            <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800/50 text-sm text-emerald-700 dark:text-emerald-400 text-center">
-              <p className="font-medium mb-1">¡Registro exitoso!</p>
-              <p className="text-xs">{successMsg}</p>
-              <button
-                className="mt-3 text-xs text-sky-600 hover:underline"
-                onClick={() => switchMode('login')}
-              >
-                Ir a iniciar sesión
-              </button>
-            </div>
-          ) : (
-            <form onSubmit={mode === 'login' ? handleEmailLogin : handleRegister} className="space-y-3">
-              {mode === 'register' && (
-                <div>
-                  <label className="text-xs text-slate-500 dark:text-slate-400">Nombre completo</label>
-                  <input
-                    type="text"
-                    value={fullName}
-                    onChange={e => setFullName(e.target.value)}
-                    placeholder="Juan Pérez"
-                    className="mt-1 w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/60 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
-                  />
-                </div>
-              )}
-
+          <>
+            <form onSubmit={handleEmailLogin} className="space-y-3">
               <div>
                 <label className="text-xs text-slate-500 dark:text-slate-400">Correo electrónico</label>
                 <input
@@ -248,7 +131,7 @@ export default function Login() {
                     required
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="Tu contraseña"
                     className="w-full px-3 py-2 pr-10 rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800/60 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
                   />
                   <button
@@ -261,16 +144,9 @@ export default function Login() {
                 </div>
               </div>
 
-              {mode === 'login' && (
-                <button
-                  type="button"
-                  onClick={handleRecuperar}
-                  disabled={loading}
-                  className="text-xs text-sky-600 hover:text-sky-700 dark:text-sky-400 disabled:opacity-60"
-                >
-                  ¿Olvidaste la contraseña o entras siempre con Google?
-                </button>
-              )}
+              <p className="text-[11px] text-slate-400">
+                ¿Olvidaste la contraseña o aún no tienes cuenta? Pide a un administrador que te reenvíe la invitación.
+              </p>
 
               <button
                 type="submit"
@@ -279,14 +155,12 @@ export default function Login() {
               >
                 {loading
                   ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />Procesando...</span>
-                  : mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'
+                  : 'Iniciar sesión'
                 }
               </button>
             </form>
-          )}
 
           {/* Divisor */}
-          {!successMsg && (
             <>
               <div className="flex items-center gap-3 my-5">
                 <hr className="flex-1 border-slate-200 dark:border-slate-700" />
@@ -308,7 +182,7 @@ export default function Login() {
                 Google
               </button>
             </>
-          )}
+          </>
         </div>
 
         <DescargarApp variante="tarjeta" />
@@ -317,14 +191,22 @@ export default function Login() {
   );
 }
 
-function traducirError(msg) {
-  if (!msg) return 'Error desconocido';
-  if (msg.includes('Invalid login credentials'))  return 'Correo o contraseña incorrectos.';
-  if (msg.includes('Email not confirmed'))         return 'Debes confirmar tu correo antes de iniciar sesión.';
-  if (msg.includes('User already registered'))     return 'Ya existe una cuenta con ese correo.';
-  if (msg.includes('Password should be'))          return 'La contraseña debe tener al menos 6 caracteres.';
-  if (msg.includes('Unable to validate'))          return 'Correo inválido.';
-  if (msg.includes('rate limit') || msg.includes('For security purposes'))
-    return 'Demasiados intentos seguidos. Espera un minuto y vuelve a probar.';
-  return msg;
+function traducirError(err) {
+  switch (err?.codigo) {
+    case 'SIN_RED':
+      // Con el detalle técnico (dirección y error) es posible diagnosticar sin abrir la consola.
+      return err.detalle
+        ? `No hay conexión con el servidor de identidad. ${err.detalle}`
+        : 'No hay conexión. El inicio de sesión necesita red.';
+    case 'RATE_LIMITED':
+      return 'Demasiados intentos seguidos. Espera un minuto y vuelve a probar.';
+    case 'NO_ROLES_IN_SYSTEM':
+      return 'Tu cuenta existe, pero todavía no tiene acceso a esta aplicación.';
+    case 'SYSTEM_NOT_FOUND':
+      return 'La aplicación no está dada de alta en el servidor de identidad.';
+  }
+  if (err?.estado === 429) return 'Demasiados intentos seguidos. Espera un minuto y vuelve a probar.';
+  if (err?.estado === 401 || err?.estado === 400) return 'Correo o contraseña incorrectos.';
+  if (err?.estado === 403) return 'Tu cuenta no tiene acceso a esta aplicación.';
+  return err?.message || 'No se pudo iniciar sesión. Inténtalo de nuevo.';
 }

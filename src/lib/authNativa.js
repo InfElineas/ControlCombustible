@@ -1,93 +1,84 @@
 import { Capacitor } from '@capacitor/core';
-import { supabase } from '@/api/supabaseClient';
-
-// Direccion propia de la aplicacion por la que el navegador devuelve el control
-// tras autenticar. Tiene que coincidir con el intent-filter de
-// AndroidManifest.xml y estar autorizada en Supabase, en
-// Authentication > URL Configuration > Redirect URLs.
-export const ENLACE_VUELTA = 'com.mercadoelineas.combustible://login';
+import { authClient } from '@/api/authClient';
 
 export const esApp = () => Capacitor.isNativePlatform();
 
-// Inicio de sesion con Google.
+// Dirección a la que el servidor de identidad devuelve el control tras Google.
 //
-// Dentro de la aplicacion no se puede usar el flujo normal del navegador:
-// Google rechaza OAuth en WebViews desde 2021, asi que Supabase acababa
-// abriendo el navegador del sistema y la sesion se iniciaba alli en lugar de en
-// la aplicacion. Aqui se abre el navegador a proposito, pero indicandole que al
-// terminar vuelva a la aplicacion por ENLACE_VUELTA; la sesion se completa
-// entonces dentro con el codigo que trae de vuelta.
+//   · Web:  la propia pantalla de login, que recoge ?code=…&state=….
+//   · App:  tiene que ser una dirección https que Android abra en la aplicación
+//           (Android App Link verificado). elineas-auth solo admite como destino
+//           orígenes https (o localhost), así que ya no vale el enlace propio
+//           `com.mercadoelineas.combustible://login` que usaba Supabase. Se
+//           configura con VITE_NATIVE_REDIRECT y exige el intent-filter con
+//           autoVerify en AndroidManifest.xml y su assetlinks.json en el servidor.
+const redirectWeb = () => `${window.location.origin}/Login`;
+const redirectApp = () => import.meta.env.VITE_NATIVE_REDIRECT || '';
+
+// Mensajes para los códigos con los que elineas-auth rechaza el acceso.
+export function motivoDeError(codigo) {
+  switch (codigo) {
+    case 'ACCOUNT_NOT_FOUND':
+      return 'No hay ninguna cuenta con ese correo de Google. Pide a un administrador que te dé de alta.';
+    case 'NO_ROLES_IN_SYSTEM':
+      return 'Tu cuenta existe, pero todavía no tiene acceso a esta aplicación.';
+    case 'GOOGLE_ACCESS_DENIED':
+      return 'Cancelaste el acceso con Google.';
+    case 'FLUJO_CADUCADO':
+    case 'STATE_INVALIDO':
+      return 'El inicio de sesión caducó o no es válido. Vuelve a intentarlo.';
+    case 'SIN_RED':
+      return 'No hay conexión. El inicio de sesión necesita red.';
+    case 'SYSTEM_NOT_FOUND':
+      return 'La aplicación no está dada de alta en el servidor de identidad.';
+    default:
+      return 'No se pudo completar el inicio de sesión. Inténtalo de nuevo.';
+  }
+}
+
+// Inicio de sesión con Google.
+//
+// Dentro de la aplicación no se puede navegar el propio WebView hacia Google:
+// Google rechaza OAuth en WebViews. Se abre el navegador del sistema y se vuelve
+// por la dirección de la aplicación.
 export async function entrarConGoogle() {
-  if (!esApp()) {
-    // En la web el comportamiento de siempre: redirige y vuelve al origen.
-    return supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin + '/' },
-    });
+  try {
+    if (!esApp()) {
+      window.location.assign(await authClient.urlGoogle(redirectWeb()));
+      return { error: null };
+    }
+    const destino = redirectApp();
+    if (!destino) {
+      return { error: new Error('Falta VITE_NATIVE_REDIRECT: sin ella la app no puede recibir la vuelta de Google.') };
+    }
+    const url = await authClient.urlGoogle(destino);
+    const { Browser } = await import('@capacitor/browser');
+    await Browser.open({ url, presentationStyle: 'popover' });
+    return { error: null };
+  } catch (e) {
+    return { error: new Error(motivoDeError(e?.codigo)) };
   }
-
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: ENLACE_VUELTA,
-      // Sin esto el WebView intentaria navegar el mismo a Google y volveriamos
-      // al problema original.
-      skipBrowserRedirect: true,
-    },
-  });
-  if (error) return { error };
-
-  const { Browser } = await import('@capacitor/browser');
-  await Browser.open({ url: data.url, presentationStyle: 'popover' });
-  return { error: null };
 }
 
-// Convierte la direccion de vuelta en una sesion abierta.
-//
-// Devuelve { ok: true } o { ok: false, motivo } con el fallo concreto: un
-// mensaje generico obliga a adivinar y aqui hay tres causas muy distintas
-// (el proveedor rechazo, la vuelta no trajo credenciales, o el canje fallo).
-async function abrirSesionDesde(url) {
-  // Las credenciales pueden venir en la consulta como un codigo de un solo uso
-  // (flujo PKCE) o en el fragmento como los tokens ya emitidos (flujo
-  // implicito, que es el que supabase-js usa por omision). Se leen las dos
-  // formas para no depender de la configuracion del cliente.
-  const [antesDelFragmento, fragmento = ''] = url.split('#');
-  const consulta = antesDelFragmento.includes('?') ? antesDelFragmento.split('?')[1] : '';
-  const enConsulta = new URLSearchParams(consulta);
-  const enFragmento = new URLSearchParams(fragmento);
-  const dato = clave => enConsulta.get(clave) || enFragmento.get(clave);
-
-  const fallo = dato('error_description') || dato('error');
-  if (fallo) return { ok: false, motivo: decodeURIComponent(fallo.replace(/\+/g, ' ')) };
-
-  // El correo de recuperación vuelve marcado, y eso decide si al entrar hay que
-  // pedir la contraseña nueva o no.
-  const recuperacion = dato('type') === 'recovery';
-
-  const codigo = dato('code');
-  if (codigo) {
-    const { error } = await supabase.auth.exchangeCodeForSession(codigo);
-    if (error) return { ok: false, motivo: `No se pudo canjear el código: ${error.message}` };
-    return { ok: true, recuperacion };
+// En la web: si la dirección actual es la vuelta de Google, termina la sesión.
+// Devuelve null si no lo es; si lo es, { ok: true } o { ok: false, motivo }.
+export async function terminarGoogleEnLaWeb() {
+  if (esApp()) return null;
+  const consulta = new URLSearchParams(window.location.search);
+  if (!consulta.has('code') && !consulta.has('error')) return null;
+  const direccion = window.location.href;
+  // Se limpia la dirección en cuanto se lee: el código es de un solo uso.
+  window.history.replaceState(null, '', window.location.pathname);
+  try {
+    await authClient.completarGoogle(direccion);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, motivo: motivoDeError(e?.codigo) };
   }
-
-  const acceso = dato('access_token');
-  const refresco = dato('refresh_token');
-  if (acceso && refresco) {
-    const { error } = await supabase.auth.setSession({ access_token: acceso, refresh_token: refresco });
-    if (error) return { ok: false, motivo: `No se pudo abrir la sesión: ${error.message}` };
-    return { ok: true, recuperacion };
-  }
-
-  return { ok: false, motivo: 'La vuelta del navegador no trajo credenciales.' };
 }
 
-// Escucha la vuelta del navegador y termina de iniciar la sesion.
-//
-// Devuelve una funcion para dejar de escuchar. Solo hace algo dentro de la
-// aplicacion: en la web el propio Supabase resuelve la vuelta al recargar.
-// alTerminar recibe el resultado de abrirSesionDesde.
+// Escucha la vuelta del navegador en la aplicación y termina de iniciar la
+// sesión. Devuelve una función para dejar de escuchar. En la web no hace nada.
 export function escucharVueltaDeLogin(alTerminar) {
   if (!esApp()) return () => {};
 
@@ -96,21 +87,23 @@ export function escucharVueltaDeLogin(alTerminar) {
   const yaVistas = new Set();
 
   const manejar = async (url) => {
-    if (!url || !url.startsWith(ENLACE_VUELTA) || yaVistas.has(url)) return;
-    // El codigo es de un solo uso: si Android entrega el mismo enlace dos veces
-    // (arranque en frio mas evento), el segundo canje fallaria sin motivo real.
+    const destino = redirectApp();
+    if (!url || !destino || !url.startsWith(destino) || yaVistas.has(url)) return;
+    // El código es de un solo uso: si Android entrega el mismo enlace dos veces
+    // (arranque en frío más evento), el segundo canje fallaría sin motivo real.
     yaVistas.add(url);
 
     let resultado;
     try {
-      resultado = await abrirSesionDesde(url);
+      await authClient.completarGoogle(url);
+      resultado = { ok: true };
     } catch (e) {
-      resultado = { ok: false, motivo: e?.message ?? String(e) };
+      console.error('[login] vuelta fallida:', e?.codigo, e?.message);
+      resultado = { ok: false, motivo: motivoDeError(e?.codigo) };
     }
-    if (!resultado.ok) console.error('[login] vuelta fallida:', resultado.motivo, url);
 
     // Se cierra la ventana del navegador en cualquier caso: dejarla abierta
-    // sobre la aplicacion desconcierta mas que el propio fallo.
+    // sobre la aplicación desconcierta más que el propio fallo.
     try {
       const { Browser } = await import('@capacitor/browser');
       await Browser.close();
@@ -123,12 +116,12 @@ export function escucharVueltaDeLogin(alTerminar) {
     const { App } = await import('@capacitor/app');
     suscripcion = await App.addListener('appUrlOpen', ({ url }) => manejar(url));
 
-    // Si Android mato el proceso mientras el navegador estaba delante, la
-    // aplicacion arranca ya con el enlace y el evento anterior nunca llega.
+    // Si Android mató el proceso mientras el navegador estaba delante, la
+    // aplicación arranca ya con el enlace y el evento anterior nunca llega.
     try {
       const lanzamiento = await App.getLaunchUrl();
       if (lanzamiento?.url) await manejar(lanzamiento.url);
-    } catch { /* no todas las plataformas exponen la direccion de arranque */ }
+    } catch { /* no todas las plataformas exponen la dirección de arranque */ }
   })();
 
   return () => { vigente = false; suscripcion?.remove?.(); };

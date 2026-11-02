@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/api/supabaseClient';
+import { authClient } from '@/api/authClient';
 import { base44 } from '@/api/base44Client';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import { Card, CardContent } from '@/components/ui/card';
@@ -68,7 +69,7 @@ function ModalMantenimiento({ vehiculo, onClose }) {
 
   const mut = useMutation({
     mutationFn: async (d) => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = authClient.usuarioActual();
       // Insertar historial
       const { error: errH } = await supabase.from('historial_mantenimiento').insert({
         consumidor_id: vehiculo.id,

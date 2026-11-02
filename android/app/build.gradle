@@ -23,6 +23,12 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 6
         versionName "1.6"
+        // Dominio https de la aplicación web, para el Android App Link con el que
+        // Google devuelve el control a la app (ver docs/migracion-is/ANDROID-APP-LINK.md).
+        // Se pasa con -PAPP_LINK_HOST=app.ejemplo.com o en android/gradle.properties.
+        // El valor por defecto es un dominio .invalid (nunca existe): una compilación
+        // sin configurar no intercepta enlaces de nadie, simplemente no recibe la vuelta.
+        manifestPlaceholders = [appLinkHost: (project.findProperty('APP_LINK_HOST') ?: 'sin-configurar.invalid')]
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

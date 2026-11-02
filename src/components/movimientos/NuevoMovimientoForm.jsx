@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { ArrowDownCircle, ArrowLeftRight, Warehouse, Save, Loader2, Gauge, Satellite, Paperclip, X, Tag, AlertTriangle, WifiOff } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
+import { urlPublicaStorage } from '@/api/storageUrl';
 import { obtenerPrecioVigente, formatMonto } from '@/components/ui-helpers/SaldoUtils';
 import { calcularAuditoriaCompra, obtenerCapacidadTanque, AUDITORIA_ESTADO } from './auditoriaCombustible';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
@@ -571,7 +572,7 @@ export default function NuevoMovimientoForm({ onSuccess }) {
         .upload(path, adjuntoFile);
       setIsUploading(false);
       if (uploadError) { toast.error(motivoDeSubida(uploadError), { duration: 9000 }); return; }
-      const { data: { publicUrl } } = supabase.storage.from('movimiento-adjuntos').getPublicUrl(path);
+      const publicUrl = urlPublicaStorage('movimiento-adjuntos', path);
       data.adjunto_url = publicUrl;
       data.adjunto_nombre = adjuntoFile.name;
     }

@@ -1,100 +1,72 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/api/supabaseClient';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { authClient } from '@/api/authClient';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { KeyRound, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 
-const MINIMO = 6;
+// Política de contraseña de elineas-auth (la misma que aplica el servidor, así
+// que se comprueba aquí para no hacer esperar al usuario por un rechazo).
+const MINIMO = 12;
+const MAXIMO = 128;
 
-// Marca que deja el correo de recuperación para que el diálogo se abra solo al
-// entrar, en lugar de dejar al usuario dentro sin saber qué hacer.
-export const MARCA_DEFINIR_CLAVE = 'webcombustible-definir-clave';
-
-function traducir(msg = '') {
-  if (msg.includes('should be at least') || msg.includes('Password should be'))
-    return `La contraseña debe tener al menos ${MINIMO} caracteres.`;
-  if (msg.includes('different from the old password'))
-    return 'La contraseña nueva tiene que ser distinta de la actual.';
-  if (msg.includes('reauthentication') || msg.includes('Reauthentication'))
-    return 'Por seguridad, vuelve a entrar y repite el cambio.';
-  if (msg.includes('session') || msg.includes('JWT'))
-    return 'La sesión caducó. Vuelve a entrar e inténtalo otra vez.';
-  return msg || 'No se pudo guardar la contraseña.';
+function problemaDeClave(clave) {
+  if (clave.length < MINIMO) return `La contraseña debe tener al menos ${MINIMO} caracteres.`;
+  if (clave.length > MAXIMO) return `La contraseña no puede pasar de ${MAXIMO} caracteres.`;
+  if (!/[A-Z]/.test(clave)) return 'Debe llevar al menos una mayúscula.';
+  if (!/[a-z]/.test(clave)) return 'Debe llevar al menos una minúscula.';
+  if (!/[^A-Za-z0-9]/.test(clave)) return 'Debe llevar al menos un carácter especial.';
+  return null;
 }
 
-// ¿Puede esta cuenta entrar con correo y contraseña?
-//
-// identities dice con qué proveedores está dada de alta. Quien entró con Google
-// no tiene la de tipo 'email' hasta que se fija una contraseña, y mientras no la
-// tenga el acceso por correo le falla sin explicación.
-export function useTieneClavePropia({ enabled = true } = {}) {
-  return useQuery({
-    queryKey: ['identidades-cuenta'],
-    queryFn: async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) throw error;
-      return (data?.user?.identities ?? []).map(i => i.provider);
-    },
-    enabled,
-    staleTime: 10 * 60_000,
-    retry: false,
-  });
+function traducir(err) {
+  if (err?.sinRed) return 'No hay conexión. Cambiar la contraseña necesita red.';
+  if (err?.estado === 429) return 'Demasiados intentos. Espera un minuto y vuelve a probar.';
+  if (err?.estado === 401 || err?.estado === 403) return 'La contraseña actual no es correcta.';
+  return err?.message || 'No se pudo guardar la contraseña.';
 }
 
-// Define una contraseña propia de la aplicación para quien entró con Google.
+// Cambia la contraseña propia en elineas-auth.
 //
-// La contraseña de la cuenta de Google no sirve para el acceso por correo: solo
-// Google puede comprobarla y la aplicación nunca llega a verla. Lo que sí puede
-// tener la misma cuenta es una contraseña propia, y es la que se fija aquí. A
-// partir de entonces valen las dos formas de entrar, con el mismo correo.
+// Las cuentas las crea un administrador y llevan contraseña desde el principio,
+// así que ya no existe el caso «entró con Google y no tiene contraseña»: el
+// cambio siempre exige la actual. Si no la recuerda, un administrador puede
+// reenviarle la invitación desde el panel del servidor de identidad.
 export default function ClaveAcceso({ abierto, onCerrar }) {
-  const qc = useQueryClient();
+  const [actual, setActual]       = useState('');
   const [clave, setClave]         = useState('');
   const [repetida, setRepetida]   = useState('');
   const [ver, setVer]             = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError]         = useState(/** @type {string|null} */(null));
   const [listo, setListo]         = useState(false);
-  const [yaTiene, setYaTiene]     = useState(/** @type {boolean|null} */(null));
 
   useEffect(() => {
     if (!abierto) {
-      setClave(''); setRepetida(''); setError(null); setListo(false); setVer(false);
-      return;
+      setActual(''); setClave(''); setRepetida(''); setError(null); setListo(false); setVer(false);
     }
-    // identities dice con qué proveedores puede entrar esta cuenta. Si no está
-    // 'email', es la primera vez que se le pone contraseña.
-    supabase.auth.getUser().then(({ data }) => {
-      const proveedores = (data?.user?.identities ?? []).map(i => i.provider);
-      setYaTiene(proveedores.includes('email'));
-    }).catch(() => setYaTiene(null));
   }, [abierto]);
 
   const guardar = async (e) => {
     e.preventDefault();
-    if (clave.length < MINIMO) {
-      setError(`La contraseña debe tener al menos ${MINIMO} caracteres.`);
-      return;
-    }
-    if (clave !== repetida) {
-      setError('Las dos contraseñas no coinciden.');
-      return;
-    }
+    if (!actual) { setError('Escribe tu contraseña actual.'); return; }
+    const problema = problemaDeClave(clave);
+    if (problema) { setError(problema); return; }
+    if (clave !== repetida) { setError('Las dos contraseñas no coinciden.'); return; }
+    if (clave === actual) { setError('La contraseña nueva tiene que ser distinta de la actual.'); return; }
+
     setGuardando(true);
     setError(null);
-    const { error: err } = await supabase.auth.updateUser({ password: clave });
-    setGuardando(false);
-    if (err) { setError(traducir(err.message)); return; }
-    // Refresca la lista de proveedores para que el aviso de "sin contraseña"
-    // deje de salir sin tener que recargar.
-    qc.invalidateQueries({ queryKey: ['identidades-cuenta'] });
-    setListo(true);
+    try {
+      await authClient.cambiarContrasena(actual, clave);
+      setListo(true);
+    } catch (err) {
+      setError(traducir(err));
+    } finally {
+      setGuardando(false);
+    }
   };
-
-  const titulo = yaTiene ? 'Cambiar contraseña' : 'Crear contraseña';
 
   return (
     <Dialog open={abierto} onOpenChange={a => { if (!a) onCerrar(); }}>
@@ -104,7 +76,7 @@ export default function ClaveAcceso({ abierto, onCerrar }) {
             <div className="w-7 h-7 rounded-lg bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center shrink-0">
               <KeyRound className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
             </div>
-            {titulo}
+            Cambiar contraseña
           </DialogTitle>
         </DialogHeader>
 
@@ -112,20 +84,22 @@ export default function ClaveAcceso({ abierto, onCerrar }) {
           <div className="text-center py-4 space-y-3">
             <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
             <p className="text-sm text-slate-600 dark:text-slate-300">
-              Contraseña guardada. Ya puedes entrar con tu correo y esta contraseña,
-              además de con Google.
+              Contraseña guardada. Úsala la próxima vez que entres con tu correo.
             </p>
             <Button size="sm" onClick={onCerrar}>Entendido</Button>
           </div>
         ) : (
           <form onSubmit={guardar} className="space-y-3">
-            {yaTiene === false && (
-              <p className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2">
-                Entraste con Google, así que esta cuenta todavía no tiene contraseña
-                propia. La de Google no sirve aquí: solo Google puede comprobarla.
-                Define una y podrás entrar de las dos formas.
-              </p>
-            )}
+            <div>
+              <Label className="text-xs text-slate-500">Contraseña actual</Label>
+              <Input
+                type={ver ? 'text' : 'password'}
+                value={actual}
+                onChange={e => setActual(e.target.value)}
+                className="mt-1"
+                autoComplete="current-password"
+              />
+            </div>
 
             <div>
               <Label className="text-xs text-slate-500">Contraseña nueva</Label>
@@ -146,10 +120,13 @@ export default function ClaveAcceso({ abierto, onCerrar }) {
                   {ver ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Con mayúscula, minúscula y un carácter especial.
+              </p>
             </div>
 
             <div>
-              <Label className="text-xs text-slate-500">Repite la contraseña</Label>
+              <Label className="text-xs text-slate-500">Repite la contraseña nueva</Label>
               <Input
                 type={ver ? 'text' : 'password'}
                 value={repetida}

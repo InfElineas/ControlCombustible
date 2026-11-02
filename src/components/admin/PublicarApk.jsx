@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/api/supabaseClient';
+import { urlPublicaStorage } from '@/api/storageUrl';
 import { useUserRole } from '@/components/ui-helpers/useUserRole';
 import { logAudit } from '@/api/auditLog';
 import { toast } from 'sonner';
@@ -87,7 +88,7 @@ export default function PublicarApk() {
       setSubiendo(false);
       if (errSubida) throw errSubida;
 
-      const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(ruta);
+      const publicUrl = urlPublicaStorage(BUCKET, ruta);
 
       const fila = {
         version: version.trim(),

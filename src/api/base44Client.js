@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { authClient } from './authClient';
 import { logAudit } from './auditLog';
 
 const FIELD_MAP = {
@@ -105,22 +106,21 @@ export const base44 = {
 
   auth: {
     async me() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw Object.assign(new Error('Not authenticated'), { status: 401 });
-      const { data: roleRow } = await supabase.rpc('get_or_create_user_role', {
-        p_email:     user.email,
-        p_full_name: user.user_metadata?.full_name ?? user.email,
-      });
+      const usuario = authClient.usuarioActual();
+      if (!usuario) throw Object.assign(new Error('Not authenticated'), { status: 401 });
+      const perfil = await authClient.obtenerPerfil();
+      const roles = perfil.roles ?? [];
       return {
-        id:        user.id,
-        email:     user.email,
-        full_name: roleRow?.full_name ?? user.user_metadata?.full_name ?? user.email,
-        role:      roleRow?.role ?? 'auditor',
+        id:        usuario.id,
+        email:     usuario.email,
+        full_name: perfil.name ?? usuario.name ?? usuario.email,
+        // `admin` es el comodín del IS y equivale a superadmin; sin rol, el de menos alcance.
+        role:      roles.includes('admin') ? 'superadmin' : (roles[0] ?? 'auditor'),
       };
     },
 
     async logout() {
-      await supabase.auth.signOut();
+      await authClient.cerrarSesion();
       window.location.href = '/Login';
     },
 

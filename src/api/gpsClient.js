@@ -1,18 +1,25 @@
-import { supabase } from './supabaseClient';
+import { authClient } from './authClient';
 
-const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gps-proxy`;
+// El proxy GPS ya no se llama directamente en Supabase: lo hace la pasarela, que
+// valida la sesión contra elineas-auth y llama a la función con su propia clave.
+const GPS_URL = `${import.meta.env.VITE_API_URL}/functions/v1/gps-proxy`;
 
-async function gpsRequest(path) {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('No hay sesión activa');
+async function gpsRequest(path, reintentar = true) {
+  const token = await authClient.obtenerToken();
+  if (!token) throw new Error('No hay sesión activa');
 
-  const resp = await fetch(`${FUNCTION_URL}?path=${encodeURIComponent(path)}`, {
-    headers: { 'Authorization': `Bearer ${session.access_token}` },
+  const resp = await fetch(`${GPS_URL}?path=${encodeURIComponent(path)}`, {
+    headers: { 'Authorization': `Bearer ${token}` },
   });
 
+  // Pudo caducar entre medias: se renueva una vez y se reintenta.
+  if (resp.status === 401 && reintentar) {
+    await authClient.obtenerToken({ forzar: true });
+    return gpsRequest(path, false);
+  }
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.error ?? `GPS error ${resp.status}`);
+    throw new Error(err.error?.message ?? err.error ?? `GPS error ${resp.status}`);
   }
   return resp.json();
 }

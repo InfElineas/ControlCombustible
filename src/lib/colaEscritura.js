@@ -2,6 +2,7 @@ import { get, set } from 'idb-keyval';
 import { supabase } from '@/api/supabaseClient';
 import { base44 } from '@/api/base44Client';
 import { aplicarTransicion } from '@/lib/transicionVenta';
+import { esFalloDeRed } from '@/lib/errorRed';
 
 // Cola de operaciones que se guardaron sin conexión y quedan a la espera de
 // llegar al servidor.
@@ -168,20 +169,8 @@ export async function volverAIntentar(id) {
 
 // Un fallo de red o de sesión se reintenta; uno de validación o de permiso, no:
 // reintentarlo mil veces da el mismo resultado y esconde el problema al usuario.
-//
-// La sesión cuenta como transitoria porque un token caducado se renueva solo en
-// cuanto hay conexión. Tratarlo como rechazo definitivo descartaba registros
-// buenos por un problema que se arregla en segundos.
-export function esFalloDeRed(e) {
-  // Un conflicto de estado no se arregla reintentando: alguien ya cambió el
-  // registro y hace falta que una persona lo mire.
-  if (e?.conflicto) return false;
-  if (!navigator.onLine) return true;
-  const texto = `${e?.message ?? ''} ${e?.name ?? ''}`.toLowerCase();
-  if (/jwt|token|not authenticated|unauthorized|refresh/.test(texto)) return true;
-  if (e?.code === 'PGRST301' || e?.status === 401) return true;
-  return !e?.code && /fetch|network|failed to fetch|timeout|aborted/.test(texto);
-}
+// La clasificación vive en errorRed.js (y se prueba allí).
+export { esFalloDeRed };
 
 let procesando = false;
 

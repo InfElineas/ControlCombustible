@@ -19,17 +19,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Vuelta del inicio de sesion con Google. Google prohibe OAuth
-                 dentro de un WebView, asi que se abre el navegador del sistema y
-                 este devuelve el control a la aplicacion por este enlace. Sin
-                 el, la sesion se quedaba iniciada en el navegador.
-                 La misma direccion debe estar autorizada en Supabase:
-                 Authentication > URL Configuration > Redirect URLs -->
-            <intent-filter android:autoVerify="false">
+            <!-- Vuelta del inicio de sesion con Google (elineas-auth).
+                 Google prohibe OAuth dentro de un WebView, asi que se abre el
+                 navegador del sistema y este devuelve el control a la app. El
+                 servidor de identidad solo admite como destino una direccion
+                 https, asi que ya no sirve un esquema propio: se usa un Android
+                 App Link, que Android abre directamente en la app.
+                 Requiere /.well-known/assetlinks.json en ese dominio con la huella
+                 de la firma de la app. Ver docs/migracion-is/ANDROID-APP-LINK.md -->
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="com.mercadoelineas.combustible" android:host="login" />
+                <data android:scheme="https" android:host="${appLinkHost}" android:path="/Login" />
             </intent-filter>
         </activity>
 

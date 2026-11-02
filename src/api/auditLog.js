@@ -1,33 +1,17 @@
 import { supabase } from './supabaseClient';
+import { authClient } from './authClient';
 
-let _cached = null;
-let _expiry  = 0;
-
-async function getCachedUser() {
-  if (_cached && Date.now() < _expiry) return _cached;
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { _cached = null; return null; }
-    const { data: row } = await supabase.rpc('get_or_create_user_role', {
-      p_email:     user.email,
-      p_full_name: user.user_metadata?.full_name ?? user.email,
-    });
-    _cached = {
-      user_id:    user.id,
-      user_email: user.email,
-      user_name:  row?.full_name ?? user.user_metadata?.full_name ?? user.email,
-    };
-    _expiry = Date.now() + 5 * 60 * 1000;
-  } catch {
-    _cached = null;
-  }
-  return _cached;
+// Quién firma la entrada. El servidor (la pasarela) fija user_id/user_email/user_name
+// a partir del token, así que lo que se envíe aquí no cuenta: es solo informativo.
+function usuarioParaAuditoria() {
+  const u = authClient.usuarioActual();
+  return u ? { user_id: u.id, user_email: u.email, user_name: u.name ?? u.email } : null;
 }
 
 // Never throws — audit failures must never break the main app flow.
 export async function logAudit({ action, entityType, entityId, entityLabel, payload, metadata }) {
   try {
-    const user = await getCachedUser();
+    const user = usuarioParaAuditoria();
     await supabase.from('audit_log').insert({
       user_id:      user?.user_id    ?? null,
       user_email:   user?.user_email ?? null,

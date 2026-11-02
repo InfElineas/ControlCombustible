@@ -11,7 +11,7 @@ import {
   LayoutDashboard, List, Fuel, BarChart3, Menu, ChevronRight,
   LogOut, Settings, ShieldCheck, Bell, BookOpen, Shield,
   Moon, Sun, WalletCards, Navigation, HelpCircle, ShoppingCart, Truck,
-  Clock, ShieldAlert, WifiOff, Search, KeyRound, CloudUpload, X,
+  Clock, ShieldAlert, WifiOff, Search, KeyRound, CloudUpload,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -23,11 +23,11 @@ import {
 import BuscadorGlobal from '@/components/ui-helpers/BuscadorGlobal';
 import DescargarApp from '@/components/ui-helpers/DescargarApp';
 import AvisoActualizacion from '@/components/ui-helpers/AvisoActualizacion';
-import ClaveAcceso, { MARCA_DEFINIR_CLAVE, useTieneClavePropia } from '@/components/ui-helpers/ClaveAcceso';
+import ClaveAcceso from '@/components/ui-helpers/ClaveAcceso';
 import BandejaPendientes, { useColaPendiente } from '@/components/ui-helpers/BandejaPendientes';
 import { procesarCola } from '@/lib/colaEscritura';
 import { useTiempoReal } from '@/lib/tiempoReal';
-import { supabase } from '@/api/supabaseClient';
+import { authClient } from '@/api/authClient';
 
 // El campo movil ordena la barra inferior de la aplicación: las cuatro
 // entradas accesibles con el número más bajo van abajo y el resto pasa a «Más».
@@ -49,7 +49,6 @@ const navItems = [
 
 const PESTANAS_MOVIL = 4;
 
-const CLAVE_AVISO_SIN_CLAVE = 'webcombustible-aviso-sin-clave';
 
 // Iniciales para el botón de cuenta de la barra superior.
 const iniciales = (usuario) => {
@@ -191,18 +190,6 @@ export default function Layout() {
   const [cambiandoClave, setCambiandoClave] = useState(false);
   const [viendoBandeja, setViendoBandeja] = useState(false);
 
-  // Quien entró con Google no tiene contraseña propia y nada se lo dice: el
-  // acceso por correo le falla sin explicación. Solo se pregunta con la sesión
-  // validada, porque sin ella la consulta no puede responder.
-  const { data: proveedores } = useTieneClavePropia({ enabled: !!user && !sesionOffline && online });
-  const sinClavePropia = Array.isArray(proveedores) && !proveedores.includes('email');
-  const [avisoClaveCerrado, setAvisoClaveCerrado] = useState(() => {
-    try { return localStorage.getItem(CLAVE_AVISO_SIN_CLAVE) === '1'; } catch { return false; }
-  });
-  const cerrarAvisoClave = () => {
-    setAvisoClaveCerrado(true);
-    try { localStorage.setItem(CLAVE_AVISO_SIN_CLAVE, '1'); } catch { /* volverá a salir */ }
-  };
   const { total: sinEnviar, rechazadas } = useColaPendiente();
 
   // Los cambios de cualquiera llegan a esta pantalla sin recargar. Solo con
@@ -228,14 +215,6 @@ export default function Layout() {
     }).catch(() => { /* se reintenta en el próximo cambio de conexión */ });
   }, [online, sesionOffline, qc]);
 
-  // Quien llega desde el correo de recuperación entra directo a la aplicación;
-  // sin esto se quedaría dentro sin saber que venía a poner una contraseña.
-  useEffect(() => {
-    if (sessionStorage.getItem(MARCA_DEFINIR_CLAVE)) {
-      sessionStorage.removeItem(MARCA_DEFINIR_CLAVE);
-      setCambiandoClave(true);
-    }
-  }, []);
   const navigate = useNavigate();
   const location = useLocation();
   const currentPageName = location.pathname === '/' ? 'Dashboard' : location.pathname.replace('/', '');
@@ -279,14 +258,14 @@ export default function Layout() {
           <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mx-auto">
             <Clock className="w-7 h-7 text-amber-500" />
           </div>
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Cuenta pendiente de aprobación</h2>
+          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Sin acceso a esta aplicación</h2>
           <p className="text-sm text-slate-500">
-            Tu cuenta <span className="font-medium text-slate-700 dark:text-slate-300">{user.email}</span> está esperando
-            revisión por un administrador. Recibirás acceso una vez aprobada.
+            Tu cuenta <span className="font-medium text-slate-700 dark:text-slate-300">{user.email}</span> existe, pero todavía
+            no tiene un rol en Control Combustible. Pide a un administrador que te lo asigne y vuelve a entrar.
           </p>
           <Button
             variant="outline" size="sm"
-            onClick={() => supabase.auth.signOut().then(() => navigate('/Login', { replace: true }))}
+            onClick={() => authClient.cerrarSesion().then(() => navigate('/Login', { replace: true }))}
           >
             <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
           </Button>
@@ -306,7 +285,7 @@ export default function Layout() {
           <p className="text-sm text-slate-500">Tu cuenta ha sido desactivada. Contacta al administrador del sistema para más información.</p>
           <Button
             variant="outline" size="sm"
-            onClick={() => supabase.auth.signOut().then(() => navigate('/Login', { replace: true }))}
+            onClick={() => authClient.cerrarSesion().then(() => navigate('/Login', { replace: true }))}
           >
             <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
           </Button>
@@ -409,7 +388,7 @@ export default function Layout() {
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-red-500 focus:text-red-500 cursor-pointer"
-              onClick={() => supabase.auth.signOut().then(() => navigate('/Login', { replace: true }))}
+              onClick={() => authClient.cerrarSesion().then(() => navigate('/Login', { replace: true }))}
             >
               <LogOut className="w-3.5 h-3.5 mr-2" /> Cerrar sesión
             </DropdownMenuItem>
@@ -470,7 +449,7 @@ export default function Layout() {
             <Button
               variant="ghost" size="sm"
               className="w-full justify-start text-xs text-slate-400 hover:text-red-500 dark:hover:text-red-400 px-0 h-7"
-              onClick={() => supabase.auth.signOut().then(() => navigate('/Login', { replace: true }))}
+              onClick={() => authClient.cerrarSesion().then(() => navigate('/Login', { replace: true }))}
             >
               <LogOut className="w-3.5 h-3.5 mr-1.5" /> Cerrar sesión
             </Button>
@@ -483,37 +462,6 @@ export default function Layout() {
             consigo las tarjetas, las barras y los margenes, que es como se veian
             los bordes saliendose del marco en el movil. */}
         <main className="flex-1 min-w-0 lg:ml-56 min-h-screen">
-          {sinClavePropia && !avisoClaveCerrado && (
-            <div className="bg-amber-50 dark:bg-amber-950/40 border-b border-amber-100 dark:border-amber-900 px-4 py-2.5">
-              <div className="max-w-6xl mx-auto flex items-center gap-3">
-                <KeyRound className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
-                    Tu cuenta entra solo con Google
-                  </p>
-                  <p className="text-[11px] text-amber-700/80 dark:text-amber-300/80 mt-0.5">
-                    Crea una contraseña propia y podrás entrar también con tu correo.
-                    La de Google no sirve aquí: solo Google puede comprobarla.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCambiandoClave(true)}
-                  className="shrink-0 px-3 h-8 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium"
-                >
-                  Crear
-                </button>
-                <button
-                  type="button"
-                  onClick={cerrarAvisoClave}
-                  aria-label="No volver a mostrar"
-                  className="shrink-0 text-amber-400 hover:text-amber-600 dark:hover:text-amber-200"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
           <DescargarApp variante="banner" />
           {(!online || sesionOffline) && (
             <div className="bg-slate-800 text-slate-100 text-xs px-4 py-2 flex items-start gap-2 justify-center text-center">

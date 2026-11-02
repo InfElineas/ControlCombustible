@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from "sonner";
 import { Save, Loader2, Paperclip, X, ExternalLink } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
+import { urlPublicaStorage } from '@/api/storageUrl';
 import { calcularAuditoriaCompra, obtenerCapacidadTanque, AUDITORIA_ESTADO } from './auditoriaCombustible';
 
 // Traduce el fallo del almacén a algo accionable. Antes decía solo "Error al
@@ -288,7 +289,7 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
         .upload(path, adjuntoFile);
       setIsUploading(false);
       if (uploadError) { toast.error(motivoDeSubida(uploadError), { duration: 9000 }); return; }
-      const { data: { publicUrl } } = supabase.storage.from('movimiento-adjuntos').getPublicUrl(path);
+      const publicUrl = urlPublicaStorage('movimiento-adjuntos', path);
       data.adjunto_url = publicUrl;
       data.adjunto_nombre = adjuntoFile.name;
     } else if (quitarAdjunto) {

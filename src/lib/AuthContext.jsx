@@ -1,70 +1,75 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { supabase } from '@/api/supabaseClient';
+import { authClient } from '@/api/authClient';
 import { queryClientInstance } from '@/lib/query-client';
 import { limpiarCachePersistida } from '@/lib/query-persist';
 import { limpiarCola } from '@/lib/colaEscritura';
-import { olvidarRolConocido, hayCredencialGuardada, ESPERA_MAXIMA_MS } from '@/components/ui-helpers/useUserRole';
+import { olvidarRolConocido, ESPERA_MAXIMA_MS } from '@/components/ui-helpers/useUserRole';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [session, setSession]             = useState(undefined); // undefined = loading
-  const [user, setUser]                   = useState(null);
+  const [usuario, setUsuario]             = useState(() => authClient.usuarioActual());
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [sesionOffline, setSesionOffline] = useState(false);
 
   useEffect(() => {
-    let resuelta = false;
+    let vivo = true;
 
-    // Sin red, getSession() no responde hasta que auth-js agota sus reintentos
-    // de refresco: medido, más de treinta segundos con la aplicación en blanco.
-    // Pasado el plazo se entra con la credencial guardada y, si la respuesta
-    // llega después, el estado se corrige solo.
-    const plazo = setTimeout(() => {
-      if (resuelta) return;
-      if (hayCredencialGuardada()) {
-        setSesionOffline(true);
-        setIsLoadingAuth(false);
-      }
-    }, ESPERA_MAXIMA_MS);
-
-    // Obtener sesión inicial
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      resuelta = true;
-      clearTimeout(plazo);
-      setSession(s);
-      setUser(s?.user ?? null);
-      // getSession() devuelve null en cuanto el token de acceso caduca —dura una
-      // hora— y no hay red para refrescarlo, aunque la sesión siga guardada en
-      // el dispositivo. Sin esta comprobación la aplicación se quedaba en la
-      // pantalla de inicio de sesión, que sin conexión no lleva a ninguna parte,
-      // y los datos ya descargados eran inalcanzables.
-      setSesionOffline(!s && hayCredencialGuardada());
-      setIsLoadingAuth(false);
-    });
-
-    // Escuchar cambios de sesión (login / logout / token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
-      // Al cerrar sesión hay que borrar la caché guardada en el dispositivo:
-      // contiene datos de operación y quien entre después no debe verlos. Se
-      // hace aquí, sobre el evento, porque el cierre de sesión se dispara desde
-      // varios sitios de la interfaz y así queda cubierto en todos.
-      if (event === 'SIGNED_OUT') {
+    // Al cerrar sesión hay que borrar la caché guardada en el dispositivo:
+    // contiene datos de operación y quien entre después no debe verlos. Se hace
+    // aquí, sobre el evento, porque el cierre de sesión se dispara desde varios
+    // sitios de la interfaz y así queda cubierto en todos. También ocurre si el
+    // servidor de identidad da la sesión por muerta.
+    const baja = authClient.suscribir((evento) => {
+      if (!vivo) return;
+      if (evento === 'SIGNED_OUT') {
         limpiarCachePersistida().catch(() => {});
         limpiarCola().catch(() => {});
         queryClientInstance.clear();
         olvidarRolConocido();
+        setUsuario(null);
+        setSesionOffline(false);
+        setIsLoadingAuth(false);
+      } else if (evento === 'SIGNED_IN') {
+        setUsuario(authClient.usuarioActual());
+        setSesionOffline(false);
+        setIsLoadingAuth(false);
+      } else if (evento === 'TOKEN_REFRESHED') {
+        // Se pudo renovar: la sesión está validada, ya no es solo la guardada.
+        setSesionOffline(false);
       }
-      setSession(s);
-      setUser(s?.user ?? null);
-      setSesionOffline(event !== 'SIGNED_OUT' && !s && hayCredencialGuardada());
-      setIsLoadingAuth(false);
     });
 
-    return () => {
-      clearTimeout(plazo);
-      subscription.unsubscribe();
-    };
+    // Arranque. Sin sesión guardada no hay nada que validar. Con ella se intenta
+    // renovar el token; si no hay red (o tarda más del plazo) se entra con lo
+    // guardado en modo sin conexión y, si la respuesta llega después, el estado
+    // se corrige solo. Solo se expulsa al usuario si el servidor de identidad
+    // dice que la sesión ya no vale.
+    (async () => {
+      if (!authClient.haySesionGuardada()) {
+        if (vivo) setIsLoadingAuth(false);
+        return;
+      }
+      const renovacion = authClient.obtenerToken().then(() => 'ok', (e) => e);
+      const plazo = new Promise(r => setTimeout(() => r('plazo'), ESPERA_MAXIMA_MS));
+      const primero = await Promise.race([renovacion, plazo]);
+      if (!vivo) return;
+
+      if (primero === 'ok') {
+        setUsuario(authClient.usuarioActual());
+        setSesionOffline(false);
+      } else if (primero?.rechazada) {
+        // El cliente ya emitió SIGNED_OUT y limpió todo.
+      } else {
+        setUsuario(authClient.usuarioActual());
+        setSesionOffline(true);
+        // Si la respuesta llega después del plazo, se corrige sola.
+        renovacion.then((r) => { if (vivo && r === 'ok') setSesionOffline(false); });
+      }
+      setIsLoadingAuth(false);
+    })();
+
+    return () => { vivo = false; baja(); };
   }, []);
 
   const navigateToLogin = () => {
@@ -72,14 +77,15 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    await authClient.cerrarSesion();
     window.location.href = '/Login';
   };
 
-  // Una sesión guardada que no se ha podido refrescar sigue dando acceso a la
-  // aplicación en modo solo lectura: el servidor rechaza cualquier escritura por
-  // su cuenta, así que no hay nada que ganar cerrando la puerta aquí.
-  const isAuthenticated = !!session || sesionOffline;
+  // Una sesión guardada que no se ha podido renovar sigue dando acceso a la
+  // aplicación en modo solo lectura de lo ya descargado, más la cola de escritura
+  // pendiente: la pasarela rechaza cualquier escritura sin un token válido, así
+  // que no hay nada que ganar cerrando la puerta aquí.
+  const isAuthenticated = !!usuario;
   // isLoadingPublicSettings ya no aplica; se expone como false para
   // mantener compatibilidad con el App.jsx original.
   const isLoadingPublicSettings = false;
@@ -87,8 +93,8 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={{
-      user,
-      session,
+      user: usuario,
+      session: usuario ? { user: usuario } : null,
       isAuthenticated,
       sesionOffline,
       isLoadingAuth,
