@@ -3,10 +3,14 @@
 ## Qué es este proyecto
 Sistema web de gestión y auditoría de combustible para una flota de vehículos y equipos. Registra cada carga, despacho, ruta GPS y alerta de consumo. Stack: React 18 + Vite + Supabase (PostgreSQL) + TanStack Query. Deploy en Apache (htaccess rewrite al index.html).
 
+**Autenticación y autorización: elineas-auth (identity server), NO Supabase Auth.** El frontend nunca habla con Supabase: todo pasa por `gateway/` (Bun + Hono), que valida el JWT, pide los permisos al IS y reenvía con la `service_role`. Estado y plan de corte en `docs/migracion-is/ESTADO-Y-CORTE.md`.
+
 ## Stack y herramientas
 - **Framework**: React 18 (JSX, no TSX)
 - **Build**: Vite 6 — alias `@/` → `./src`
-- **Backend**: Supabase — Auth + PostgreSQL + Edge Functions (Deno/TypeScript)
+- **Backend**: Supabase — PostgreSQL + Realtime + Storage + Edge Functions (Deno/TypeScript). Sin Supabase Auth.
+- **Pasarela**: `gateway/` (Bun + Hono) — `cd gateway && bun test` (165 pruebas + 14 de integración contra un IS real); despliegue con `docker-compose.prod.yml` (raíz)
+- **Identidad**: elineas-auth — `src/api/authClient.js`; JWT de 5 min en memoria, token de sesión en el dispositivo
 - **State**: TanStack Query v5 — QueryClient en `src/lib/query-client.js`
 - **UI**: Tailwind CSS + Radix UI + shadcn/ui (`src/components/ui/`)
 - **Iconos**: Lucide React
@@ -19,7 +23,8 @@ Sistema web de gestión y auditoría de combustible para una flota de vehículos
 ```
 src/
   api/
-    supabaseClient.js    ← cliente Supabase singleton
+    supabaseClient.js    ← supabase-js apuntando a la PASARELA (no a Supabase)
+    authClient.js        ← sesión con elineas-auth: login, renovar JWT, Google PKCE
     base44Client.js      ← CRUD genérico + auditoría automática
     gpsClient.js         ← proxy a Traccar GPS
     routingClient.js     ← OSRM para geometría de rutas
@@ -89,14 +94,16 @@ const fmtL = n => (n % 1 === 0 ? String(Math.round(n)) : n.toFixed(1));
 ### Acceso por rol
 ```jsx
 const { role, canWrite, canManageFinanzas } = useUserRole();
-// Roles: superadmin | operador | auditor | economico
+// Roles: superadmin | operador | auditor | economico | cajero (vienen del IS; `admin` del IS = superadmin)
 ```
 
 ## Variables de entorno requeridas
 ```
-VITE_SUPABASE_URL=https://okcvyuemcxzxvvyfkjzp.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJ...
-SUPABASE_SERVICE_ROLE_KEY=eyJ...  (solo Edge Functions)
+VITE_API_URL=...            (pasarela)
+VITE_AUTH_URL=...           (elineas-auth)
+VITE_SUPABASE_URL=...       (solo URL públicas de archivos)
+SUPABASE_SERVICE_ROLE_KEY=eyJ...  (solo pasarela y Edge Functions; nunca al navegador)
+# Ver .env.example y gateway/.env.example
 ```
 
 ## Tablas principales (Supabase)
@@ -105,17 +112,22 @@ SUPABASE_SERVICE_ROLE_KEY=eyJ...  (solo Edge Functions)
 - `asignacion_ruta` — viajes diarios + recorridos GPS automáticos (`tipo_viaje`)
 - `tarjeta`, `conductor`, `ruta`, `marcador`, `ruta_marcador`
 - `tipo_consumidor`, `tipo_combustible`, `precio_combustible`
-- `config_alerta`, `user_roles`, `audit_log`, `gps_session_cache`
+- `config_alerta`, `audit_log`, `gps_session_cache` (`user_roles` queda obsoleta: los roles viven en el IS)
 
 ## Reglas de desarrollo
 - El archivo `.htaccess` en `public/` se copia a `dist/` en cada build — no editarlo en `dist/`
 - Todos los cambios de esquema van en `MIGRACION_GLOBAL.sql` Y en `migrations/YYYY-MM-DD_descripcion.sql`
+- La autorización la decide la pasarela (`gateway/src/rules.ts`) con los permisos del IS; las políticas RLS dejan de ser la barrera. Un cambio de permisos = `rules.ts` + `catalogo.ts` + sus pruebas
 - Los componentes de `src/components/ui/` son shadcn/ui — agregar con `npx shadcn@latest add nombre`, no editar manualmente
 - El GPS proxy `gps-proxy` necesita secrets `TRACCAR_EMAIL` y `TRACCAR_PASSWORD` en Supabase → Functions → Secrets
 - El cron `gps-daily-save` se ejecuta a las 23:55 hora Cuba — si no está activo, los recorridos deben guardarse manualmente desde el popup del mapa
 
 ## Comandos útiles
 ```bash
+# Docker (copiar .env.example a .env y rellenar SUPABASE_*)
+docker compose up -d --build                                  # desarrollo: web :5173 + pasarela :3010
+docker compose -f docker-compose.prod.yml up -d --build        # producción: nginx :8080 + pasarela :3010
+
 npm run dev          # Dev server en http://localhost:5173
 npm run build        # Build en dist/
 npm run lint         # Verificar código

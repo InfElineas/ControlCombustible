@@ -90,9 +90,9 @@ buscaba `?code=` en la consulta. Ahora se leen las dos formas, se atiende la
 dirección de arranque en frío, no se procesa dos veces el mismo enlace y los
 fallos muestran su motivo real en lugar de un texto fijo.
 
-> **Requisito de configuración:** `com.mercadoelineas.combustible://login` debe
-> estar autorizado en Supabase → Authentication → URL Configuration → Redirect
-> URLs, y coincidir con el `intent-filter` de `AndroidManifest.xml`.
+> **Obsoleto:** este flujo era contra Supabase Auth. La autenticación pasó a
+> elineas-auth, que solo admite como vuelta una dirección `https`: ahora se usa un
+> Android App Link. Ver `docs/migracion-is/ANDROID-APP-LINK.md`.
 
 ### Ajustes de vista móvil — `5588b53`
 La causa de fondo de los bordes que se salían estaba en el armazón, no en las
