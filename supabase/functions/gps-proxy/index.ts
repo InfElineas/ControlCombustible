@@ -28,6 +28,16 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 };
 
+
+/** Compara en tiempo constante (sin cortar en el primer carácter distinto). */
+function esClaveDeServicio(authHeader: string, serviceKey: string): boolean {
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  if (!token || token.length !== serviceKey.length) return false;
+  let diff = 0;
+  for (let i = 0; i < token.length; i++) diff |= token.charCodeAt(i) ^ serviceKey.charCodeAt(i);
+  return diff === 0;
+}
+
 // ── Sesión Traccar ────────────────────────────────────────────────────────────
 
 async function getOrCreateSession(supabase: ReturnType<typeof createClient>): Promise<string> {
@@ -91,19 +101,16 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Verificar autenticación Supabase
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) return json({ error: 'Unauthorized' }, 401);
+    // Esta función ya no autentica usuarios: lo hace la pasarela (combustible-gateway)
+    // contra elineas-auth y nos llama con la service_role. Solo se acepta esa clave.
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    if (!esClaveDeServicio(authHeader, serviceKey)) return json({ error: 'Unauthorized' }, 401);
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      serviceKey,
     );
-
-    const { data: { user } } = await supabase.auth.getUser(
-      authHeader.replace('Bearer ', ''),
-    );
-    if (!user) return json({ error: 'Unauthorized' }, 401);
 
     // Leer y validar el path a proxear
     const url  = new URL(req.url);

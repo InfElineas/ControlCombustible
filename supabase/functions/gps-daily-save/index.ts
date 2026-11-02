@@ -60,6 +60,16 @@ async function getSession(sb: ReturnType<typeof createClient>): Promise<string> 
   return jsessionid;
 }
 
+
+/** Compara en tiempo constante (sin cortar en el primer carácter distinto). */
+function esClaveDeServicio(authHeader: string, serviceKey: string): boolean {
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  if (!token || token.length !== serviceKey.length) return false;
+  let diff = 0;
+  for (let i = 0; i < token.length; i++) diff |= token.charCodeAt(i) ^ serviceKey.charCodeAt(i);
+  return diff === 0;
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -78,15 +88,12 @@ Deno.serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    // Verificar autorización: acepta service_role_key O JWT de usuario autenticado
+    // Solo la service_role (cron de Supabase o la pasarela). Antes también se
+    // aceptaba un JWT de usuario de Supabase Auth; la identidad de usuario ahora
+    // la gestiona elineas-auth y llega aquí ya validada por la pasarela.
     const authHeader = req.headers.get('Authorization') ?? '';
-    const token      = authHeader.replace('Bearer ', '');
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-    if (token !== serviceKey) {
-      const { data: { user } } = await sb.auth.getUser(token);
-      if (!user) return json({ error: 'Unauthorized' }, 401);
-    }
+    if (!esClaveDeServicio(authHeader, serviceKey)) return json({ error: 'Unauthorized' }, 401);
 
     const today = new Date().toISOString().slice(0, 10);
     const from  = encodeURIComponent(`${today}T00:00:00.000Z`);

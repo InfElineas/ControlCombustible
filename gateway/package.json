@@ -1,0 +1,24 @@
+{
+  "name": "combustible-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pasarela de ControlCombustible: valida el JWT de elineas-auth, autoriza con los permisos del IS y reenvía a Supabase con la service_role.",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "permisos": "bun src/catalogo-cli.ts",
+    "aprovisionar": "bun integracion/aprovisionar-cli.ts",
+    "test:integracion": "bun test ./integracion/real.itest.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.104.0",
+    "hono": "4.6.14"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  }
+}
