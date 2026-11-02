@@ -1,0 +1,116 @@
+# =============================================================================
+# Control Combustible — PRODUCCIÓN (frontend en nginx + pasarela)
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml logs -f
+#
+# Para usarlo como compose por defecto en el servidor: COMPOSE_FILE=docker-compose.prod.yml en `.env`.
+#
+# Qué NO levanta: la base de datos (sigue en Supabase) ni elineas-auth (su propio
+# stack). Esta definición solo contiene los dos servicios propios.
+#
+# Los puertos se publican en loopback: delante va un proxy inverso con TLS
+# (cloudflared, Caddy, Apache…). Con TRUST_PROXY=true el proxy DEBE fijar
+# X-Forwarded-For (no reenviar el del cliente): de ahí salen las IP de los límites.
+#
+# ⚠ Las variables VITE_* se INCRUSTAN al construir la imagen web: cambiarlas exige
+#   `docker compose -f docker-compose.prod.yml build web`.
+# =============================================================================
+
+services:
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+      target: final
+      args:
+        APP_VERSION: ${APP_VERSION:-0.1.0}
+    image: combustible-gateway:${APP_VERSION:-0.1.0}
+    container_name: combustible-gateway
+    restart: unless-stopped
+    # Endurecimiento: sin root/capabilities/escalada, FS de solo lectura y límites
+    # de recursos (ajustar mem_limit si el servicio sufre OOM).
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-3010}:3010"
+    environment:
+      NODE_ENV: production
+      PORT: 3010
+      # elineas-auth por la red de Docker compartida, por nombre de contenedor y
+      # puerto INTERNO (8080). NO host.docker.internal: elineas-auth publica solo
+      # en loopback y desde un contenedor da timeout (502). Si el IS se alcanza por
+      # una URL pública, ponerla aquí y quitar la red `auth` de más abajo.
+      AUTH_BASE_URL: ${AUTH_BASE_URL:-http://elineas-auth-backend:8080}
+      AUTH_JWKS_PATH: ${AUTH_JWKS_PATH:-/api/auth/jwks}
+      # Recomendado: fija quién puede emitir tokens para esta API.
+      AUTH_ISSUER: ${AUTH_ISSUER:-}
+      AUTH_AUDIENCE: ${AUTH_AUDIENCE:-}
+      SYSTEM_SLUG: ${SYSTEM_SLUG:-combustible}
+      PERMISSION_TTL_S: ${PERMISSION_TTL_S:-30}
+      PERMISSION_STALE_S: ${PERMISSION_STALE_S:-300}
+      SUPABASE_URL: ${SUPABASE_URL:?Falta SUPABASE_URL}
+      # Da acceso total a la base de datos: este contenedor es el único sitio donde
+      # debe vivir (nunca en el frontend ni en el repositorio).
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?Falta SUPABASE_SERVICE_ROLE_KEY}
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:?Falta ALLOWED_ORIGIN (orígenes del frontend, separados por comas)}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+      RATE_LIMIT_USER_PER_MIN: ${RATE_LIMIT_USER_PER_MIN:-900}
+      RATE_LIMIT_ANON_PER_MIN: ${RATE_LIMIT_ANON_PER_MIN:-120}
+      RATE_LIMIT_FAIL_PER_MIN: ${RATE_LIMIT_FAIL_PER_MIN:-30}
+    networks:
+      - default
+      - auth
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+      args:
+        APP_VERSION: ${APP_VERSION:-0.1.0}
+        # Direcciones que usa el NAVEGADOR (públicas), incrustadas en el bundle.
+        VITE_API_URL: ${VITE_API_URL:?Falta VITE_API_URL (URL pública de la pasarela)}
+        VITE_AUTH_URL: ${VITE_AUTH_URL:?Falta VITE_AUTH_URL (URL pública de elineas-auth)}
+        VITE_SYSTEM_SLUG: ${VITE_SYSTEM_SLUG:-combustible}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?Falta VITE_SUPABASE_URL (solo para las descargas públicas de archivos)}
+        VITE_AUTH_ADMIN_URL: ${VITE_AUTH_ADMIN_URL:-}
+        VITE_NATIVE_REDIRECT: ${VITE_NATIVE_REDIRECT:-}
+        VITE_URL_APK: ${VITE_URL_APK:-}
+    image: control-combustible-web:${APP_VERSION:-0.1.0}
+    container_name: control-combustible-web
+    restart: unless-stopped
+    read_only: true
+    # nginx escribe su pid y temporales en /tmp (imagen sin privilegios).
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:8080"
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+networks:
+  default:
+    name: control-combustible-net
+  # Red del stack de elineas-auth, para llegar al IS sin salir del anfitrión. La
+  # crea el compose de elineas-auth; aquí solo se consume. Ajustar `name` si en
+  # este servidor se llama distinto (`docker network ls`).
+  auth:
+    name: ${AUTH_NETWORK:-elineas-auth-net}
+    external: true

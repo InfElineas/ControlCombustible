@@ -1,0 +1,21 @@
+# El contexto de build del frontend es la raíz: se deja fuera todo lo que no compila.
+node_modules
+dist
+.git
+.github
+android
+gateway
+docs
+supabase
+migrations
+seed-data
+scripts
+control-combustible
+assets
+*.md
+*.sql
+.env
+.env.*
+!.env.example
+bun.lock
+*.log

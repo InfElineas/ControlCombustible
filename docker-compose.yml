@@ -1,0 +1,88 @@
+# =============================================================================
+# Control Combustible — DESARROLLO (frontend con Vite + pasarela con bun --watch)
+#
+#   docker compose up -d --build
+#   docker compose logs -f
+#
+#   Web         http://localhost:5173
+#   Pasarela    http://localhost:3010   (GET /health)
+#
+# Qué NO levanta (y necesita):
+#   · elineas-auth (el identity server): su propio compose (puerto 8081 en
+#     desarrollo). Desde la pasarela se alcanza como host.docker.internal:8081.
+#   · Supabase: el proyecto en la nube. Hay que poner SUPABASE_URL y
+#     SUPABASE_SERVICE_ROLE_KEY en `.env` (ver .env.example). La clave de servicio
+#     solo la lee la pasarela: nunca llega al navegador.
+#
+# Todos los puertos se publican SOLO en loopback.
+# Para producción: docker-compose.prod.yml.
+# =============================================================================
+
+services:
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+      target: dev
+    image: combustible-gateway:dev
+    container_name: combustible-gateway
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-3010}:3010"
+    environment:
+      PORT: 3010
+      # ⚠ Dirección alcanzable DESDE DENTRO del contenedor: `localhost` sería este
+      # propio contenedor. elineas-auth publica en 127.0.0.1:8081 en su stack de
+      # desarrollo, y host.docker.internal llega a ese puerto (ver extra_hosts).
+      AUTH_BASE_URL: ${AUTH_BASE_URL:-http://host.docker.internal:8081}
+      AUTH_JWKS_PATH: ${AUTH_JWKS_PATH:-/api/auth/jwks}
+      AUTH_ISSUER: ${AUTH_ISSUER:-}
+      AUTH_AUDIENCE: ${AUTH_AUDIENCE:-}
+      SYSTEM_SLUG: ${SYSTEM_SLUG:-combustible}
+      PERMISSION_TTL_S: ${PERMISSION_TTL_S:-30}
+      PERMISSION_STALE_S: ${PERMISSION_STALE_S:-300}
+      SUPABASE_URL: ${SUPABASE_URL:?Define SUPABASE_URL en .env (ver .env.example)}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?Define SUPABASE_SERVICE_ROLE_KEY en .env}
+      # Orígenes desde los que el NAVEGADOR llama a la pasarela.
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-http://localhost:5173,http://127.0.0.1:5173}
+      TRUST_PROXY: "false"
+      # Holgados en desarrollo: recargar la página varias veces no debe bloquear.
+      RATE_LIMIT_USER_PER_MIN: ${RATE_LIMIT_USER_PER_MIN:-6000}
+      RATE_LIMIT_ANON_PER_MIN: ${RATE_LIMIT_ANON_PER_MIN:-1200}
+      RATE_LIMIT_FAIL_PER_MIN: ${RATE_LIMIT_FAIL_PER_MIN:-300}
+    # Que `host.docker.internal` resuelva a la máquina anfitriona también en Linux.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./gateway/src:/app/src
+      - ./gateway/test:/app/test
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    image: control-combustible-web:dev
+    container_name: control-combustible-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-5173}:5173"
+    environment:
+      NODE_ENV: development
+      # Estas direcciones las usa el NAVEGADOR, no el contenedor: por eso son
+      # localhost y no los nombres de servicio de compose.
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3010}
+      VITE_AUTH_URL: ${VITE_AUTH_URL:-http://localhost:8081}
+      VITE_SYSTEM_SLUG: ${VITE_SYSTEM_SLUG:-combustible}
+      VITE_SUPABASE_URL: ${SUPABASE_URL:?Define SUPABASE_URL en .env (ver .env.example)}
+      VITE_AUTH_ADMIN_URL: ${VITE_AUTH_ADMIN_URL:-http://localhost:3000}
+      VITE_NATIVE_REDIRECT: ${VITE_NATIVE_REDIRECT:-}
+      VITE_URL_APK: ${VITE_URL_APK:-}
+    volumes:
+      # Código del host para el hot reload. El segundo volumen preserva los
+      # node_modules de la imagen: los del host pueden ser de otra plataforma
+      # (binarios nativos de rollup/esbuild) y romperían Vite.
+      - ./:/app
+      - /app/node_modules
+    depends_on:
+      - gateway
