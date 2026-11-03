@@ -113,8 +113,8 @@ export function crearAuthClient(opciones) {
   // servidor (fetch lanza). Solo se usa donde repetir es inofensivo (iniciar sesión):
   // si la conexión falla, no se ha ejecutado nada en el servidor. Con el navegador
   // sin red no se reintenta: sería esperar en balde.
-  async function pedirIS(ruta, { metodo = 'GET', cuerpo, token, reintentos = 0 } = {}) {
-    const cabeceras = { Accept: 'application/json' };
+  async function pedirIS(ruta, { metodo = 'GET', cuerpo, token, reintentos = 0, extra } = {}) {
+    const cabeceras = { Accept: 'application/json', ...extra };
     if (cuerpo !== undefined) cabeceras['Content-Type'] = 'application/json';
     if (token) cabeceras.Authorization = `Bearer ${token}`;
 
@@ -188,10 +188,12 @@ export function crearAuthClient(opciones) {
     return !!(s && (s.sessionToken || jwt));
   }
 
-  async function iniciarSesion(email, password) {
+  // `captcha`: token del widget Turnstile (un solo uso). El IS lo exige en sign-in; la
+  // clave de servicio (X-Service-Key) es solo para backends y NUNCA debe llegar al navegador.
+  async function iniciarSesion(email, password, captcha) {
     // Hasta 3 reintentos: una conexión intermitente (p. ej. el relé de localhost de WSL2)
     // no debe impedir entrar, y repetir un inicio de sesión que no llegó es inofensivo.
-    const r = await pedirIS('/api/auth/sign-in', { metodo: 'POST', cuerpo: { email, password, systemSlug }, reintentos: 3 });
+    const r = await pedirIS('/api/auth/sign-in', { metodo: 'POST', cuerpo: { email, password, systemSlug }, reintentos: 3, extra: captcha ? { 'X-Turnstile-Token': captcha } : undefined });
     return abrirSesionCon(r);
   }
 

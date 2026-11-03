@@ -35,6 +35,15 @@ function entorno() {
 }
 
 describe('inicio de sesión', () => {
+  test('sign-in envía el token de captcha solo si lo hay, y nunca una clave de servicio', async () => {
+    const e = entorno();
+    e.respuestas['POST /api/auth/sign-in'] = { cuerpo: { user: e.usuario, token: jwt(e.exp(300)) }, cabeceras: { 'set-auth-token': 'S' } };
+    await e.cliente.iniciarSesion('a@b.c', 'x', 'TOKEN-CAPTCHA');
+    const h = e.llamadas.find((c) => c.ruta === '/api/auth/sign-in').init.headers;
+    expect(h['X-Turnstile-Token']).toBe('TOKEN-CAPTCHA');
+    expect(Object.keys(h).map((k) => k.toLowerCase())).not.toContain('x-service-key');
+  });
+
   test('guarda el token de sesión y el usuario; el JWT solo en memoria', async () => {
     const e = entorno(); e.loginOk();
     const u = await e.cliente.iniciarSesion('a@gmail.com', 'x');

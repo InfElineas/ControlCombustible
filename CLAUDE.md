@@ -101,6 +101,8 @@ const { role, canWrite, canManageFinanzas } = useUserRole();
 ```
 VITE_API_URL=...            (pasarela)
 VITE_AUTH_URL=...           (elineas-auth)
+VITE_TURNSTILE_SITE_KEY=... (captcha del login; clave pública)
+IS_SERVICE_KEY=elsk_...     (solo scripts/pruebas de gateway/integracion; NUNCA en VITE_* ni en el navegador)
 VITE_SUPABASE_URL=...       (solo URL públicas de archivos)
 SUPABASE_SERVICE_ROLE_KEY=eyJ...  (solo pasarela y Edge Functions; nunca al navegador)
 # Ver .env.example y gateway/.env.example

@@ -4,6 +4,7 @@ import { authClient } from '@/api/authClient';
 import { Fuel, Eye, EyeOff } from 'lucide-react';
 import { entrarConGoogle, escucharVueltaDeLogin, terminarGoogleEnLaWeb } from '@/lib/authNativa';
 import DescargarApp from '@/components/ui-helpers/DescargarApp';
+import Turnstile, { TURNSTILE_ACTIVO } from '@/components/ui-helpers/Turnstile';
 
 export default function Login() {
   // Navegar con el router y no con window.location: recargar la aplicación
@@ -33,6 +34,8 @@ export default function Login() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(/** @type {string|null} */(null));
+  const [captcha, setCaptcha]   = useState(/** @type {string|null} */(null));
+  const [captchaNonce, setCaptchaNonce] = useState(0);
 
   // Si ya hay sesión (guardada o recién abierta), no hay nada que hacer aquí.
   useEffect(() => {
@@ -59,14 +62,18 @@ export default function Login() {
 
   const handleEmailLogin = async (e) => {
     e.preventDefault();
+    if (TURNSTILE_ACTIVO && !captcha) { setError('Espera a que termine la verificación de seguridad.'); return; }
     setLoading(true);
     setError(null);
     try {
-      await authClient.iniciarSesion(email.trim(), password);
+      await authClient.iniciarSesion(email.trim(), password, captcha);
       irAlDestino();
     } catch (err) {
       setError(traducirError(err));
       setLoading(false);
+      // El token es de un solo uso: tras un intento hay que pedir otro.
+      setCaptcha(null);
+      setCaptchaNonce((n) => n + 1);
     }
   };
 
@@ -144,13 +151,15 @@ export default function Login() {
                 </div>
               </div>
 
+              <Turnstile key={captchaNonce} onToken={setCaptcha} />
+
               <p className="text-[11px] text-slate-400">
                 ¿Olvidaste la contraseña o aún no tienes cuenta? Pide a un administrador que te reenvíe la invitación.
               </p>
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (TURNSTILE_ACTIVO && !captcha)}
                 className="w-full py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium transition-all disabled:opacity-60 disabled:cursor-not-allowed shadow-sm mt-1"
               >
                 {loading

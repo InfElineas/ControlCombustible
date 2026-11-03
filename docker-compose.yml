@@ -78,6 +78,7 @@ services:
       VITE_AUTH_ADMIN_URL: ${VITE_AUTH_ADMIN_URL:-http://localhost:3000}
       VITE_NATIVE_REDIRECT: ${VITE_NATIVE_REDIRECT:-}
       VITE_URL_APK: ${VITE_URL_APK:-}
+      VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
     volumes:
       # Código del host para el hot reload. El segundo volumen preserva los
       # node_modules de la imagen: los del host pueden ser de otra plataforma

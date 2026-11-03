@@ -35,7 +35,7 @@ React ──JWT de elineas-auth──► combustible-gateway ──service_role�
    origen web y los del WebView; `GOOGLE_REDIRECT_ORIGINS` con el origen https de la app.
 3. Crear las 22 cuentas activas en el IS con su rol. Las 7 deshabilitadas/pendiente
    se crean **sin rol**.
-3b. **Aprovisionar el IS con un comando:** `cd gateway && IS_URL=… IS_ADMIN_EMAIL=… IS_ADMIN_PASSWORD=… bun run aprovisionar`
+3b. **Aprovisionar el IS con un comando:** `cd gateway && IS_URL=… IS_ADMIN_EMAIL=… IS_ADMIN_PASSWORD=… IS_SERVICE_KEY=… bun run aprovisionar`
     (muestra el plan) y `… bun run aprovisionar --aplicar` (crea sistema, roles y permisos que falten).
 4. Desplegar web y pasarela desde la raíz: `cp .env.example .env` (rellenar) y
    `docker compose -f docker-compose.prod.yml up -d --build`. La construcción de la pasarela ejecuta tipos y
@@ -62,10 +62,27 @@ Descubierto, **a resolver en elineas-auth** (no en este repo):
 3. Las altas sin contraseña crean una aleatoria y envían un enlace para que el dueño fije la
    suya: ese es el flujo previsto para las 22 cuentas (necesita correo configurado en el IS).
 
+## Captcha y clave de servicio del IS (commits `d40437a`, `3070cc2` de elineas-auth)
+`POST /api/auth/sign-in` exige captcha Turnstile (`TURNSTILE_SECRET_KEY` obligatoria en producción).
+Dos vías, según quién llama:
+- **Navegador / APK** → widget Turnstile (`src/components/ui-helpers/Turnstile.jsx`), token en
+  `X-Turnstile-Token`. Se activa con `VITE_TURNSTILE_SITE_KEY` (clave pública). Sin ella el login
+  no manda token y el IS responderá `403 CAPTCHA_FAILED`. El IS debe tener nuestro dominio en el
+  widget; en la APK (WebView `https://localhost`) también.
+- **Backends, scripts y pruebas** → clave de servicio del sistema (`elsk_…`) en `X-Service-Key` con
+  `systemSlug`; sustituye al captcha. Se genera en el panel del IS (ficha del sistema) y se ve una
+  sola vez. `IS_SERVICE_KEY` (sistema `auth`) para `bun run aprovisionar`; además
+  `IS_COMBUSTIBLE_SERVICE_KEY` para `test:integracion`.
+- **La clave de servicio NUNCA va al navegador, a `VITE_*` ni al repo.** Cualquier `VITE_*` queda en
+  claro en el bundle. La pasarela no inicia sesión de usuarios, así que no la necesita.
+- Rotarla invalida la anterior; revocarla corta a los scripts que la usen.
+- `google/exchange` y `/api/auth/token` no pasan por el captcha.
+
 ## Cómo reproducir la prueba de integración
 ```bash
 cd gateway
-IS_URL=http://127.0.0.1:8098 IS_ADMIN_EMAIL=admin@... IS_ADMIN_PASSWORD='...' bun run test:integracion
+IS_URL=http://127.0.0.1:8098 IS_ADMIN_EMAIL=admin@... IS_ADMIN_PASSWORD='...' \
+  IS_SERVICE_KEY=elsk_... IS_COMBUSTIBLE_SERVICE_KEY=elsk_... bun run test:integracion
 ```
 Crea y borra usuarios de prueba: úsala solo contra un IS de pruebas. Con límites por IP,
 el IS de pruebas debe arrancar con `TRUST_PROXY_HOPS=1`.

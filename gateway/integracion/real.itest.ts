@@ -22,7 +22,11 @@ import { createVerifier } from '../src/jwt'
 import { aprovisionar } from './aprovisionar'
 
 const IS = (process.env.IS_URL ?? '').replace(/\/+$/, '')
-const habilitado = !!IS && !!process.env.IS_ADMIN_EMAIL && !!process.env.IS_ADMIN_PASSWORD
+// El sign-in del IS exige captcha; un backend/test usa la clave de servicio de cada sistema
+// (se genera en el panel del IS, ficha del sistema). `auth` = administrador, `combustible` = el cliente.
+const CLAVE_AUTH = process.env.IS_SERVICE_KEY ?? ''
+const CLAVE_COMBUSTIBLE = process.env.IS_COMBUSTIBLE_SERVICE_KEY ?? ''
+const habilitado = !!IS && !!process.env.IS_ADMIN_EMAIL && !!process.env.IS_ADMIN_PASSWORD && !!CLAVE_AUTH && !!CLAVE_COMBUSTIBLE
 const PASS = 'Contrasena-Test-12345!'
 const corrida = Date.now().toString(36)
 // El IS limita por IP (sign-in 10/min, sign-up 5/min…). Con TRUST_PROXY_HOPS=1 en el IS de
@@ -56,7 +60,7 @@ describe.skipIf(!habilitado)('integración con elineas-auth real', () => {
       fetchImpl: ((url: string, init?: RequestInit) =>
         String(url).startsWith('http://gw.local')
           ? app.fetch(new Request(String(url), init))
-          : fetch(url, { ...init, headers: { ...(init?.headers as Record<string, string>), 'x-forwarded-for': ipFalsa() } })) as typeof fetch,
+          : fetch(url, { ...init, headers: { ...(init?.headers as Record<string, string>), 'x-forwarded-for': ipFalsa(), ...(String(url).endsWith('/api/auth/sign-in') ? { 'x-service-key': CLAVE_COMBUSTIBLE } : {}) } })) as typeof fetch,
     })
     // Expone el almacenamiento simulado para poder inspeccionar qué se guarda.
     return Object.assign(c, { mem })
@@ -66,7 +70,7 @@ describe.skipIf(!habilitado)('integración con elineas-auth real', () => {
 
   beforeAll(async () => {
     const login = await fetch(`${IS}/api/auth/sign-in`, {
-      method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': ipFalsa() },
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': ipFalsa(), 'x-service-key': CLAVE_AUTH },
       body: JSON.stringify({ email: process.env.IS_ADMIN_EMAIL, password: process.env.IS_ADMIN_PASSWORD, systemSlug: 'auth' }),
     })
     sesionAdmin = login.headers.get('set-auth-token') ?? ''

@@ -2,10 +2,11 @@
 // bun run aprovisionar --aplicar  → crea lo que falte en elineas-auth
 //
 // Variables: IS_URL, IS_ADMIN_EMAIL, IS_ADMIN_PASSWORD (admin del sistema `auth`),
+// IS_SERVICE_KEY (clave de servicio del sistema `auth`: sustituye al captcha del sign-in),
 // opcionales SYSTEM_SLUG (combustible) y ADMIN_SYSTEM_SLUG (auth).
 import { aprovisionar } from './aprovisionar'
 
-const faltan = ['IS_URL', 'IS_ADMIN_EMAIL', 'IS_ADMIN_PASSWORD'].filter((k) => !process.env[k])
+const faltan = ['IS_URL', 'IS_ADMIN_EMAIL', 'IS_ADMIN_PASSWORD', 'IS_SERVICE_KEY'].filter((k) => !process.env[k])
 if (faltan.length) {
   console.error(`Faltan variables: ${faltan.join(', ')}`)
   process.exit(1)
@@ -15,7 +16,7 @@ const aplicar = process.argv.includes('--aplicar')
 
 const login = await fetch(`${base}/api/auth/sign-in`, {
   method: 'POST',
-  headers: { 'content-type': 'application/json' },
+  headers: { 'content-type': 'application/json', 'x-service-key': process.env.IS_SERVICE_KEY! },
   body: JSON.stringify({
     email: process.env.IS_ADMIN_EMAIL,
     password: process.env.IS_ADMIN_PASSWORD,

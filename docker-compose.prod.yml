@@ -85,6 +85,7 @@ services:
         VITE_AUTH_ADMIN_URL: ${VITE_AUTH_ADMIN_URL:-}
         VITE_NATIVE_REDIRECT: ${VITE_NATIVE_REDIRECT:-}
         VITE_URL_APK: ${VITE_URL_APK:-}
+        VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
     image: control-combustible-web:${APP_VERSION:-0.1.0}
     container_name: control-combustible-web
     restart: unless-stopped
