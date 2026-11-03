@@ -271,6 +271,30 @@ El resultado queda en `android/app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Cómo subir la web
 
+> **Obsoleto desde la migración a elineas-auth (2026-11).** Ya no se copia
+> `dist/` por FTP a un hosting Apache: la web se publica como **imagen de Docker
+> con nginx dentro**, junto a la pasarela. El procedimiento vigente está en
+> [docs/migracion-is/ESTADO-Y-CORTE.md](docs/migracion-is/ESTADO-Y-CORTE.md) y se
+> resume así:
+>
+> ```bash
+> cp .env.example .env     # rellenar; las VITE_* son las URL PÚBLICAS
+> docker compose -f docker-compose.prod.yml up -d --build
+> ```
+>
+> **Compilar con `npm run build` y subir ese `dist/` ya no sirve**: sin
+> `VITE_API_URL` el bundle sale apuntando a `undefined` y la aplicación no puede
+> ni iniciar sesión ni pedir datos. Por eso el Dockerfile corta la construcción
+> si esa variable falta. Las `VITE_*` se incrustan al construir la imagen: para
+> cambiar una hay que reconstruir (`docker compose -f docker-compose.prod.yml
+> build web`).
+>
+> Lo que sigue describe el procedimiento anterior y se conserva solo porque
+> explica dos fallos que costaron encontrar y que pueden repetirse con cualquier
+> proxy por delante.
+
+### Lo de antes: copiar `dist/` por FTP
+
 Se copia el contenido de `dist/` a la raíz del hosting. **Incluido `.htaccess`**,
 que es la trampa: empieza por punto, y los clientes de FTP lo esconden salvo que
 se active «mostrar archivos ocultos» (en FileZilla, *Servidor → Forzar mostrar
