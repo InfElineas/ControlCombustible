@@ -1,0 +1,74 @@
+# =============================================================================
+# Base de datos propia: PostgreSQL + PostgREST
+#
+#   docker compose -f docker-compose.db.yml up -d
+#
+# Paso 1 de docs/migracion-bd/PLAN.md. Se levanta APARTE, sin tocar producción:
+# mientras no se cambie SUPABASE_URL en la pasarela, esto no recibe una sola
+# petición real. Sirve para aplicar el esquema, ensayar el traslado y medir
+# cuánto tarda.
+#
+# PostgREST es el mismo software que corre dentro de Supabase, así que la
+# pasarela no nota la diferencia: habla el mismo /rest/v1. Lo que cambia es
+# quién lo hospeda.
+#
+# Los puertos salen solo a loopback. La base NO debe quedar expuesta a internet.
+# =============================================================================
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: combustible-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-combustible}
+      POSTGRES_USER: ${DB_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD}
+      # Las órdenes de db/init/ corren SOLO la primera vez, con el volumen vacío.
+      # Para rehacerlo desde cero: docker compose -f docker-compose.db.yml down -v
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_SUPERUSER:-postgres} -d ${DB_NAME:-combustible}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  rest:
+    image: postgrest/postgrest:v12.2.3
+    container_name: combustible-rest
+    restart: unless-stopped
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${DB_AUTHENTICATOR_PASSWORD:?Falta DB_AUTHENTICATOR_PASSWORD}@db:5432/${DB_NAME:-combustible}
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      # El mismo secreto con el que está firmada la clave de servicio actual.
+      # Si se reutiliza el JWT Secret del proyecto de Supabase (Project Settings →
+      # API → JWT Secret), la pasarela sigue funcionando SIN tocar su configuración:
+      # su SUPABASE_SERVICE_ROLE_KEY es un JWT con el claim role=service_role, y
+      # aquí seguirá validando igual. Si se prefiere un secreto nuevo, hay que
+      # emitir también un token nuevo para la pasarela.
+      PGRST_JWT_SECRET: ${PGRST_JWT_SECRET:?Falta PGRST_JWT_SECRET}
+      # request.headers: de ahí leen app_header() y app_can() las cabeceras
+      # x-app-user y x-app-permissions que manda la pasarela.
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_SERVER_PORT: 3000
+      PGRST_LOG_LEVEL: ${PGRST_LOG_LEVEL:-error}
+    ports:
+      - "127.0.0.1:${REST_PORT:-3001}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
+    name: combustible-db-data
+
+networks:
+  default:
+    name: combustible-db-net
