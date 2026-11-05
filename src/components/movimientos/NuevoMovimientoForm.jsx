@@ -536,7 +536,16 @@ export default function NuevoMovimientoForm({ onSuccess }) {
       } else if (form.referencia) {
         data.referencia = form.referencia;
       }
-      if (form.precio_costo_unitario) data.precio_costo_unitario = parseFloat(form.precio_costo_unitario);
+      // El precio por litro de un depósito ES su costo, y el monto sale de
+      // multiplicarlo por los litros. Igual que en EditarMovimientoModal: si solo
+      // se guardara precio_costo_unitario, la tabla enseñaría Precio/L y Monto
+      // vacíos aunque el costo estuviera puesto.
+      if (form.precio_costo_unitario) {
+        const costo = parseFloat(form.precio_costo_unitario);
+        data.precio_costo_unitario = costo;
+        data.precio = costo;
+        data.monto  = costo * (parseFloat(form.litros) || 0);
+      }
     } else if (tipo === 'DESPACHO') {
       data.consumidor_origen_id = consumidorOrigen.id;
       data.consumidor_origen_nombre = consumidorOrigen.nombre;

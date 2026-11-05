@@ -11,6 +11,7 @@ import { Save, Loader2, Paperclip, X, ExternalLink } from 'lucide-react';
 import { supabase } from '@/api/supabaseClient';
 import { urlPublicaStorage } from '@/api/storageUrl';
 import { calcularAuditoriaCompra, obtenerCapacidadTanque, AUDITORIA_ESTADO } from './auditoriaCombustible';
+import { formatMonto } from '@/components/ui-helpers/SaldoUtils';
 
 // Traduce el fallo del almacén a algo accionable. Antes decía solo "Error al
 // subir adjunto", que no distingue un permiso de un bucket inexistente y obliga
@@ -278,6 +279,17 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
       data.precio_costo_unitario = form.precio_costo_unitario === ''
         ? null
         : parseFloat(form.precio_costo_unitario);
+
+      // En un depósito el precio por litro ES el costo, y el monto sale de
+      // multiplicarlo por los litros. Sin esto el campo se guardaba —el costo
+      // promedio del tanque sí cambiaba— pero la tabla seguía enseñando el
+      // precio y el monto de antes, así que parecía que no hacía nada.
+      const costo = data.precio_costo_unitario;
+      if (costo != null) {
+        const litros = form.litros !== '' ? parseFloat(form.litros) : (movimiento.litros ?? 0);
+        data.precio = costo;
+        data.monto  = costo * (litros || 0);
+      }
     }
 
     if (adjuntoFile) {
@@ -484,10 +496,24 @@ export default function EditarMovimientoModal({ movimiento, onClose }) {
                   Sin este dato, el combustible que salga de este tanque queda fuera del cálculo de ganancia.
                 </p>
               ) : (
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Cambiarlo recalcula el costo promedio del tanque y la ganancia de
-                  todas las bonificaciones que salieron de él, también las de meses anteriores.
-                </p>
+                <>
+                  {/* El monto es consecuencia del costo, no un dato aparte: se
+                      enseña ya calculado para que nadie lo descubra al guardar. */}
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1">
+                    Monto: <strong>{formatMonto(
+                      (parseFloat(form.precio_costo_unitario) || 0) *
+                      (form.litros !== '' ? (parseFloat(form.litros) || 0) : (movimiento.litros ?? 0)),
+                    )}</strong>
+                    <span className="text-slate-400"> = {
+                      form.litros !== '' ? form.litros : (movimiento.litros ?? 0)
+                    } L × {form.precio_costo_unitario}</span>
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Sustituye lo que hubiera en Precio/L y en Monto. Además recalcula el
+                    costo promedio del tanque y la ganancia de todas las bonificaciones
+                    que salieron de él, también las de meses anteriores.
+                  </p>
+                </>
               )}
             </div>
           )}
