@@ -343,12 +343,25 @@ export function crearAuthClient(opciones) {
     return abrirSesionCon(r);
   }
 
+  /**
+   * Llama a la API de administración delegada del IS (el admin de `combustible` solo ve y toca
+   * su sistema). Usa el TOKEN DE SESIÓN, no el JWT: `/api/users/admin/*` solo acepta sesión
+   * (con el JWT responde 401, aunque la documentación del IS diga lo contrario). Sin token
+   * de sesión (web con cookie) se apoya en la cookie del IS. Devuelve el JSON.
+   */
+  async function administrar(ruta, { metodo = 'GET', cuerpo } = {}) {
+    const s = sesionGuardada();
+    if (!s) throw new ErrorAuth('SIN_SESION', 'No hay sesión activa.', { rechazada: true });
+    const { datos } = await pedirIS(ruta, { metodo, cuerpo, token: s.sessionToken ?? undefined });
+    return datos;
+  }
+
   return {
     /** Se avisa de 'SIGNED_IN' | 'SIGNED_OUT' | 'TOKEN_REFRESHED'. Devuelve la función para dejar de escuchar. */
     suscribir(fn) { oyentes.add(fn); return () => oyentes.delete(fn); },
     usuarioActual, haySesionGuardada,
     iniciarSesion, cerrarSesion, obtenerToken, obtenerPerfil, cambiarContrasena,
-    urlGoogle, completarGoogle,
+    urlGoogle, completarGoogle, administrar,
   };
 }
 

@@ -9,36 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import PublicarApk from '@/components/admin/PublicarApk';
+import UsuariosIS from '@/components/admin/UsuariosIS';
+import RolesPermisosIS from '@/components/admin/RolesPermisosIS';
 import {
   Users, Shield, Activity, ShieldCheck, ShieldAlert, Search, ChevronLeft, ChevronRight, ChevronDown, Smartphone,
 } from 'lucide-react';
 
 // ── Constantes ───────────────────────────────────────────────────────────────
-
-const ROLES = ['superadmin', 'operador', 'auditor', 'economico', 'cajero'];
-
-const ROLE_META = {
-  superadmin: { label: 'Super Admin', color: 'bg-sky-100 text-sky-700 border-sky-200' },
-  operador:   { label: 'Operador',    color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-  auditor:    { label: 'Auditor',     color: 'bg-violet-100 text-violet-700 border-violet-200' },
-  economico:  { label: 'Económico',   color: 'bg-amber-100 text-amber-700 border-amber-200' },
-  cajero:     { label: 'Cajero',      color: 'bg-rose-100 text-rose-700 border-rose-200' },
-};
-
-const PERMISOS_TABLA = [
-  { permiso: 'Ver dashboard y resúmenes',         desc: '',                                   superadmin: true,  operador: true,  auditor: true,  economico: true  },
-  { permiso: 'Ver movimientos',                   desc: '',                                   superadmin: true,  operador: true,  auditor: true,  economico: true  },
-  { permiso: 'Registrar compras y despachos',     desc: 'Crear nuevos movimientos',           superadmin: true,  operador: true,  auditor: false, economico: false },
-  { permiso: 'Registrar depósitos externos',      desc: 'Cupet/Refinería (iso tanque, etc.)', superadmin: true,  operador: false, auditor: false, economico: true  },
-  { permiso: 'Ver y gestionar consumidores',      desc: 'Vehículos, equipos, almacenamiento', superadmin: true,  operador: true,  auditor: false, economico: false },
-  { permiso: 'Ver reportes',                      desc: '',                                   superadmin: true,  operador: true,  auditor: true,  economico: true  },
-  { permiso: 'Gestionar catálogo de conductores', desc: 'Crear y editar conductores',         superadmin: true,  operador: true,  auditor: false, economico: false },
-  { permiso: 'Gestionar catálogos generales',     desc: 'Tipos, combustibles, tarjetas',      superadmin: true,  operador: false, auditor: false, economico: false },
-  { permiso: 'Importar datos',                    desc: 'CSV / JSON masivo',                  superadmin: true,  operador: true,  auditor: false, economico: false },
-  { permiso: 'Gestionar finanzas',                desc: 'Recargas, precios, saldos',          superadmin: true,  operador: false, auditor: false, economico: true  },
-  { permiso: 'Eliminar registros',                desc: '',                                   superadmin: true,  operador: false, auditor: false, economico: false },
-  { permiso: 'Panel de administración del sitio', desc: 'Este panel',                         superadmin: true,  operador: false, auditor: false, economico: false },
-];
 
 const AUD_PAGE = 50;
 
@@ -132,98 +109,12 @@ export default function AdminPanel() {
       </div>
 
       <Tabs value={tab}>
-        <TabsContent value="usuarios"  className="mt-4"><UsuariosTab /></TabsContent>
-        <TabsContent value="permisos"  className="mt-4"><PermisosTab /></TabsContent>
+        <TabsContent value="usuarios"  className="mt-4"><UsuariosIS /></TabsContent>
+        <TabsContent value="permisos"  className="mt-4"><RolesPermisosIS /></TabsContent>
         <TabsContent value="auditoria" className="mt-4"><AuditoriaTab /></TabsContent>
         <TabsContent value="apk"       className="mt-4"><PublicarApk /></TabsContent>
       </Tabs>
     </div>
-  );
-}
-
-// ── Tab: Usuarios ────────────────────────────────────────────────────────────
-
-function UsuariosTab() {
-  // Las cuentas, los roles y los accesos los gestiona elineas-auth. Aquí ya no
-  // hay tabla de usuarios: darlos de alta, cambiarles el rol, deshabilitarlos o
-  // reenviarles la invitación se hace en el panel del servidor de identidad.
-  const urlPanel = import.meta.env.VITE_AUTH_ADMIN_URL;
-  return (
-    <Card className="border-0 shadow-sm">
-      <CardContent className="p-6 space-y-3">
-        <div className="flex items-center gap-2">
-          <Users className="w-4 h-4 text-slate-500" />
-          <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Usuarios y roles</h2>
-        </div>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Los usuarios y sus roles se administran en el servidor de identidad de la empresa
-          (elineas-auth), en el sistema <span className="font-mono">combustible</span>. Allí se da
-          de alta a una persona, se le asigna el rol, se la deshabilita o se le reenvía la invitación.
-          Un usuario sin rol en este sistema no puede entrar.
-        </p>
-        {urlPanel ? (
-          <a
-            href={urlPanel}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center px-3 h-8 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium"
-          >
-            Abrir el panel de administración
-          </a>
-        ) : (
-          <p className="text-[11px] text-amber-600">
-            Falta configurar VITE_AUTH_ADMIN_URL con la dirección del panel de elineas-auth.
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ── Tab: Roles y permisos ────────────────────────────────────────────────────
-
-function PermisosTab() {
-  return (
-    <Card className="border-0 shadow-sm overflow-hidden">
-      <CardContent className="p-0">
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50">
-                <th className="text-left px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                  Permiso
-                </th>
-                {ROLES.map(r => {
-                  const m = ROLE_META[r];
-                  return (
-                    <th key={r} className="text-center px-3 py-3">
-                      <Badge variant="outline" className={`text-[10px] ${m.color}`}>{m.label}</Badge>
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {PERMISOS_TABLA.map(p => (
-                <tr key={p.permiso} className="hover:bg-slate-50/60">
-                  <td className="px-4 py-2.5">
-                    <p className="text-slate-700 font-medium">{p.permiso}</p>
-                    {p.desc && <p className="text-[10px] text-slate-400">{p.desc}</p>}
-                  </td>
-                  {ROLES.map(r => (
-                    <td key={r} className="px-3 py-2.5 text-center">
-                      {p[r]
-                        ? <span className="text-emerald-600 font-bold text-base leading-none">✓</span>
-                        : <span className="text-slate-200 text-sm">—</span>}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 

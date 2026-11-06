@@ -317,3 +317,44 @@ describe('Google (PKCE)', () => {
     await expect(e.cliente.completarGoogle('https://app.test/cb?error=ACCOUNT_NOT_FOUND')).rejects.toMatchObject({ codigo: 'ACCOUNT_NOT_FOUND' });
   });
 });
+
+describe('administrar (administración delegada del IS)', () => {
+  const conSesion = async () => {
+    const e = entorno();
+    e.loginOk();
+    await e.cliente.iniciarSesion('a@gmail.com', 'x');
+    return e;
+  };
+
+  test('llama al IS con el token de sesión (no el JWT) y devuelve el JSON', async () => {
+    const e = await conSesion();
+    e.respuestas['GET /api/roles'] = { cuerpo: { roles: [{ id: 'r1', name: 'operador' }] } };
+    const r = await e.cliente.administrar('/api/roles?systemId=s1');
+    expect(r.roles[0].name).toBe('operador');
+    const c = e.llamadas.find((l) => l.ruta === '/api/roles');
+    expect(c.init.headers.Authorization).toBe('Bearer SESION-LARGA');
+    expect(c.url).toBe('http://is.test/api/roles?systemId=s1');
+  });
+
+  test('envía el cuerpo en JSON con el método indicado', async () => {
+    const e = await conSesion();
+    e.respuestas['POST /api/user-roles'] = { cuerpo: { userRole: { id: 'ur1' } } };
+    await e.cliente.administrar('/api/user-roles', { metodo: 'POST', cuerpo: { userId: 'u2', roleId: 'r1' } });
+    const c = e.llamadas.find((l) => l.ruta === '/api/user-roles');
+    expect(c.init.method).toBe('POST');
+    expect(JSON.parse(c.init.body)).toEqual({ userId: 'u2', roleId: 'r1' });
+  });
+
+  test('un 403 (no es admin del sistema) llega con su código y no reintenta', async () => {
+    const e = await conSesion();
+    e.respuestas['GET /api/roles'] = { estado: 403, cuerpo: { code: 'FORBIDDEN', message: 'no' } };
+    await expect(e.cliente.administrar('/api/roles')).rejects.toMatchObject({ codigo: 'FORBIDDEN', estado: 403 });
+    expect(e.llamadas.filter((l) => l.ruta === '/api/roles').length).toBe(1);
+  });
+
+  test('sin sesión falla con SIN_SESION y no llama al IS', async () => {
+    const e = entorno();
+    await expect(e.cliente.administrar('/api/roles')).rejects.toMatchObject({ codigo: 'SIN_SESION' });
+    expect(e.llamadas.length).toBe(0);
+  });
+});
