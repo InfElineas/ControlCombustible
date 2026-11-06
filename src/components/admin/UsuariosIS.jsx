@@ -256,7 +256,7 @@ export default function UsuariosIS() {
                 <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
                   <span className="flex-1 min-w-[180px]">Usuario</span>
                   <span className="w-44">Rol en {sistema?.name ?? 'combustible'}</span>
-                  {transfer && <span className="w-44">Rol en {nombreTransfer}</span>}
+                  {transfer && <span className="w-44">Permisos en Stockbridge</span>}
                   <span className="w-[104px]" />
                 </div>
                 {usuarios.map((u) => {
